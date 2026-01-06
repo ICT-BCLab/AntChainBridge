@@ -1,67 +1,14 @@
-# [2025-11-06] 本PR所有改动总结
+# 本分支新增功能总结
 
-## acb-committeeptc
-### monitor-node
-复制node模块并进行修改，改动如下：
-- monitor.node.client
-  - 与pluginserver和监管系统进行GPRC通信的客户端
-- monitor.node.commons.core 与 monitor.node.commons.enums
-  - 增加监管功能所需的一些配置
-- monitor.node.server
-  - 在MonitorNodeServiceImpl.verifyCrossChainMessage服务中增加事中监管功能
-  - 新增MonitorOrderServiceImpl服务，完成接收监管指令功能
-- monitor.node.service
-  - 完成上述功能的内部实现
+## 基本说明
 
-### monitor-node-cli
-复制node-cli模块，并只修改了配置文件以适配新模块名。
+本仓库基于[AntChainOpenLabs
+AntChainBridge](https://github.com/AntChainOpenLabs/AntChainBridge)仓库开发，加入了跨链监管功能，完成了如下内容：
+- **监管节点的开发**：完成了与课题四监管系统对接所需的v1版接口，以便提供跨链消息内容和接收监管指令。
 
-## acb-relayer
-- 优化r-cli的命令**setup-contract**
-  - 能够一键部署AM SDP PTC Monitor相关的所有合约并完成初始化
-- 优化r-cli的命令**get-blockchain-contracts**
-  - 能够查询AM SDP 以及Monitor合约的地址，其中Monitor合约地址将代替SDP合约地址，在DAPP合约中进行初始化
+- **部分区块链对监管的支持**：修改了ethereum插件，加入了监管协议，支持事前、事中以及事后（接收监管指令并存储）监管；支持对AntChainBridge中有序和无序消息的监管；**需要注意的是，目前仅支持SDPv1版本的消息。**
 
-## acb-pluginserver
-增加了如下接口功能（BBC插件的新增功能与之对应）
-- **SetupMonitorMessage**
-  - 部署Monitor合约和MonitorVerifer合约，并在Monitor合约中初始化MonitorVerifer合约的地址
-- **SetMonitorContract**
-  - 在SDP合约中初始化Monitor合约地址
-- **SetProtocolInMonitor**
-  - 在Monitor合约中初始化SDP合约地址
-- **SetMonitorControl**
-  - 在Monitor合约中初始化变量monitorControl，控制监管开关（默认开）
-- **SetPtcHubInMonitorVerifier**
-  - 在MonitorVerifer合约中初始化PtcHub合约的地址
-- **RelayMonitorOrder**
-  - 将监管指令发送到Monitor合约
-
-## acb-sdk
-- antchain.bridge.commons
-  - 在BBCConext增加了监管合约地址和状态
-  - 增加了对监管合约的序列化和反序列化
-- antchain.bridge.spi
-  - 增加了监管合约所需接口
-- pluginset.ethereum2
-  - offchain
-    - 增加了支持监管合约部署、相关初始化、发送监管指令等接口
-  - onchain
-    - 新增monitor合约：在dapp和sdp合约层之间，完成事前监管，并能接收和存储监管指令，与monitorVerifer合约交互完成监管节点签名的验证
-    - 新增monitorVerifer合约，与monitor交互；接收跨链消息时从ptcHub合约获取监管节点签名
-    - 删除了sys/lib/ptc下的CommitteePtcVerifier.sol，原因如下：
-      - 并没有其他合约import该合约，
-      - 该合约的功能在同目录下的CommitteeLib.sol中已经实现
-      - 在添加功能代码时，如果不删除会导致编译失败
-
-
-## 注意事项
-**如果需要对一条链chain-B下达监管指令，该链必须先接收一条跨链消息。** 原因如下：
-- 监管指令上链时，是由committeeptc中的监管节点直接调用pluginserver的BBC服务来发送交易，不会经过relayer
-- 监管指令在链上需要验证监管节点签名来保证指令的真实性，所以链上需事先存储监管节点的公钥
-- 监管节点的公钥和其他节点一样，存储在ptchub合约接收的的tpbta中
-- 按照antchain的设计，当relayer接收到一条目的链为chain-B的跨链消息时，会检查是否已经上传chain-B最新的tpbta到链上，如果没有则上传
-- 所以如果chain-B没有接收过跨链消息，ptchub合约上就不会存储tpbta，从而无法获取监管节点公钥，无法完成监管指令的签名验证，导致无法成功接收监管指令
+具体部署和对接使用的监管设计文档，请详见项目的语雀知识库。
 
 
 ## 含监管的流程图示
@@ -73,21 +20,21 @@
 ## 其他说明
 
 ### 跨链消息结构设计变更说明
-监管合约作为SDP上层合约，封装DApp消息的同时增加监管字段monitor_type和监管信息monitor_msg。
+监管合约作为SDP上层合约，封装DApp消息的同时增加监管字段monitor_type和监管信息monitor_msg。SDP和AM合约的消息字段详见 [Wiki](https://github.com/AntChainOpenLabs/AntChainBridge/wiki/%E5%8C%BA%E5%9D%97%E9%93%BE%E6%A1%A5%E6%8E%A5%E7%BB%84%E4%BB%B6%E5%BC%80%E5%8F%91%E6%89%8B%E5%86%8C-V1#31-%E5%90%88%E7%BA%A6%E5%8E%9F%E7%90%86%E4%BB%8B%E7%BB%8D)。
 
 <img src="docs/images/含监管的跨链消息结构.png"  style="zoom: 33%;" />
 
 | monitor_type值(uint32类型) | monitor_type含义                                             | monitor_msg含义(string类型) |
 | ---------------------- | ------------------------------------------------------------ | --------------------------- |
 | 1                      | 发送方发出的不要求监管的跨链消息                             | 可选                        |
-| 2                      | 对于发送方：发出要求监管的跨链消息对于接收方：成功接收到带监管的跨链消息 | 可选                        |
+| 2                      | 对于发送方：发出要求监管的跨链消息。对于接收方：成功接收到带监管的跨链消息 | 可选                        |
 | 3                      | 监管未通过，回滚到发送方的监管回滚消息                       | 可选，如监管未通过的原因    |
 
 
 ### 背书策略配置说明
 为加入antchain的区块链配置背书策略时，监管节点需要设置为true，举例说明如下。
 - 当监管开启时，监管节点会向监管系统请求跨链消息的合法性，**合法则返回一个正确签名，不合法则返回一个空签名**。
-- 当监管关闭时，监管节点的运行逻辑和其他节点完全相同，只是不会在PtcHub合约与monitorVerifier合约进行签名验证。
+- 当监管关闭时，监管节点的运行逻辑和其他节点完全相同，只是不会在链上合约进行签名验证。
 ```
 {
     "committee_id": "default",
@@ -168,3 +115,7 @@ message MonitorOrder {
 - 控制监管开关的监管指令，用二进制表示如下：
   -  0000 **1000** 0000 0000 0000 0000 0000 0000
   -  即32bit中第二对4bit组表示“监管控制”及其子类型。子类型"000"表示关闭监管，"001"表示开启监管。
+
+
+## 注意事项
+**如果需要对一条链chain-B下达监管指令，该链必须先接收一条跨链消息。** 因为按照系统设计，如果chain-A没有接收过跨链消息，链上合约上就不会存储tpbta这个信息，从而无法获取监管节点公钥，无法完成监管指令的签名验证，导致无法成功接收监管指令。
