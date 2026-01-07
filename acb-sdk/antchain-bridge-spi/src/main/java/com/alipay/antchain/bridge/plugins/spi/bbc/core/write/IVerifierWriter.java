@@ -33,7 +33,11 @@ public interface IVerifierWriter {
      *
      * @param ptcTrustRoot {@link PTCTrustRoot}
      */
-    void updatePTCTrustRoot(PTCTrustRoot ptcTrustRoot);
+    default void updatePTCTrustRoot(PTCTrustRoot ptcTrustRoot) {
+        throw new UnsupportedOperationException(
+                "updatePTCTrustRoot is not supported in BBC V0"
+        );
+    };
 
     /**
      * Add raw <b>Third-Party Blockchain Trust Anchor</b>
