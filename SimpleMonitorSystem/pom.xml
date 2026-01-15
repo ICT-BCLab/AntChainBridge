@@ -20,6 +20,7 @@
         <module>MonitorSystemClient</module>
         <module>MonitorAPI</module>
         <module>MonitorOrderClient</module>
+        <module>UcpParser</module>
     </modules>
 
 </project>
