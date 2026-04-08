@@ -43,7 +43,7 @@ public interface IEndorserService {
 
     CommitteeNodeProof verifyUcpWithMonitorSystem(CrossChainLane crossChainLane, UniformCrosschainPacket ucp);
 
-    void relayUcpToMonitorSystem(UniformCrosschainPacket ucp);
+    CommitteeNodeProof relayUcpToMonitorSystem(UniformCrosschainPacket ucp);
 
     EndorseBlockStateResp endorseBlockState(CrossChainLane crossChainLane, String receiverDomain, BigInteger height);
 }

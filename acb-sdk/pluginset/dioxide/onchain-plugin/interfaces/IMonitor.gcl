@@ -1,0 +1,10 @@
+contract IMonitor {
+    interface MonitorInterface {
+
+        @address function sendMonitorMessage(array<uint8> receiverDomain, array<uint8> receiverID, array<uint8> message, uint64 senderID) public export;
+
+        @address function sendUnorderedMonitorMessage(array<uint8> receiverDomain, array<uint8> receiverID, array<uint8> message, uint64 senderID) public export;
+
+        @address function setProtocol(uint64 _sdpContractId, address _sdpAddress) public export;
+    }
+}

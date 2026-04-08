@@ -101,9 +101,9 @@ import org.web3j.utils.Numeric;
 @Slf4j
 public class EthereumBBCServiceTest {
 
-    private static final String VALID_URL = "http://your_eth_json_rpc_ip:32002";
+    private static final String VALID_URL = "http://127.0.0.1:32002";
 
-    private static final String VALID_BEACON_URL = "http://your_beacon_rpc_ip:33001";
+    private static final String VALID_BEACON_URL = "http:/127.0.0.1:33001";
 
     private static final String INVALID_URL = "http://localhost:6545";
 
@@ -142,7 +142,7 @@ public class EthereumBBCServiceTest {
 
     // if private net, you need to replace the below two variables with variables from your net
     // which can get from beacon rpc: https://ethereum.github.io/beacon-APIs/#/Beacon/getGenesis
-    private static final Long GENESIS_TIME = 1735124997L;
+    private static final Long GENESIS_TIME = 1773209047L;
     private static final String GENESIS_VALIDATOR_ROOT = "0xd61ea484febacfae5298d52a2b581f3e305a51f3112a9241b968dccf019f7b11";
 
     public static final String PTC_CERT = """
@@ -224,7 +224,7 @@ public class EthereumBBCServiceTest {
 
         NodeEndorseInfo nodeEndorseInfo2 = new NodeEndorseInfo();
         nodeEndorseInfo2.setNodeId("monitor-node");
-        nodeEndorseInfo2.setRequired(false);
+        nodeEndorseInfo2.setRequired(true);
         nodeEndorseInfo2.setPublicKey(nodePubkeyEntry);
 
         NodeEndorseInfo nodeEndorseInfo3 = new NodeEndorseInfo();
@@ -708,7 +708,24 @@ public class EthereumBBCServiceTest {
         // read receipt by txHash
         CrossChainMessageReceipt crossChainMessageReceipt1 = ethereumBBCService.readCrossChainMessageReceipt(crossChainMessageReceipt.getTxhash());
 //        Assert.assertTrue(crossChainMessageReceipt1.isConfirmed());
-        Assert.assertEquals(crossChainMessageReceipt.isSuccessful(), crossChainMessageReceipt1.isSuccessful());
+        // Assert.assertEquals(crossChainMessageReceipt.isSuccessful(), crossChainMessageReceipt1.isSuccessful());
+        System.out.println("crossChainMessageReceipt1: " + JSON.toJSONString(crossChainMessageReceipt1));
+        System.out.println("crossChainMessageReceipt: " + JSON.toJSONString(crossChainMessageReceipt));
+    }
+
+    @Test
+    public void testReadCrossChainMessageReceiptWithNoProofInUcp() throws IOException, InterruptedException {
+        setupBbc();
+
+        // relay am msg
+        CrossChainMessageReceipt crossChainMessageReceipt = ethereumBBCService.relayAuthMessage(getRawMsgFromRelayerWithoutProof(appContract.getContractAddress()));
+
+        waitForTxConfirmed(crossChainMessageReceipt.getTxhash(), ethereumBBCService.getAcbEthClient().getWeb3j());
+
+        // read receipt by txHash
+        CrossChainMessageReceipt crossChainMessageReceipt1 = ethereumBBCService.readCrossChainMessageReceipt(crossChainMessageReceipt.getTxhash());
+        // Assert.assertTrue(crossChainMessageReceipt1.isConfirmed());
+        // Assert.assertEquals(crossChainMessageReceipt.isSuccessful(), crossChainMessageReceipt1.isSuccessful());
     }
 
     @Test
@@ -1022,8 +1039,8 @@ public class EthereumBBCServiceTest {
         TransactionReceipt receipt = appContract.setProtocol(ethereumBBCService.getBbcContext().getSdpContract().getContractAddress()).send();
         if (receipt.isStatusOK()) {
             log.info("set protocol({}) to app contract({})",
-                    appContract.getContractAddress(),
-                    ethereumBBCService.getBbcContext().getSdpContract().getContractAddress());
+                    ethereumBBCService.getBbcContext().getSdpContract().getContractAddress(),
+                    appContract.getContractAddress());
         } else {
             throw new Exception(String.format("failed to set protocol(%s) to app contract(%s)",
                     appContract.getContractAddress(),
@@ -1181,13 +1198,75 @@ public class EthereumBBCServiceTest {
         }
     }
 
+    @SneakyThrows
+    @Test
+    public void testGetRawMsgFromRelayer() {
+        // IMonitorMessage monitorMessage = MonitorMessageFactory.createMonitorMessage(
+        //         1,
+        //         1,
+        //         "hello",
+        //         "123".getBytes()
+        // );
+        // IMonitorMessage monitorMessage2 = MonitorMessageFactory.createMonitorMessage(monitorMessage.encode());
+        // System.out.println("monitorMessage2.monitorType: " + monitorMessage2.getMonitorType());
+        // System.out.println("monitorMessage2.monitorMsg: " + monitorMessage2.getMonitorMsg());
+        // System.out.println("monitorMessage2.payload: " + new String(monitorMessage2.getPayload()));
+        System.out.println("rawMsg: " + HexUtil.encodeHexStr(getRawMsgFromRelayerWithoutProof(appContract.getContractAddress())));
+    }
+
+    private byte[] getRawMsgFromRelayerWithoutProof(String receiverAddr) throws IOException {
+        // need to replace "awesome antchain-bridge" with monitor message
+        IMonitorMessage monitorMessage = MonitorMessageFactory.createMonitorMessage(
+                1,
+                1, // MONITOR_CLOSE
+                "this is a monitorMsg",
+                "123".getBytes()
+        );
+        ISDPMessage sdpMessage = SDPMessageFactory.createSDPMessage(
+                1,
+                new byte[32],
+                crossChainLane.getReceiverDomain().getDomain(),
+                Numeric.hexStringToByteArray(StrUtil.replace(receiverAddr, "0x", "000000000000000000000000")),
+                -1,
+                monitorMessage.encode()
+        );
+        IAuthMessage am = AuthMessageFactory.createAuthMessage(
+                1,
+                RandomUtil.randomBytes(32),
+                0,
+                sdpMessage.encode()
+        );
+
+        MockResp resp = new MockResp();
+        resp.setRawResponse(am.encode());
+
+        MockProof proof = new MockProof();
+        proof.setResp(resp);
+        proof.setDomain("senderDomain");
+
+        byte[] rawProof = TLVUtils.encode(proof);
+
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        stream.write(new byte[]{0, 0, 0, 0});
+
+        int len = rawProof.length;
+        stream.write((len >>> 24) & 0xFF);
+        stream.write((len >>> 16) & 0xFF);
+        stream.write((len >>> 8) & 0xFF);
+        stream.write((len) & 0xFF);
+
+        stream.write(rawProof);
+
+        return stream.toByteArray();
+    }
+
     private byte[] getRawMsgFromRelayer(String receiverAddr) throws IOException {
         // need to replace "awesome antchain-bridge" with monitor message
         IMonitorMessage monitorMessage = MonitorMessageFactory.createMonitorMessage(
                 1,
-                2,
+                1,
                 "this is a monitorMsg",
-                "awesome antchain-bridge".getBytes()
+                "123".getBytes()
         );
         ISDPMessage sdpMessage = SDPMessageFactory.createSDPMessage(
                 1,

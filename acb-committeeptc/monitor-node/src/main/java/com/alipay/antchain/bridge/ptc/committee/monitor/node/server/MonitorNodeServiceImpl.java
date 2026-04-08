@@ -17,6 +17,7 @@
 package com.alipay.antchain.bridge.ptc.committee.monitor.node.server;
 
 import java.math.BigInteger;
+import java.util.Objects;
 
 import cn.hutool.core.util.HexUtil;
 import cn.hutool.core.util.ObjectUtil;
@@ -335,39 +336,54 @@ public class MonitorNodeServiceImpl extends CommitteeNodeServiceGrpc.CommitteeNo
                 throw new InvalidRequestException("crossChainLane is null");
             }
 
-            domain = ucp.getSrcDomain().getDomain();
-            msgType = ucp.getSrcMessage().getType();
-            msgKey = ObjectUtil.isNull(ucp.getCrossChainLane()) ?
-                    HexUtil.encodeHexStr(ucp.getMessageHash(HashAlgoEnum.KECCAK_256))
-                    : ucp.getCrossChainLane().getLaneKey();
-            log.info("verify crosschain message (type: {}, msg: {}) from domain {}", msgType, msgKey, domain);
-
-            IAuthMessage authMessage = AuthMessageFactory.createAuthMessage(ucp.getSrcMessage().getMessage());
-            ISDPMessage sdpMessage = SDPMessageFactory.createSDPMessage(authMessage.getPayload());
-            IMonitorMessage monitorMessage = MonitorMessageFactory.createMonitorMessage(sdpMessage.getPayload());
-
-            CommitteeNodeProof proof = null;
-
-            // 根据监管字段内容 判断是否需要监管
-            if (monitorMessage.getMonitorType() == MonitorTypeEnum.MONITOR_OPEN.getCode()) {
-                log.info("crosschain message: need monitor");
-                proof = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp);
+            // 为dioxide链定制的逻辑，支持在无实际监管逻辑和PTC逻辑的情形下将跨链信息传递给外部监管系统
+            if (Objects.equals(crossChainLane.getSenderDomain().getDomain(), "dioxide")) {
+                log.info("receive crosschain message from Dioxide, relay to monitor system directly without verification");
+                CommitteeNodeProof proof = endorserService.relayUcpToMonitorSystem(ucp);
+                responseObserver.onNext(
+                        Response.newBuilder()
+                                .setCode(0)
+                                .setVerifyCrossChainMessageResp(
+                                        VerifyCrossChainMessageResponse.newBuilder()
+                                                .setRawNodeProof(ByteString.copyFrom(proof.encode()))
+                                                .build()
+                                ).build()
+                );
             } else {
-                // 不监管 把跨链消息发给监管系统即可
-                log.info("crosschain message: don't need monitor");
-                endorserService.relayUcpToMonitorSystem(ucp);
-                proof = endorserService.verifyUcp(crossChainLane, ucp);
+                domain = ucp.getSrcDomain().getDomain();
+                msgType = ucp.getSrcMessage().getType();
+                msgKey = ObjectUtil.isNull(ucp.getCrossChainLane()) ?
+                        HexUtil.encodeHexStr(ucp.getMessageHash(HashAlgoEnum.KECCAK_256))
+                        : ucp.getCrossChainLane().getLaneKey();
+                log.info("verify crosschain message (type: {}, msg: {}) from domain {}", msgType, msgKey, domain);
+    
+                IAuthMessage authMessage = AuthMessageFactory.createAuthMessage(ucp.getSrcMessage().getMessage());
+                ISDPMessage sdpMessage = SDPMessageFactory.createSDPMessage(authMessage.getPayload());
+                IMonitorMessage monitorMessage = MonitorMessageFactory.createMonitorMessage(sdpMessage.getPayload());
+    
+                CommitteeNodeProof proof = null;
+    
+                // 根据监管字段内容 判断是否需要监管
+                if (monitorMessage.getMonitorType() == MonitorTypeEnum.MONITOR_OPEN.getCode()) {
+                    log.info("crosschain message: need monitor");
+                    proof = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp);
+                } else {
+                    // 不监管 把跨链消息发给监管系统即可
+                    log.info("crosschain message: don't need monitor");
+                    endorserService.relayUcpToMonitorSystem(ucp);
+                    proof = endorserService.verifyUcp(crossChainLane, ucp);
+                }
+    
+                responseObserver.onNext(
+                        Response.newBuilder()
+                                .setCode(0)
+                                .setVerifyCrossChainMessageResp(
+                                        VerifyCrossChainMessageResponse.newBuilder()
+                                                .setRawNodeProof(ByteString.copyFrom(proof.encode()))
+                                                .build()
+                                ).build()
+                );
             }
-
-            responseObserver.onNext(
-                    Response.newBuilder()
-                            .setCode(0)
-                            .setVerifyCrossChainMessageResp(
-                                    VerifyCrossChainMessageResponse.newBuilder()
-                                            .setRawNodeProof(ByteString.copyFrom(proof.encode()))
-                                            .build()
-                            ).build()
-            );
         } catch (InvalidCrossChainMessageException e) {
             log.error("crosschain message (type: {}, msg: {}) from domain {} 's verification not passed: {}",
                     msgType, msgKey, domain, e.getMessage());

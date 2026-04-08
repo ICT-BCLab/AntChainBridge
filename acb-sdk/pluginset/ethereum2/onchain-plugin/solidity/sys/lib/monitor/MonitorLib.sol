@@ -5,7 +5,6 @@ import "../utils/TypesToBytes.sol";
 import "../utils/BytesToTypes.sol";
 import "../utils/SizeOf.sol";
 import "../utils/TLVUtils.sol";
-import "../../@openzeppelin/contracts/utils/Strings.sol";
 
 struct MonitorOrder {
     string product;
@@ -97,25 +96,57 @@ library MonitorLib {
         offset -= 4 + raw_extra.length;
     }
 
+    // function encode(MonitorMessage memory monitorMessage) pure internal returns (bytes memory) {
+    //     require(
+    //         monitorMessage.message.length <= 0xFFFFFFFF,
+    //         "encodeSDPMessage: body length overlimit"
+    //     );
+    //     // 4 + (4 + monitorMsg) + (4 + payload)
+    //     uint total_size = 12 + bytes(monitorMessage.monitorMsg).length + monitorMessage.message.length;
+    //     bytes memory pkg = new bytes(total_size);
+    //     uint offset = total_size;
+
+    //     TypesToBytes.uint32ToBytes(offset, monitorMessage.monitorType, pkg);
+    //     offset -= SizeOf.sizeOfUint(32);
+
+    //     bytes memory raw_monitorMsg = bytes(monitorMessage.monitorMsg);
+    //     TypesToBytes.varBytesToBytes(offset, raw_monitorMsg, pkg);
+    //     offset -= 4 + raw_monitorMsg.length;
+
+    //     TypesToBytes.varBytesToBytes(offset, monitorMessage.message, pkg);
+    //     offset -= 4 + monitorMessage.message.length;
+
+    //     return pkg;
+    // }
+
+    // function decode(MonitorMessage memory monitorMessage, bytes memory rawMessage) internal pure {
+    //     uint256 offset = rawMessage.length;
+
+    //     monitorMessage.monitorType = BytesToTypes.bytesToUint32(offset, rawMessage);
+    //     offset -= SizeOf.sizeOfInt(32);
+
+    //     bytes memory raw_monitorMsg = BytesToTypes.bytesToVarBytes(offset, rawMessage);
+    //     monitorMessage.monitorMsg = string(raw_monitorMsg);
+    //     offset -= 4 + raw_monitorMsg.length;
+
+    //     monitorMessage.message = BytesToTypes.bytesToVarBytes(offset, rawMessage);
+    //     offset -= 4 + monitorMessage.message.length;
+    // }
+
     function encode(MonitorMessage memory monitorMessage) pure internal returns (bytes memory) {
-        require(
-            monitorMessage.message.length <= 0xFFFFFFFF,
-            "encodeSDPMessage: body length overlimit"
-        );
-        // 4 + (4 + monitorMsg) + (4 + payload)
-        uint total_size = 12 + bytes(monitorMessage.monitorMsg).length + monitorMessage.message.length;
+
+        uint total_size = 4 + SizeOf.sizeOfString(monitorMessage.monitorMsg) + SizeOf.sizeOfBytes(monitorMessage.message);
         bytes memory pkg = new bytes(total_size);
         uint offset = total_size;
 
         TypesToBytes.uint32ToBytes(offset, monitorMessage.monitorType, pkg);
         offset -= SizeOf.sizeOfUint(32);
 
-        bytes memory raw_monitorMsg = bytes(monitorMessage.monitorMsg);
-        TypesToBytes.varBytesToBytes(offset, raw_monitorMsg, pkg);
-        offset -= 4 + raw_monitorMsg.length;
+        TypesToBytes.stringToBytes(offset, bytes(monitorMessage.monitorMsg), pkg);
+        offset -= SizeOf.sizeOfString(monitorMessage.monitorMsg);
 
-        TypesToBytes.varBytesToBytes(offset, monitorMessage.message, pkg);
-        offset -= 4 + monitorMessage.message.length;
+        TypesToBytes.stringToBytes(offset, monitorMessage.message, pkg);
+        offset -= SizeOf.sizeOfBytes(monitorMessage.message);
 
         return pkg;
     }
@@ -126,11 +157,17 @@ library MonitorLib {
         monitorMessage.monitorType = BytesToTypes.bytesToUint32(offset, rawMessage);
         offset -= SizeOf.sizeOfInt(32);
 
-        bytes memory raw_monitorMsg = BytesToTypes.bytesToVarBytes(offset, rawMessage);
-        monitorMessage.monitorMsg = string(raw_monitorMsg);
-        offset -= 4 + raw_monitorMsg.length;
+        uint32 monitor_msg_len = BytesToTypes.bytesToUint32(offset, rawMessage) + 32;
+        bytes memory monitor_msg = new bytes(monitor_msg_len);
+        BytesToTypes.bytesToString(offset, rawMessage, monitor_msg);
+        offset -= SizeOf.sizeOfBytes(monitor_msg);
 
-        monitorMessage.message = BytesToTypes.bytesToVarBytes(offset, rawMessage);
-        offset -= 4 + monitorMessage.message.length;
+        uint32 message_len = BytesToTypes.bytesToUint32(offset, rawMessage) + 32;
+        bytes memory message = new bytes(message_len);
+        BytesToTypes.bytesToString(offset, rawMessage, message);
+        offset -= SizeOf.sizeOfBytes(message);
+
+        monitorMessage.monitorMsg = string(monitor_msg);
+        monitorMessage.message = message;
     }
 }

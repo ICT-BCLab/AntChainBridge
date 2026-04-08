@@ -68,7 +68,11 @@ public interface IAntChainBridgeDataWriter extends IAMWriter, ISDPWriter, IMonit
     /**
      * Set up the monitor contracts, including monitor and monitorVerifier contract
      */
-    void setupMonitorContract();
+    default void setupMonitorContract() {
+        throw new UnsupportedOperationException(
+                "setupMonitorContract is not supported in this BBC version"
+        );
+    }
     /**
      * Set up the PTC contracts. For example PTCHub and its verify contracts
      */

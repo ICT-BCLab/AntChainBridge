@@ -36,6 +36,8 @@ public enum ServerErrorCodeEnum {
 
     BBC_RELAYMONITORORDER_ERROR(255, "[bbc] relay monitor order failed"),
 
+    BBC_MONITOR_NOT_SUPPORTED(256, "[bbc] bbc monitor not supported"),
+
     UNSUPPORT_BBC_REQUEST_ERROR(200, "unsupport bbc request type"),
 
     BBC_GET_SERVICE_ERROR(201, "[bbc] get service failed"),

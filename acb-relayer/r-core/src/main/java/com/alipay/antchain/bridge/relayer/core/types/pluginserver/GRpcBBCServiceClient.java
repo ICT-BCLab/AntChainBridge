@@ -220,10 +220,16 @@ public class GRpcBBCServiceClient implements IBBCServiceClient {
                         .build()
         );
         if (response.getCode() != 0) {
-            throw new RuntimeException(
-                    String.format("[GRpcBBCServiceClient (domain: %s, product: %s)] setupMonitorMessageContract request failed for plugin server %s: %s",
-                            this.domain, this.product, this.psId, response.getErrorMsg())
-            );
+            try {
+                handleErrorCode(response);
+            } catch (AntChainBridgeRelayerException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new RuntimeException(
+                        String.format("[GRpcBBCServiceClient (domain: %s, product: %s)] setupMonitorContract request failed for plugin server %s: %s",
+                                this.domain, this.product, this.psId, response.getErrorMsg())
+                );
+            }
         }
     }
 
@@ -705,7 +711,7 @@ public class GRpcBBCServiceClient implements IBBCServiceClient {
             }
             return;
         }
-        if (response.getCode() == 219) {
+        if (response.getCode() == 219 || response.getCode() == 256) {
             throw new BbcInterfaceNotSupportException();
         }
         throw new RuntimeException(

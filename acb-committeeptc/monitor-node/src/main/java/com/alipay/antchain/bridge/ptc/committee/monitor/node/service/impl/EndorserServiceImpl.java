@@ -403,7 +403,7 @@ public class EndorserServiceImpl implements IEndorserService {
     }
 
     @Override
-    public void relayUcpToMonitorSystem(UniformCrosschainPacket ucp) {
+    public CommitteeNodeProof relayUcpToMonitorSystem(UniformCrosschainPacket ucp) {
         MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub monitorSystemServiceBlockingStub = monitorSystemGrpcClientManager.getStub("monitor-system");
 
         MonitorSystemResponse responseFromMonitorSystem = monitorSystemServiceBlockingStub.relayUcpToMonitorSystem(
@@ -419,6 +419,12 @@ public class EndorserServiceImpl implements IEndorserService {
             throw new RuntimeException(String.format("[MonitorSystemGRpcClient] relayUcpToMonitorSystem request failed: %s",
                     responseFromMonitorSystem.getErrorMsg()));
         }
+
+        // 返回一个ethereum格式(65字节)的空签名 根据具体业务需求决定是否使用
+        return CommitteeNodeProof.builder()
+                .nodeId(committeeNodeId)
+                .signAlgo(nodeSignAlgo)
+                .signature(new byte[65]).build();
     }
 
     @Override

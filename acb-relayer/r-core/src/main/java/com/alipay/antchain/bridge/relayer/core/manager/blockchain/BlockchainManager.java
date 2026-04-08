@@ -930,11 +930,18 @@ public class BlockchainManager implements IBlockchainManager {
             blockchainClient.getSDPMsgClientContract().deployContract();
         }
 
+        // if monitor is supported, it needs to be deployed before ptc
+        boolean isMonitorSupport = true;
         if (
                 ObjectUtil.isNull(bbcContext.getMonitorContract())
                         || ContractStatusEnum.INIT == bbcContext.getMonitorContract().getStatus()
         ) {
-            blockchainClient.getMonitorClientContract().deployContract();
+            try {
+                blockchainClient.getMonitorClientContract().deployContract();
+            } catch (BbcInterfaceNotSupportException e) {
+                log.info("setup monitor contract not support for blockchain product: {}", blockchainMeta.getProduct());
+                isMonitorSupport = false;
+            }
         }
 
         boolean isPtcSupport = true;
@@ -965,7 +972,7 @@ public class BlockchainManager implements IBlockchainManager {
                     blockchainMeta.getProduct(), blockchainMeta.getBlockchainId(), blockchainMeta.getPluginServerId()
             );
         }
-        if (ObjectUtil.isNull(bbcContext.getMonitorContract()) || StrUtil.isEmpty(bbcContext.getMonitorContract().getContractAddress())) {
+        if (isMonitorSupport && (ObjectUtil.isNull(bbcContext.getMonitorContract()) || StrUtil.isEmpty(bbcContext.getMonitorContract().getContractAddress()))) {
             throw new AntChainBridgeRelayerException(
                     RelayerErrorCodeEnum.CORE_BLOCKCHAIN_ERROR,
                     "monitor contract is empty for blockchain ( product: {}, bcId: {}, pluginServer: {})",
@@ -992,25 +999,29 @@ public class BlockchainManager implements IBlockchainManager {
         blockchainClient.getSDPMsgClientContract()
                 .setAmContract(bbcContext.getAuthMessageContract().getContractAddress());
 
-        blockchainClient.getSDPMsgClientContract()
-                .setMonitorContract(bbcContext.getMonitorContract().getContractAddress());
+        if (isMonitorSupport) {
+            blockchainClient.getSDPMsgClientContract()
+                    .setMonitorContract(bbcContext.getMonitorContract().getContractAddress());
 
-        blockchainClient.getMonitorClientContract()
-                .setMonitorControl(MONITOR_OPEN);
-
-        blockchainClient.getMonitorClientContract()
-                .setProtocolInMonitor(bbcContext.getSdpContract().getContractAddress());
-
-        if (isPtcSupport) {
             blockchainClient.getMonitorClientContract()
+                    .setMonitorControl(MONITOR_OPEN);
+
+            blockchainClient.getMonitorClientContract()
+                    .setProtocolInMonitor(bbcContext.getSdpContract().getContractAddress());
+
+            if (isPtcSupport) {
+                blockchainClient.getMonitorClientContract()
                     .setPtcHubInMonitorVerifier(bbcContext.getPtcContract().getContractAddress());
+            }
         }
 
         bbcContext = blockchainClient.queryBBCContext();
 
         blockchainMeta.getProperties().setAmClientContractAddress(bbcContext.getAuthMessageContract().getContractAddress());
         blockchainMeta.getProperties().setSdpMsgContractAddress(bbcContext.getSdpContract().getContractAddress());
-        blockchainMeta.getProperties().setMonitorContractAddress(bbcContext.getMonitorContract().getContractAddress());
+        if (isMonitorSupport) {
+            blockchainMeta.getProperties().setMonitorContractAddress(bbcContext.getMonitorContract().getContractAddress());
+        }
         if (isPtcSupport) {
             blockchainMeta.getProperties().setPtcContractAddress(bbcContext.getPtcContract().getContractAddress());
         }

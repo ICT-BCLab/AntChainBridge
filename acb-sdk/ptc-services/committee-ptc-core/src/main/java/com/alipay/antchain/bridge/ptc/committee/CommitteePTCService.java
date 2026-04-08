@@ -334,6 +334,25 @@ public class CommitteePTCService implements IPTCService {
     @Override
     public ThirdPartyProof verifyCrossChainMessage(ThirdPartyBlockchainTrustAnchor tpbta, ValidatedConsensusState validatedConsensusState, UniformCrosschainPacket ucp) {
         try {
+
+            // 为dioxide链定制的逻辑，支持在无实际监管逻辑和PTC逻辑的情形下将跨链信息传递给外部监管系统
+            // 传入的tpbta是特殊构造的tpbta, tpbta.crossChainLane.crossChainChannel.senderDomain字段是"Dioxide"，用来标识这是传递给dioxide链的跨链信息
+            log.info("[CommitteePTCService]tpbta.getCrossChainLane().getSenderDomain().getDomain() = {}", tpbta.getCrossChainLane().getSenderDomain().getDomain());
+
+            if (Objects.equals(tpbta.getCrossChainLane().getSenderDomain().getDomain(), "dioxide")) {
+                // 搜索节点名称带有“monitor”的节点使用, 搜索到一个即可
+                Node monitorNode = nodeMap.values().stream()
+                        .filter(Node::isAvailable)
+                        .filter(node -> node.getEndpointInfo().getNodeId().toLowerCase().contains("monitor"))
+                        .findFirst()
+                        .orElseThrow(() -> new RuntimeException("No available monitor node found in committee " + config.getCommitteeNetworkInfo().getCommitteeId()));
+                log.info("Forwarding crosschain message to monitor node {} for Dioxide chain", monitorNode.getEndpointInfo().getNodeId());
+
+                // "Dioxide"这个product继续通过tpbta中特殊的CrossChainLane来传递
+                monitorNode.getNodeClient().verifyCrossChainMessage(tpbta.getCrossChainLane(), ucp);
+                return new ThirdPartyProof();
+            }
+
             CommitteeEndorseRoot root = CommitteeEndorseRoot.decode(tpbta.getEndorseRoot());
             List<String> requiredNodeIds = root.getEndorsers().stream()
                     .filter(NodeEndorseInfo::isRequired)

@@ -310,6 +310,10 @@ public class CrossChainServiceImpl extends CrossChainServiceGrpc.CrossChainServi
     }
 
     private Response handleSetupMonitorMessageContract(IBBCService bbcService, String product, String domain) {
+        if (!checkBBCSupportMonitor(bbcService)) {
+            return ResponseBuilder.buildFailResp(ServerErrorCodeEnum.BBC_MONITOR_NOT_SUPPORTED,
+                    StrUtil.format("bbc version not supported, please check plugin code for product {}", product));
+        }
         try {
             bbcService.setupMonitorContract();
             MonitorContract monitor = bbcService.getContext().getMonitorContract();
@@ -888,6 +892,10 @@ public class CrossChainServiceImpl extends CrossChainServiceGrpc.CrossChainServi
 
     private boolean checkBBCVersionSatisfiedV1(IBBCService bbcService) {
         return Utils.getBBCVersion(bbcService).ordinal() >= BBCVersionEnum.V1.ordinal();
+    }
+
+    private boolean checkBBCSupportMonitor(IBBCService bbcService) {
+        return Utils.checkBBCSupportMonitorContract(bbcService);
     }
 
     private Response handleQueryValidatedBlockStateReq(IBBCService bbcService, QueryValidatedBlockStateRequest request, String product, String domain) {

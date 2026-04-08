@@ -10,7 +10,6 @@ import "./lib/monitor/MonitorLib.sol";
 import "./lib/utils/Ownable.sol";
 import "./@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
-// 监管节点部署该合约
 // 接受监管指令; 只在发送方进行事前监管
 contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
     using MonitorLib for MonitorOrder;
@@ -196,6 +195,7 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
             // successfulCallInMonitorROLLBACK += 1;
             emit receiveMonitorRollbackMessage(monitorMessage.monitorType, senderDomain, author, MonitorLib.encodeAddressIntoCrossChainID(receiverID), monitorMessage.monitorMsg);
         } else if (monitorMessage.monitorType == MonitorLib.MONITOR_CLOSE) {
+            // revert("Monitor_Msg: here is Monitor.recvMessageFromSDP and monitor type is MONITOR_CLOSE");
             IContractUsingSDP(receiverID).recvMessage(senderDomain, author, monitorMessage.message);
             // successfulCallInMonitorCLOSE += 1;
         } else {

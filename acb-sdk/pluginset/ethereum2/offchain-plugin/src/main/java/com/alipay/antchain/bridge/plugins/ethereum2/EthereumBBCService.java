@@ -186,6 +186,7 @@ public class EthereumBBCService extends AbstractBBCService {
         }
 
         BigInteger currBlockNum = acbEthClient.queryLatestBlockNumber();
+        // getBBCLogger().info("current block number is {}, transaction receipt block number is {}", currBlockNum, transactionReceipt.getBlockNumber());
         if (transactionReceipt.getBlockNumber().compareTo(currBlockNum) > 0) {
             crossChainMessageReceipt.setConfirmed(false);
             crossChainMessageReceipt.setSuccessful(true);
