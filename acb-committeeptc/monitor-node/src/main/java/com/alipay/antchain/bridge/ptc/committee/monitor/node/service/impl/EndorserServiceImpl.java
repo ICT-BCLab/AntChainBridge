@@ -318,13 +318,23 @@ public class EndorserServiceImpl implements IEndorserService {
         //     crossChainLane.getSenderIdHex(), crossChainLane.getReceiverIdHex());
 //        log.info("verify ucp with monitor system for domain {} now", crossChainLane.getSenderDomain().getDomain());
 
-        MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub monitorSystemServiceBlockingStub = monitorSystemGrpcClientManager.getStub("monitor-system");
-
-        MonitorSystemResponse responseFromMonitorSystem = monitorSystemServiceBlockingStub.verifyCrossChainMessageInMonitorSystem(
-                VerifyCrossChainMessageInMonitorSystemRequest.newBuilder()
-                        .setRawUcp(ByteString.copyFrom(ucp.encode()))
-                        .build()
-        );
+        MonitorSystemResponse responseFromMonitorSystem;
+        try {
+            responseFromMonitorSystem = monitorSystemGrpcClientManager.withStub(
+                    stub -> stub.verifyCrossChainMessageInMonitorSystem(
+                            VerifyCrossChainMessageInMonitorSystemRequest.newBuilder()
+                                    .setRawUcp(ByteString.copyFrom(ucp.encode()))
+                                    .build()
+                    )
+            );
+        } catch (RuntimeException e) {
+            log.error("failed to call monitor system for domain {}, treat it as monitor verification failure",
+                    crossChainLane.getSenderDomain().getDomain(), e);
+            return CommitteeNodeProof.builder()
+                    .nodeId(committeeNodeId)
+                    .signAlgo(nodeSignAlgo)
+                    .signature(new byte[65]).build();
+        }
 
         if (ObjectUtil.isNull(responseFromMonitorSystem)) {
             throw new RuntimeException("null response from monitor system");
@@ -404,13 +414,22 @@ public class EndorserServiceImpl implements IEndorserService {
 
     @Override
     public CommitteeNodeProof relayUcpToMonitorSystem(UniformCrosschainPacket ucp) {
-        MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub monitorSystemServiceBlockingStub = monitorSystemGrpcClientManager.getStub("monitor-system");
-
-        MonitorSystemResponse responseFromMonitorSystem = monitorSystemServiceBlockingStub.relayUcpToMonitorSystem(
-                RelayUcpToMonitorSystemRequest.newBuilder()
-                        .setRawUcp(ByteString.copyFrom(ucp.encode()))
-                        .build()
-        );
+        MonitorSystemResponse responseFromMonitorSystem;
+        try {
+            responseFromMonitorSystem = monitorSystemGrpcClientManager.withStub(
+                    stub -> stub.relayUcpToMonitorSystem(
+                            RelayUcpToMonitorSystemRequest.newBuilder()
+                                    .setRawUcp(ByteString.copyFrom(ucp.encode()))
+                                    .build()
+                    )
+            );
+        } catch (RuntimeException e) {
+            log.error("failed to relay ucp to monitor system, monitor system may not receive the message", e);
+            return CommitteeNodeProof.builder()
+                    .nodeId(committeeNodeId)
+                    .signAlgo(nodeSignAlgo)
+                    .signature(new byte[65]).build();
+        }
 
         if (ObjectUtil.isNull(responseFromMonitorSystem)) {
             throw new RuntimeException("null response from monitor system");

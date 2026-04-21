@@ -1,11 +1,22 @@
 import io.grpc.Server;
-import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
+import io.grpc.netty.shaded.io.grpc.netty.NettyServerBuilder;
 import com.alipay.antchain.bridge.ptc.committee.monitor.system.grpc.*;
 
+import java.io.File;
+import java.io.IOException;
 import java.util.Scanner;
+import java.util.logging.ConsoleHandler;
+import java.util.logging.FileHandler;
+import java.util.logging.Formatter;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 public class MonitorSystemServer {
+
+    private static final Logger LOGGER = createLogger();
 
     private Server server;
 
@@ -13,18 +24,22 @@ public class MonitorSystemServer {
     private volatile boolean verifySuccess = true;
 
     public void start(int port) throws Exception {
-        server = ServerBuilder.forPort(port)
+        server = NettyServerBuilder.forPort(port)
+                .useTransportSecurity(
+                        new File("tls_certs/monitor-system.crt"),
+                        new File("tls_certs/monitor-system.key")
+                )
                 .addService(new MonitorSystemServiceImpl())
                 .build()
                 .start();
 
-        System.out.println("gRPC server started, listening on " + port);
+        logInfo("gRPC TLS server started, listening on " + port);
 
         // 添加 Ctrl+C 优雅关闭 hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("\nShutting down gRPC server...");
+            logInfo("Shutting down gRPC server...");
             MonitorSystemServer.this.stop();
-            System.out.println("Server shut down.");
+            logInfo("Server shut down.");
         }));
 
         // 启动控制线程，监听终端输入
@@ -33,17 +48,17 @@ public class MonitorSystemServer {
 
     private void startCommandListener() {
         Scanner scanner = new Scanner(System.in);
-        System.out.println("请输入 'success' 或 'fail' 来控制 verifyCrossChainMessageInMonitorSystem 返回结果：");
+        logInfo("请输入 'success' 或 'fail' 来控制 verifyCrossChainMessageInMonitorSystem 返回结果：");
         while (true) {
             String input = scanner.nextLine();
             if ("success".equalsIgnoreCase(input)) {
                 verifySuccess = true;
-                System.out.println("切换为：返回成功");
+                logInfo("切换为：返回成功");
             } else if ("fail".equalsIgnoreCase(input)) {
                 verifySuccess = false;
-                System.out.println("切换为：返回失败");
+                logInfo("切换为：返回失败");
             } else {
-                System.out.println("无效指令，请输入 'success' 或 'fail'");
+                logInfo("无效指令，请输入 'success' 或 'fail'");
             }
         }
     }
@@ -78,8 +93,8 @@ public class MonitorSystemServer {
                 StreamObserver<MonitorSystemResponse> responseObserver) {
 
             byte[] rawUcp = request.getRawUcp().toByteArray();
-            System.out.println("Received verifyCrossChainMessageInMonitorSystem request:");
-            System.out.println("rawUcp (hex): " + bytesToHex(rawUcp));
+            logInfo("Received verifyCrossChainMessageInMonitorSystem request:");
+            logInfo("rawUcp (hex): " + bytesToHex(rawUcp));
 
             MonitorSystemResponse.Builder responseBuilder = MonitorSystemResponse.newBuilder()
                     .setCode(0)
@@ -91,14 +106,14 @@ public class MonitorSystemServer {
                                 .setResult(0)
                                 .setMsg("ok")
                                 .build());
-                System.out.println("返回：成功");
+                logInfo("返回：成功");
             } else {
                 responseBuilder.setVerifyCrossChainMessageInMonitorSystemResp(
                         VerifyCrossChainMessageInMonitorSystemResponse.newBuilder()
                                 .setResult(1)
                                 .setMsg("fail")
                                 .build());
-                System.out.println("返回：失败");
+                logInfo("返回：失败");
             }
 
             responseObserver.onNext(responseBuilder.build());
@@ -111,8 +126,8 @@ public class MonitorSystemServer {
                 StreamObserver<MonitorSystemResponse> responseObserver) {
 
             byte[] rawUcp = request.getRawUcp().toByteArray();
-            System.out.println("Received relayUcpToMonitorSystem request:");
-            System.out.println("rawUcp (hex): " + bytesToHex(rawUcp));
+            logInfo("Received relayUcpToMonitorSystem request:");
+            logInfo("rawUcp (hex): " + bytesToHex(rawUcp));
 
             MonitorSystemResponse response = MonitorSystemResponse.newBuilder()
                     .setCode(0)
@@ -131,6 +146,51 @@ public class MonitorSystemServer {
             }
             return sb.toString();
         }
+    }
+
+    private static void logInfo(String message) {
+        LOGGER.info(message);
+    }
+
+    private static Logger createLogger() {
+        Logger logger = Logger.getLogger(MonitorSystemServer.class.getName());
+        logger.setUseParentHandlers(false);
+        logger.setLevel(Level.INFO);
+
+        for (Handler handler : logger.getHandlers()) {
+            logger.removeHandler(handler);
+        }
+
+        Formatter formatter = new Formatter() {
+            @Override
+            public String format(LogRecord record) {
+                return String.format("%1$tF %1$tT [%2$s] %3$s%n",
+                        record.getMillis(),
+                        record.getLevel().getName(),
+                        record.getMessage());
+            }
+        };
+
+        ConsoleHandler consoleHandler = new ConsoleHandler();
+        consoleHandler.setLevel(Level.INFO);
+        consoleHandler.setFormatter(formatter);
+        logger.addHandler(consoleHandler);
+
+        try {
+            File logDir = new File("logs");
+            if (!logDir.exists() && !logDir.mkdirs()) {
+                throw new IOException("failed to create logs directory");
+            }
+            FileHandler fileHandler = new FileHandler("logs/monitor-system.log", true);
+            fileHandler.setLevel(Level.INFO);
+            fileHandler.setFormatter(formatter);
+            logger.addHandler(fileHandler);
+        } catch (IOException e) {
+            consoleHandler.publish(new LogRecord(Level.WARNING,
+                    "failed to initialize file logger: " + e.getMessage()));
+        }
+
+        return logger;
     }
 
     public static void main(String[] args) throws Exception {

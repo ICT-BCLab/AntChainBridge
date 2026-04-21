@@ -48,6 +48,8 @@ grpc:
     monitor-system:
       host: localhost
       port: 50051
+      security:
+        monitorSystemCert: file:tls_certs/monitor-system.crt
     # ps-server
     plugin-server:
       host: localhost

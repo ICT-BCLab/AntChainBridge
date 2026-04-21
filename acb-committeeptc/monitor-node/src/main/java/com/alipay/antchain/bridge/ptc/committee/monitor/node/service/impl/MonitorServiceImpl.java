@@ -47,19 +47,20 @@ public class MonitorServiceImpl implements IMonitorService {
         byte[] encodedMonitorOrder = monitorOrder.encode();
         byte[] signature = nodeSignAlgo.getSigner().sign(nodeKey, encodedMonitorOrder);
 
-        CrossChainServiceGrpc.CrossChainServiceBlockingStub crossChainServiceBlockingStub = crossChainServiceGrpcClientManager.getStub("plugin-server");
-        Response responseFromPS = crossChainServiceBlockingStub.bbcCall(
-                CallBBCRequest.newBuilder()
-                        .setProduct(monitorOrder.getProduct())
-                        .setDomain(monitorOrder.getDomain())
-                        .setRelayMonitorOrderReq(
-                                RelayMonitorOrderRequest.newBuilder()
-                                        .setCommitteeId(committeeId)
-                                        .setSignAlgo(nodeSignAlgo.getName())
-                                        .setRawProof(ByteString.copyFrom(signature))
-                                        .setRawMonitorOrder(ByteString.copyFrom(encodedMonitorOrder))
-                        )
-                        .build()
+        Response responseFromPS = crossChainServiceGrpcClientManager.withStub(
+                stub -> stub.bbcCall(
+                        CallBBCRequest.newBuilder()
+                                .setProduct(monitorOrder.getProduct())
+                                .setDomain(monitorOrder.getDomain())
+                                .setRelayMonitorOrderReq(
+                                        RelayMonitorOrderRequest.newBuilder()
+                                                .setCommitteeId(committeeId)
+                                                .setSignAlgo(nodeSignAlgo.getName())
+                                                .setRawProof(ByteString.copyFrom(signature))
+                                                .setRawMonitorOrder(ByteString.copyFrom(encodedMonitorOrder))
+                                )
+                                .build()
+                )
         );
 //        Response responseFromPS = crossChainServiceBlockingStub.bbcCall(
 //                CallBBCRequest.newBuilder()

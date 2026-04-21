@@ -32,8 +32,6 @@ public class MonitorOrderClient {
                 .sslContext(
                         GrpcSslContexts.forClient()
                                 .trustManager(new File("tls_certs/monitor-node.crt"))
-                                .keyManager(new File("tls_certs/monitor-system.crt"),
-                                        new File("tls_certs/monitor-system.key"))
                                 .build())
                 .overrideAuthority(cn)  // 使用证书中的CN
                 .build();
