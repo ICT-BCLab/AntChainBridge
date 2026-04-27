@@ -243,7 +243,8 @@ public class DioxideClient {
             dispatchedAndOutboundRelays.forEach(txn -> {
                 DioxideTransaction dtx = getTransactionByHash(txn);
                 if (StrUtil.isNotEmpty(dtx.getTarget())) {
-                    if (dtx.getTarget().equals(SEND_AUTH_MESSAGE_EVENT_NAME)) {
+                    if (dtx.getTarget().equals(SEND_AUTH_MESSAGE_EVENT_NAME) &&
+                        StrUtil.contains(dtx.getFunction(), config.getDappName())) {
                         getBbcLogger().info("send am event found in global shard, block: {}, block hash: {}, contract name: {}",
                                 block.getHeight(), block.getHash(), String.format("%s:%s", config.getDappName(), config.getAmContractName()));
                         messageList.add(CrossChainMessage.createCrossChainMessage(
