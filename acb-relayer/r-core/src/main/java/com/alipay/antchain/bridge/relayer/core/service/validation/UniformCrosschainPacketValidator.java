@@ -122,13 +122,13 @@ public class UniformCrosschainPacketValidator {
 
             // 为dioxide链定制的逻辑，支持在无实际监管逻辑和PTC逻辑的情形下将跨链信息传递给外部监管系统
             // "Dioxide"这个product通过构造特殊的tpBtaOnlyRepresentDioxide来传递
-            if (Objects.equals(ucpContext.getProduct(), "dioxide")) {
+            if (Objects.equals(ucpContext.getProduct(), "dioxide2")) {
                 log.info("product is Dioxide, skip actual ptc verification but transfer ucp {} to momitor node", ucpContext.getUcpId());
                 IPTCService ptcService = ptcManager.getPtcService(ptcId);
                 ThirdPartyBlockchainTrustAnchorV1 tpBtaOnlyRepresentDioxide = new ThirdPartyBlockchainTrustAnchorV1();
                 tpBtaOnlyRepresentDioxide.setCrossChainLane(new CrossChainLane(new CrossChainDomain(ucpContext.getProduct())));
                 log.info("[1]tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain() = {}", tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain());
-                tpBtaOnlyRepresentDioxide.setCrossChainLane(new CrossChainLane(new CrossChainDomain("dioxide")));
+                tpBtaOnlyRepresentDioxide.setCrossChainLane(new CrossChainLane(new CrossChainDomain("dioxide2")));
                 log.info("[2]tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain() = {}", tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain());
                 ptcService.verifyCrossChainMessage(tpBtaOnlyRepresentDioxide, new ValidatedConsensusStateV1(), ucpContext.getUcp());
             }

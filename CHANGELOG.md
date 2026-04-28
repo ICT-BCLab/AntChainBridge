@@ -1,5 +1,10 @@
 # 本分支新增功能总结
 
+## 2026.04.28 插件更新与系统优化
+- 将dioxide插件和以太坊插件拆成dioxide、dioxide2、ethereum2、ethereum3，其中dioxide和ethereum2插件不保留监管层，dioxide2和ethereum3保留监管层，同时系统只对将使用dioxide2发出的跨链消息转发至课题四监管系统，而不对dioxide作处理。
+- 优化监管节点兼容性，让其支持处理不含监管层的插件转发的消息。
+- 兼容不含监管层的mychain插件在本系统的使用。
+
 ## 2026.04.21 系统优化
 - 在SimpleMonitorSystem中更新了项目UcpParser和包含ucp实例的logs/monitor-system.log，按照最新的解析方式进行ucp的解析。
 - 为避免信息在公网上明文传输，更新了监管节点和课题4监管系统之间的gRPC通信为单向TLS。因为监管节点和监管系统都是既作为服务端又作为客户端，所以双方都需要提供TLS证书。

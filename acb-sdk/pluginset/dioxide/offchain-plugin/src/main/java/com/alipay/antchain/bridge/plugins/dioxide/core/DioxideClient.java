@@ -60,14 +60,11 @@ public class DioxideClient {
             Interfaces.ICONTRACTUSINGSDP,
             Interfaces.ISDPMESSAGE,
             Interfaces.ISUBPROTOCOL,
-            Interfaces.ICONTRACTUSINGMONITOR,
-            Interfaces.IMONITOR,
             Libs.UTILS,
             Libs.SIZEOF,
             Libs.BYTESTOTYPES,
             Libs.TYPESTOBYTES,
             Libs.TLVUTILS,
-            Libs.MONITORLIB,
             Libs.SDPLIB,
             Libs.AMLIB
     );
@@ -256,6 +253,7 @@ public class DioxideClient {
                                 getConsensusHeaderByHeight(height).getLongValue("Timestamp"),
                                 // NOTICE: use sha256 to ensure this blockHash have 32 bytes
                                 DigestUtil.sha256(block.getHash()),
+                                // todo: parse the am msg
                                 deserializedSendMsgEventArgs(dtx.getInputAsString()),
                                 // todo: put ledger data, for SPV or other attestations
                                 // this time we need no verify. it's ok to set it with empty bytes
@@ -377,39 +375,6 @@ public class DioxideClient {
             return getContractCid(config.getSdpContractName());
         } catch (Exception e) {
             throw new RuntimeException(String.format("failed to deploy contract: %s", config.getSdpContractName()) ,e);
-        }
-    }
-
-    public long deployMonitorContract() {
-        try {
-            deployPreContract();
-
-            List<String> codes = new ArrayList<>();
-            List<String> cargs = new ArrayList<>();
-
-            String monitorContractSource =
-                    new String(
-                            Base64.getDecoder().decode(Contracts.MONITOR),
-                            StandardCharsets.UTF_8
-                    );
-
-            codes.add(monitorContractSource);
-            cargs.add(JSON.toJSONString(orderedMap(
-                    "_owner", dioxideAccount.getAddressInString()
-            )));
-
-            String txHash = sendTransaction(
-                    JSON.toJSONString(orderedMap(
-                    "delegatee", dappAddress.getAddressInString(),
-                    "function", "core.delegation.deploy_contracts",
-                    "args", orderedMap("code", codes, "cargs", cargs))),
-                    true
-            );
-            waitForContractDeployed(txHash);
-            // test if the contract been deployed successfully, and get the contract name
-            return getContractCid(config.getMonitorContractName());
-        } catch (Exception e) {
-            throw new RuntimeException(String.format("failed to deploy contract: %s", config.getMonitorContractName()) ,e);
         }
     }
 
@@ -617,8 +582,7 @@ public class DioxideClient {
             crossChainMessageReceipt.setConfirmed(true);
             crossChainMessageReceipt.setSuccessful(true);
             // NOTICE: use sha256 to ensure txHash have 32 bytes
-            // crossChainMessageReceipt.setTxhash(DigestUtil.sha256Hex(txHash));
-            crossChainMessageReceipt.setTxhash(txHash);
+            crossChainMessageReceipt.setTxhash(DigestUtil.sha256Hex(txHash));
             crossChainMessageReceipt.setErrorMsg("");
             getBbcLogger().info("relay am msg by tx {}", txHash);
 
@@ -688,70 +652,6 @@ public class DioxideClient {
             throw new RuntimeException(
                     String.format(
                             "failed to set domain (%s) to SDP %s", localDomain, config.getSdpContractName()
-                    ), e
-            );
-        }
-    }
-
-    public void setMonitorContractToSdp(String monitorContractCidInString) {
-        long monitorContractCid = Long.parseLong(monitorContractCidInString);
-        String monitorContractAddress = String.format("0x%016X:contract", monitorContractCid);
-
-        try {
-            String txHash = sendTransaction(
-                    JSON.toJSONString(orderedMap(
-                    "sender", dioxideAccount.getAddressInString(),
-                    "function", String.format("%s.%s.%s",config.getDappName(), config.getSdpContractName(), "setMonitorContract"),
-                    "args",  orderedMap(
-                            "_monitorContractId", monitorContractCid,
-                            "_monitorAddress",  monitorContractAddress
-                    ))),
-                    true
-            );
-
-            if (StrUtil.isEmpty(txHash)) {
-                throw new RuntimeException("tx hash is empty");
-            }
-            getBbcLogger().info("set monitor contract (cid: {}, address: {}) to SDP {} by tx {}",
-            monitorContractCid, monitorContractAddress, config.getSdpContractName(), txHash);
-            JSONObject resp = getContractState(config.getDappName(), config.getSdpContractName(), DioxideTypes.Scope.Global, "");
-            getBbcLogger().info("result of sdp contract state: \n{}", JSON.toJSONString(resp, SerializerFeature.PrettyFormat));
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format("failed to set monitor contract (cid: %s, address: %s) to SDP %s",
-                    monitorContractCid, monitorContractAddress, config.getSdpContractName()
-                    ), e
-            );
-        }
-    }
-
-    public void setSdpContractToMonitor(String sdpContractCidInString) {
-        long sdpContractCid = Long.parseLong(sdpContractCidInString);
-        String sdpContractAddress = String.format("0x%016X:contract", sdpContractCid);
-
-        try {
-            String txHash = sendTransaction(
-                    JSON.toJSONString(orderedMap(
-                    "sender", dioxideAccount.getAddressInString(),
-                    "function", String.format("%s.%s.%s",config.getDappName(), config.getMonitorContractName(), "setProtocol"),
-                    "args",  orderedMap(
-                            "_sdpContractId", sdpContractCid,
-                            "_sdpAddress",  sdpContractAddress
-                    ))),
-                    true
-            );
-
-            if (StrUtil.isEmpty(txHash)) {
-                throw new RuntimeException("tx hash is empty");
-            }
-            getBbcLogger().info("set sdp contract (cid: {}, address: {}) to Monitor {} by tx {}",
-            sdpContractCid, sdpContractAddress, config.getMonitorContractName(), txHash);
-            JSONObject resp = getContractState(config.getDappName(), config.getMonitorContractName(), DioxideTypes.Scope.Global, "");
-            getBbcLogger().info("result of monitor contract state: \n{}", JSON.toJSONString(resp, SerializerFeature.PrettyFormat));
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format("failed to set sdp contract (cid: %s, address: %s) to Monitor %s",
-                    sdpContractCid, sdpContractAddress, config.getMonitorContractName()
                     ), e
             );
         }

@@ -13,7 +13,6 @@ client = DioxClient()
 dapp01_name = "kt3_01"
 dapp02_name = "ict002"
 app_contract_name = "AppContract"
-monitor_contract_name = "Monitor"
 sdp_contract_name = "SDPMsg"
 am_contract_name = "AuthMsg"
 

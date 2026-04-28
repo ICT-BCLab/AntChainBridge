@@ -339,7 +339,7 @@ public class CommitteePTCService implements IPTCService {
             // 传入的tpbta是特殊构造的tpbta, tpbta.crossChainLane.crossChainChannel.senderDomain字段是"Dioxide"，用来标识这是传递给dioxide链的跨链信息
             log.info("[CommitteePTCService]tpbta.getCrossChainLane().getSenderDomain().getDomain() = {}", tpbta.getCrossChainLane().getSenderDomain().getDomain());
 
-            if (Objects.equals(tpbta.getCrossChainLane().getSenderDomain().getDomain(), "dioxide")) {
+            if (Objects.equals(tpbta.getCrossChainLane().getSenderDomain().getDomain(), "dioxide2")) {
                 // 搜索节点名称带有“monitor”的节点使用, 搜索到一个即可
                 Node monitorNode = nodeMap.values().stream()
                         .filter(Node::isAvailable)

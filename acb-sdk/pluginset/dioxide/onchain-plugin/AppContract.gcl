@@ -1,7 +1,5 @@
 import IContractUsingSDP;
-import IMonitor;
-
-// import Monitor;
+import ISDPMessage;
 
 contract AppContract implements IContractUsingSDP.ContractUsingSDPInterface {
 
@@ -11,11 +9,8 @@ contract AppContract implements IContractUsingSDP.ContractUsingSDPInterface {
     }
 
     @global address owner;
-    // @global uint64 sdpContractId;
-    // @global address sdpAddress;
-    @global uint64 monitorContractId;
-    @global address monitorAddress;
-
+    @global uint64 sdpContractId;
+    @global address sdpAddress;
 
     @global array<uint8> last_uo_msg;
     @global array<uint8> last_msg;
@@ -28,10 +23,6 @@ contract AppContract implements IContractUsingSDP.ContractUsingSDPInterface {
     @global function on_deploy(address _owner) {
         owner = _owner;
         __debug.print("[on_deploy] AppContract deployed - address:", __address(), " id:", __id());
-
-        // monitorContractId = Monitor.__id();
-        // monitorAddress = Monitor.__address();
-        // __debug.print("[on_deploy] monitor Protocol auto-configured - contractId:", monitorContractId, " address:", monitorAddress);
     }
 
     // 辅助函数：将 array<uint8> 转换为 hash（用作 map 键）
@@ -40,28 +31,18 @@ contract AppContract implements IContractUsingSDP.ContractUsingSDPInterface {
         return hash(data);
     }
 
-    // @address function setProtocol(uint64 _protocolContractId, address _protocolAddress) public export {
-    //     __debug.assert(__transaction.get_sender() == owner);
-    //     relay@global (^_protocolContractId, ^_protocolAddress) {
-    //         sdpContractId = _protocolContractId;
-    //         sdpAddress = _protocolAddress;
-    //         __debug.print("[setProtocol] contractId: ", sdpContractId, " address: ", sdpAddress);
-    //     }
-    // }
-
-    @address function setMonitor(uint64 _monitorContractId, address _monitorAddress) public export {
+    @address function setProtocol(uint64 _protocolContractId, address _protocolAddress) public export {
         __debug.assert(__transaction.get_sender() == owner);
-        relay@global (^_monitorContractId, ^_monitorAddress) {
-            monitorContractId = _monitorContractId;
-            monitorAddress = _monitorAddress;
-            __debug.print("[setMonitorProtocol] monitorContractId: ", monitorContractId, " monitorAddress: ", monitorAddress);
+        relay@global (^_protocolContractId, ^_protocolAddress) {
+            sdpContractId = _protocolContractId;
+            sdpAddress = _protocolAddress;
+            __debug.print("[setProtocol] contractId: ", sdpContractId, " address: ", sdpAddress);
         }
     }
 
     // 私有辅助函数：处理接收到的消息
     @global function _processReceivedMessage(array<uint8> senderDomain, array<uint8> author, array<uint8> message, bool isOrdered) {
-        // __debug.assert(__transaction.get_sender() == sdpAddress);
-        __debug.assert(__transaction.get_sender() == monitorAddress);
+        __debug.assert(__transaction.get_sender() == sdpAddress);
 
         // 存储最新消息到对应的变量
         if (isOrdered) {
@@ -104,20 +85,13 @@ contract AppContract implements IContractUsingSDP.ContractUsingSDPInterface {
     // 私有辅助函数：处理发送消息
     @address function _processSendMessage(array<uint8> receiverDomain, array<uint8> receiver, array<uint8> message, bool isOrdered) {
         uint64 senderId = uint64(__id());
-        // ISDPMessage.SDPMessageInterface SDPMsg = ISDPMessage.SDPMessageInterface(sdpContractId);
-        IMonitor.MonitorInterface monitor = IMonitor.MonitorInterface(monitorContractId);
+        ISDPMessage.SDPMessageInterface SDPMsg = ISDPMessage.SDPMessageInterface(sdpContractId);
 
-        // // 直接调用 SDPMsg 的发送函数
-        // if (isOrdered) {
-        //     SDPMsg.sendMessage(receiverDomain, receiver, message, senderId);
-        // } else {
-        //     SDPMsg.sendUnorderedMessage(receiverDomain, receiver, message, senderId);
-        // }
-
-        if(isOrdered) {
-            monitor.sendMonitorMessage(receiverDomain, receiver, message, senderId);
+        // 直接调用 SDPMsg 的发送函数
+        if (isOrdered) {
+            SDPMsg.sendMessage(receiverDomain, receiver, message, senderId);
         } else {
-            monitor.sendUnorderedMonitorMessage(receiverDomain, receiver, message, senderId);
+            SDPMsg.sendUnorderedMessage(receiverDomain, receiver, message, senderId);
         }
 
         // 将发送的消息添加到历史记录

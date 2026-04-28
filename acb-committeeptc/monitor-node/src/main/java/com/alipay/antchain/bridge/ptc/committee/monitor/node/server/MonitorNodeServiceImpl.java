@@ -337,7 +337,7 @@ public class MonitorNodeServiceImpl extends CommitteeNodeServiceGrpc.CommitteeNo
             }
 
             // 为dioxide链定制的逻辑，支持在无实际监管逻辑和PTC逻辑的情形下将跨链信息传递给外部监管系统
-            if (Objects.equals(crossChainLane.getSenderDomain().getDomain(), "dioxide")) {
+            if (Objects.equals(crossChainLane.getSenderDomain().getDomain(), "dioxide2")) {
                 log.info("receive crosschain message from Dioxide, relay to monitor system directly without verification");
                 CommitteeNodeProof proof = endorserService.relayUcpToMonitorSystem(ucp);
                 responseObserver.onNext(
@@ -359,12 +359,15 @@ public class MonitorNodeServiceImpl extends CommitteeNodeServiceGrpc.CommitteeNo
     
                 IAuthMessage authMessage = AuthMessageFactory.createAuthMessage(ucp.getSrcMessage().getMessage());
                 ISDPMessage sdpMessage = SDPMessageFactory.createSDPMessage(authMessage.getPayload());
-                IMonitorMessage monitorMessage = MonitorMessageFactory.createMonitorMessage(sdpMessage.getPayload());
-    
-                CommitteeNodeProof proof = null;
+                IMonitorMessage monitorMessage = tryCreateMonitorMessage(sdpMessage.getPayload());
+
+                CommitteeNodeProof proof;
     
                 // 根据监管字段内容 判断是否需要监管
-                if (monitorMessage.getMonitorType() == MonitorTypeEnum.MONITOR_OPEN.getCode()) {
+                if (ObjectUtil.isNull(monitorMessage)) {
+                    log.info("crosschain message: no monitor layer");
+                    proof = endorserService.verifyUcp(crossChainLane, ucp);
+                } else if (monitorMessage.getMonitorType() == MonitorTypeEnum.MONITOR_OPEN.getCode()) {
                     log.info("crosschain message: need monitor");
                     proof = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp);
                 } else {
@@ -413,6 +416,26 @@ public class MonitorNodeServiceImpl extends CommitteeNodeServiceGrpc.CommitteeNo
         } finally {
             responseObserver.onCompleted();
         }
+    }
+
+    private IMonitorMessage tryCreateMonitorMessage(byte[] payload) {
+        try {
+            IMonitorMessage monitorMessage = MonitorMessageFactory.createMonitorMessage(payload);
+            if (!isSupportedMonitorType(monitorMessage.getMonitorType())) {
+                return null;
+            }
+            return monitorMessage;
+        } catch (RuntimeException e) {
+            log.debug("SDP payload is not a monitor message", e);
+            return null;
+        }
+    }
+
+    private boolean isSupportedMonitorType(int monitorType) {
+        return monitorType == MonitorTypeEnum.MONITOR_CLOSE.getCode()
+                || monitorType == MonitorTypeEnum.MONITOR_OPEN.getCode()
+                || monitorType == MonitorTypeEnum.MONITOR_ROLLBACK.getCode()
+                || monitorType == MonitorTypeEnum.MONITOR_ORDER.getCode();
     }
 
     @Override

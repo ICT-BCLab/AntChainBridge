@@ -20,7 +20,6 @@ import com.alibaba.fastjson.serializer.SerializerFeature;
 import com.alipay.antchain.bridge.commons.bbc.AbstractBBCContext;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.AuthMessageContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.ContractStatusEnum;
-import com.alipay.antchain.bridge.commons.bbc.syscontract.MonitorContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.SDPContract;
 import com.alipay.antchain.bridge.commons.core.base.*;
 import com.alipay.antchain.bridge.commons.core.ptc.PTCTrustRoot;
@@ -51,7 +50,6 @@ public class DioxideBBCService extends AbstractBBCService {
 
     @Override
     public void startup(AbstractBBCContext abstractBBCContext) {
-
         getBBCLogger().info("Dioxide BBCService startup with context: {}",
                 new String(abstractBBCContext.getConfForBlockchainClient()));
 
@@ -98,14 +96,6 @@ public class DioxideBBCService extends AbstractBBCService {
             sdpContract.setContractAddress(this.config.getSdpContractAddressDeployed());
             sdpContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
             this.bbcContext.setSdpContract(sdpContract);
-        }
-
-        if (ObjectUtil.isNull(abstractBBCContext.getMonitorContract())
-                && StrUtil.isNotEmpty(this.config.getMonitorContractAddressDeployed())) {
-            MonitorContract monitorContract = new MonitorContract();
-            monitorContract.setContractAddress(this.config.getMonitorContractAddressDeployed());
-            monitorContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
-            this.bbcContext.setMonitorContract(monitorContract);
         }
 
     }
@@ -189,7 +179,7 @@ public class DioxideBBCService extends AbstractBBCService {
         }
 
         // 2. deploy contract
-        if (checkSdpContractIsDeployed() || checkMonitorContractIsDeployed()) {
+        if (checkSdpContractIsDeployed()) {
             dioxideClient.getConfig().setIsPreContractDeployed(true);
         }
         long amContractCid = dioxideClient.deployAuthMsgContract();
@@ -215,7 +205,7 @@ public class DioxideBBCService extends AbstractBBCService {
         }
 
         // 2. deploy contract
-        if (checkAmContractIsDeployed() || checkMonitorContractIsDeployed()) {
+        if (checkAmContractIsDeployed()) {
             dioxideClient.getConfig().setIsPreContractDeployed(true);
         }
         long sdpContractCid = dioxideClient.deploySdpContract();
@@ -289,8 +279,7 @@ public class DioxideBBCService extends AbstractBBCService {
             JSONObject valState = dioxideClient.getContractState(this.config.getDappName(), config.getSdpContractName(), DioxideTypes.Scope.Global, "")
                     .getJSONObject("State");
             if (!"0".equals(valState.getString("amContractId"))
-                    && CollUtil.isNotEmpty(valState.getJSONArray("localDomain"))
-                    && !"0".equals(valState.getString("monitorContractId"))) {
+                    && CollUtil.isNotEmpty(valState.getJSONArray("localDomain"))) {
                 this.bbcContext.getSdpContract().setStatus(ContractStatusEnum.CONTRACT_READY);
             }
         } catch (Exception e) {
@@ -320,8 +309,7 @@ public class DioxideBBCService extends AbstractBBCService {
                     .getJSONObject("State");
             
             if (!"0".equals(valState.getString("amContractId"))
-                    && CollUtil.isNotEmpty(valState.getJSONArray("localDomain"))
-                    && !"0".equals(valState.getString("monitorContractId"))) {
+                    && CollUtil.isNotEmpty(valState.getJSONArray("localDomain"))) {
                 this.bbcContext.getSdpContract().setStatus(ContractStatusEnum.CONTRACT_READY);
             }
         } catch (Exception e) {
@@ -331,6 +319,32 @@ public class DioxideBBCService extends AbstractBBCService {
                             this.bbcContext.getSdpContract().getContractAddress()
                     ), e);
         }
+
+    }
+
+    @Override
+    public void setMonitorContract(String contractAddress) {
+
+    }
+
+    @Override
+    public void setProtocolInMonitor(String contractAddress) {
+
+    }
+
+    @Override
+    public void setMonitorControl(int monitorType) {
+
+    }
+
+    @Override
+    public void setPtcHubInMonitorVerifier(String contractAddress) {
+
+    }
+
+    @Override
+    public CrossChainMessageReceipt relayMonitorOrder(String committeeId, String signAlgo, byte[] rawProof, byte[] rawMonitorOrder) {
+        return null;
     }
 
     @Override
@@ -348,114 +362,6 @@ public class DioxideBBCService extends AbstractBBCService {
 
         return dioxideClient.relayMsgToAuthMsg(rawMessage);
 
-    }
-
-    @Override
-    public void setupMonitorContract() {
-        // 1. check context
-        if (ObjectUtil.isNull(this.bbcContext)) {
-            throw new RuntimeException("empty bbc context");
-        }
-        if (checkMonitorContractIsDeployed()) {
-            // If the contract has been pre-deployed and the contract address is configured in the configuration file,
-            // there is no need to redeploy.
-            return;
-        }
-
-        // 2. deploy contract
-        if (checkAmContractIsDeployed() || checkSdpContractIsDeployed()) {
-            dioxideClient.getConfig().setIsPreContractDeployed(true);
-        }
-
-        long monitorContractCid = dioxideClient.deployMonitorContract();
-        MonitorContract monitorContract = new MonitorContract();
-        monitorContract.setContractAddress(String.valueOf(monitorContractCid));
-        monitorContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
-        bbcContext.setMonitorContract(monitorContract);
-
-        getBBCLogger().info("setup monitor contract successful: contract_name:{}.{}",
-                config.getDappName(), config.getMonitorContractName());
-    }
-
-    @Override
-    public void setMonitorContract(String contractAddress) {
-        // 1. check context
-        if (ObjectUtil.isNull(this.bbcContext)) {
-            throw new RuntimeException("empty bbc context");
-        }
-        if (StrUtil.isEmpty(this.bbcContext.getSdpContract().getContractAddress())) {
-            throw new RuntimeException("none sdp contract address");
-        }
-
-        dioxideClient.setMonitorContractToSdp(contractAddress);
-
-        // 4. update sdp contract status
-        try {
-            JSONObject valState = dioxideClient.getContractState(this.config.getDappName(), config.getSdpContractName(), DioxideTypes.Scope.Global, "")
-                    .getJSONObject("State");
-
-            System.out.println("amContractId: " + valState.getString("amContractId"));
-            System.out.println("amContractId(bool): " + !"0".equals(valState.getString("amContractId")));
-            System.out.println("localDomain: " + valState.getJSONArray("localDomain"));
-            System.out.println("localDomain(bool): " + CollUtil.isNotEmpty(valState.getJSONArray("localDomain")));
-            System.out.println("monitorContractId: " + valState.getString("monitorContractId"));
-            System.out.println("monitorContractId(bool): " + !"0".equals(valState.getString("monitorContractId")));
-            
-            if (!"0".equals(valState.getString("amContractId"))
-                    && CollUtil.isNotEmpty(valState.getJSONArray("localDomain"))
-                    && !"0".equals(valState.getString("monitorContractId"))) {
-                this.bbcContext.getSdpContract().setStatus(ContractStatusEnum.CONTRACT_READY);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format(
-                            "failed to update sdp contract status (address: %s)",
-                            this.bbcContext.getSdpContract().getContractAddress()
-                    ), e);
-        }
-    }
-
-    @Override
-    public void setProtocolInMonitor(String contractAddress) {
-        // 1. check context
-        if (ObjectUtil.isNull(this.bbcContext)) {
-            throw new RuntimeException("empty bbc context");
-        }
-        if (StrUtil.isEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
-            throw new RuntimeException("none monitor contract address");
-        }
-
-        dioxideClient.setSdpContractToMonitor(contractAddress);
-
-        // 4. update monitor contract status
-        try {
-            JSONObject valState = dioxideClient.getContractState(this.config.getDappName(), config.getMonitorContractName(), DioxideTypes.Scope.Global, "")
-                    .getJSONObject("State");
-            if (!"0".equals(valState.getString("sdpContractId"))) {
-                this.bbcContext.getMonitorContract().setStatus(ContractStatusEnum.CONTRACT_READY);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format(
-                            "failed to update monitor contract status (address: %s)",
-                            this.bbcContext.getMonitorContract().getContractAddress()
-                    ), e);
-        }
-    }
-
-    @Override
-    public void setMonitorControl(int monitorType) {
-
-    }
-
-    @Override
-    public void setPtcHubInMonitorVerifier(String contractAddress) {
-
-    }
-
-    @Override
-    public CrossChainMessageReceipt relayMonitorOrder(String committeeId, String signAlgo, byte[] rawProof, byte[] rawMonitorOrder) {
-        return null;
     }
 
     @Override
@@ -530,17 +436,12 @@ public class DioxideBBCService extends AbstractBBCService {
 
     private boolean checkAmContractIsDeployed() {
         return ObjectUtil.isNotNull(this.bbcContext.getAuthMessageContract())
-        && StrUtil.isNotEmpty(this.bbcContext.getAuthMessageContract().getContractAddress());
+                && StrUtil.isNotEmpty(this.bbcContext.getAuthMessageContract().getContractAddress());
     }
 
     private boolean checkSdpContractIsDeployed() {
         return ObjectUtil.isNotNull(this.bbcContext.getSdpContract())
-        && StrUtil.isNotEmpty(this.bbcContext.getSdpContract().getContractAddress());
-    }
-
-    private boolean checkMonitorContractIsDeployed() {
-        return ObjectUtil.isNotNull(this.bbcContext.getMonitorContract())
-        && StrUtil.isNotEmpty(this.bbcContext.getMonitorContract().getContractAddress());
+                && StrUtil.isNotEmpty(this.bbcContext.getSdpContract().getContractAddress());
     }
 
     private boolean isByteArrayZero(byte[] bytes) {

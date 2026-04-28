@@ -42,7 +42,7 @@ public class MonitorOrderClient {
         // 发送请求
         RecvMonitorOrderRequest request = RecvMonitorOrderRequest.newBuilder().setMonitorOrder(
                 MonitorOrder.newBuilder()
-                        .setProduct("ethereum2")
+                        .setProduct("ethereum3")
                         .setDomain("eth01")
                         .setMonitorOrderType(Long.parseLong("1001" + "0000" + "000000000000000000000000", 2))
                         .setSenderDomain("eth01")

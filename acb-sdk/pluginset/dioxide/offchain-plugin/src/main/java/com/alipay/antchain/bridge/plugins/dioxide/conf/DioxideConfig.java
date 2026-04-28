@@ -38,9 +38,6 @@ public class DioxideConfig {
     private String sdpContractAddressDeployed;
 
     @JSONField
-    private String monitorContractAddressDeployed;
-
-    @JSONField
     private String dappName = "AcbDapp";
 
     @JSONField
@@ -48,9 +45,6 @@ public class DioxideConfig {
 
     @JSONField
     private String sdpContractName = "SDPMsg";
-
-    @JSONField
-    private String monitorContractName = "Monitor";
 
     @JSONField
     private Boolean isPreContractDeployed = false;

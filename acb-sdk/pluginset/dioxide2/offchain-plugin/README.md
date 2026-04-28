@@ -1,6 +1,6 @@
 <div align="center">
   <img alt="am logo" src="https://gw.alipayobjects.com/zos/bmw-prod/3ee4adc7-1960-4dbf-982e-522ac135a0c0.svg" width="250" >
-  <h1 align="center">Dioxide Plugin</h1>
+  <h1 align="center">Dioxide2 Plugin</h1>
   <p align="center">
     <a href="http://makeapullrequest.com">
       <img alt="pull requests welcome badge" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat">
@@ -26,7 +26,7 @@
 
 ## 构建
 
-在offchain-plugin下通过`mvn clean package -DskipTests`编译插件Jar包，可以在target下找到`dioxide-acb-plugin-1.0.0-plugin.jar`
+在offchain-plugin下通过`mvn clean package -DskipTests`编译插件Jar包，可以在target下找到`dioxide2-acb-plugin-1.0.0-plugin.jar`
 
 ## 使用
 
@@ -34,7 +34,7 @@
 
 ### 配置文件
 
-当在AntChainBridge的Relayer服务注册dioxide时，需要指定PS和链类型（dioxide），同时需要提交一个dioxide链的配置。
+当在AntChainBridge的Relayer服务注册dioxide2时，需要指定PS和链类型（dioxide2），同时需要提交一个dioxide链的配置。
 
 dioxide链的配置文件`dioxide.json`主要包括节点网络连接信息和用户信息，配置文件大致如下：
 

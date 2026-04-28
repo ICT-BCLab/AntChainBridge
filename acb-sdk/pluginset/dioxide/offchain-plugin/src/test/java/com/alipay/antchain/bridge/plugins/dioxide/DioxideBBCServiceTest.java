@@ -12,7 +12,6 @@ import com.alipay.antchain.bridge.commons.bbc.AbstractBBCContext;
 import com.alipay.antchain.bridge.commons.bbc.DefaultBBCContext;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.AuthMessageContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.ContractStatusEnum;
-import com.alipay.antchain.bridge.commons.bbc.syscontract.MonitorContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.SDPContract;
 import com.alipay.antchain.bridge.commons.core.am.AuthMessageFactory;
 import com.alipay.antchain.bridge.commons.core.am.IAuthMessage;
@@ -20,13 +19,6 @@ import com.alipay.antchain.bridge.commons.core.base.CrossChainMessage;
 import com.alipay.antchain.bridge.commons.core.base.CrossChainMessageReceipt;
 import com.alipay.antchain.bridge.commons.core.sdp.ISDPMessage;
 import com.alipay.antchain.bridge.commons.core.sdp.SDPMessageFactory;
-import com.alipay.antchain.bridge.commons.core.monitor.IMonitorMessage;
-import com.alipay.antchain.bridge.commons.core.monitor.MonitorMessageFactory;
-
-import com.alipay.antchain.bridge.commons.core.ptc.ThirdPartyBlockchainTrustAnchorV1;
-import com.alipay.antchain.bridge.commons.core.base.CrossChainLane;
-import com.alipay.antchain.bridge.commons.core.base.CrossChainDomain;
-
 import com.alipay.antchain.bridge.commons.utils.codec.tlv.TLVTypeEnum;
 import com.alipay.antchain.bridge.commons.utils.codec.tlv.TLVUtils;
 import com.alipay.antchain.bridge.commons.utils.codec.tlv.annotation.TLVField;
@@ -44,7 +36,6 @@ import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
 
-import java.beans.Transient;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -95,8 +86,6 @@ public class DioxideBBCServiceTest {
 
         random_dapp_name = ranDomDappId();
         log.info("random_dapp_name: {}", random_dapp_name);
-
-        System.out.println(dioxideBBCService.getBBCLogger().getClass());
     }
 
     public static String ranDomDappId() {
@@ -150,16 +139,14 @@ public class DioxideBBCServiceTest {
         DioxideBBCService bbcServiceTmp = new DioxideBBCService();
         bbcServiceTmp.startup(mockValidCtx);
 
-        // set up am and sdp and monitor
+        // set up am and sdp
         bbcServiceTmp.setupAuthMessageContract();
         bbcServiceTmp.setupSDPMessageContract();
-        bbcServiceTmp.setupMonitorContract();
         String amAddr = bbcServiceTmp.getContext().getAuthMessageContract().getContractAddress();
         String sdpAddr = bbcServiceTmp.getContext().getSdpContract().getContractAddress();
-        String monitorAddr = bbcServiceTmp.getContext().getMonitorContract().getContractAddress();
 
         // start up success
-        AbstractBBCContext ctx = mockValidCtxWithPreDeployedContracts(amAddr, sdpAddr, monitorAddr);
+        AbstractBBCContext ctx = mockValidCtxWithPreDeployedContracts(amAddr, sdpAddr);
         DioxideBBCService dioxideBBCService = new DioxideBBCService();
         dioxideBBCService.startup(ctx);
 
@@ -167,8 +154,6 @@ public class DioxideBBCServiceTest {
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, dioxideBBCService.getBbcContext().getAuthMessageContract().getStatus());
         Assert.assertEquals(sdpAddr, dioxideBBCService.getBbcContext().getSdpContract().getContractAddress());
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, dioxideBBCService.getBbcContext().getSdpContract().getStatus());
-        Assert.assertEquals(monitorAddr, dioxideBBCService.getBbcContext().getMonitorContract().getContractAddress());
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, dioxideBBCService.getBbcContext().getMonitorContract().getStatus());
     }
 
     @Test
@@ -178,24 +163,20 @@ public class DioxideBBCServiceTest {
         DioxideBBCService bbcServiceTmp = new DioxideBBCService();
         bbcServiceTmp.startup(mockValidCtx);
 
-        // set up am and sdp and monitor
+        // set up am and sdp
         bbcServiceTmp.setupAuthMessageContract();
         bbcServiceTmp.setupSDPMessageContract();
-        bbcServiceTmp.setupMonitorContract();
         String amAddr = bbcServiceTmp.getContext().getAuthMessageContract().getContractAddress();
         String sdpAddr = bbcServiceTmp.getContext().getSdpContract().getContractAddress();
-        String monitorAddr = bbcServiceTmp.getContext().getMonitorContract().getContractAddress();
 
         // start up success
         DioxideBBCService dioxideBBCService = new DioxideBBCService();
-        AbstractBBCContext ctx = mockValidCtxWithPreReadyContracts(amAddr, sdpAddr, monitorAddr);
+        AbstractBBCContext ctx = mockValidCtxWithPreReadyContracts(amAddr, sdpAddr);
         dioxideBBCService.startup(ctx);
         Assert.assertEquals(amAddr, dioxideBBCService.getBbcContext().getAuthMessageContract().getContractAddress());
         Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, dioxideBBCService.getBbcContext().getAuthMessageContract().getStatus());
         Assert.assertEquals(sdpAddr, dioxideBBCService.getBbcContext().getSdpContract().getContractAddress());
         Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, dioxideBBCService.getBbcContext().getSdpContract().getStatus());
-        Assert.assertEquals(monitorAddr, dioxideBBCService.getBbcContext().getMonitorContract().getContractAddress());
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, dioxideBBCService.getBbcContext().getMonitorContract().getStatus());
     }
 
     @Test
@@ -251,18 +232,6 @@ public class DioxideBBCServiceTest {
     }
 
     @Test
-    public void testSetupMonitorContract() {
-        AbstractBBCContext mockValidCtx = mockValidCtx();
-        dioxideBBCService.startup(mockValidCtx);
-
-        dioxideBBCService.setupMonitorContract();
-
-        AbstractBBCContext ctx = dioxideBBCService.getContext();
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getMonitorContract().getStatus());
-        log.info("monitor contract cid: {}", ctx.getMonitorContract().getContractAddress());
-    }
-
-    @Test
     public void testQuerySDPMessageSeq() {
         AbstractBBCContext mockValidCtx = mockValidCtx();
         dioxideBBCService.startup(mockValidCtx);
@@ -284,22 +253,19 @@ public class DioxideBBCServiceTest {
     }
 
     @Test
-    public void testSetAmContractAndLocalDomainAndMonitorContract() {
+    public void testSetAmContractAndLocalDomain() {
         AbstractBBCContext mockValidCtx = mockValidCtx();
         dioxideBBCService.startup(mockValidCtx);
 
         // set up am and sdp
         dioxideBBCService.setupAuthMessageContract();
         dioxideBBCService.setupSDPMessageContract();
-        dioxideBBCService.setupMonitorContract();
 
         AbstractBBCContext ctx = dioxideBBCService.getContext();
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getAuthMessageContract().getStatus());
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getSdpContract().getStatus());
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getMonitorContract().getStatus());
         log.info("am contract cid: {}", ctx.getAuthMessageContract().getContractAddress());
         log.info("sdp contract cid: {}", ctx.getSdpContract().getContractAddress());
-        log.info("monitor contract cid: {}", ctx.getMonitorContract().getContractAddress());
 
         // set am to sdp
         dioxideBBCService.setAmContract(ctx.getAuthMessageContract().getContractAddress());
@@ -313,37 +279,7 @@ public class DioxideBBCServiceTest {
 
         // check contract status
         ctx = dioxideBBCService.getContext();
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getSdpContract().getStatus());
-
-        // set monitor to sdp
-        dioxideBBCService.setMonitorContract(ctx.getMonitorContract().getContractAddress());
-
-        // check contract status
-        ctx = dioxideBBCService.getContext();
         Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, ctx.getSdpContract().getStatus());
-    }
-
-    @Test
-    public void testSetProtocolToMonitor() {
-        AbstractBBCContext mockValidCtx = mockValidCtx();
-        dioxideBBCService.startup(mockValidCtx);
-
-        // set up monitor and sdp
-        dioxideBBCService.setupSDPMessageContract();
-        dioxideBBCService.setupMonitorContract();
-
-        AbstractBBCContext ctx = dioxideBBCService.getContext();
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getSdpContract().getStatus());
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getMonitorContract().getStatus());
-        log.info("sdp contract cid: {}", ctx.getSdpContract().getContractAddress());
-        log.info("monitor contract cid: {}", ctx.getMonitorContract().getContractAddress());
-
-        // set protocol to monitor
-        dioxideBBCService.setProtocolInMonitor(ctx.getSdpContract().getContractAddress());
-
-        // check contract status
-        ctx = dioxideBBCService.getContext();
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, ctx.getMonitorContract().getStatus());
     }
 
     @Test
@@ -500,13 +436,6 @@ public class DioxideBBCServiceTest {
         Assert.assertArrayEquals(receiveUnorderedMsg, toIntArray(TEST_MESSAGE.getBytes(StandardCharsets.UTF_8)));
     }
 
-    @Test
-    public void testGenerateHexRawMsg() throws Exception {
-        byte[] rawMsg = getRawMsgFromRelayer();
-        String hexString = HexUtil.encodeHexStr(rawMsg);
-        System.out.println(hexString);
-    }
-
     @SneakyThrows
     private void setupBbc() {
         if (setupBBC) {
@@ -516,18 +445,15 @@ public class DioxideBBCServiceTest {
         AbstractBBCContext mockValidCtx = mockValidCtx();
         dioxideBBCService.startup(mockValidCtx);
 
-        // set up am and sdp and monitor
+        // set up am and sdp
         dioxideBBCService.setupAuthMessageContract();
         dioxideBBCService.setupSDPMessageContract();
-        dioxideBBCService.setupMonitorContract();
 
         AbstractBBCContext ctx = dioxideBBCService.getContext();
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getAuthMessageContract().getStatus());
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getSdpContract().getStatus());
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getMonitorContract().getStatus());
         log.info("am contract cid: {}", ctx.getAuthMessageContract().getContractAddress());
         log.info("sdp contract cid: {}", ctx.getSdpContract().getContractAddress());
-        log.info("monitor contract cid: {}", ctx.getMonitorContract().getContractAddress());
 
         // set am to sdp
         dioxideBBCService.setAmContract(ctx.getAuthMessageContract().getContractAddress());
@@ -541,13 +467,6 @@ public class DioxideBBCServiceTest {
 
         // check contract status
         ctx = dioxideBBCService.getContext();
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getSdpContract().getStatus());
-
-        // set monitor to sdp
-        dioxideBBCService.setMonitorContract(ctx.getMonitorContract().getContractAddress());
-
-        // check contract status
-        ctx = dioxideBBCService.getContext();
         Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, ctx.getSdpContract().getStatus());
 
         // set protocol to am
@@ -556,13 +475,6 @@ public class DioxideBBCServiceTest {
         // check contract status
         ctx = dioxideBBCService.getContext();
         Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, ctx.getAuthMessageContract().getStatus());
-
-        // set protocol to monitor
-        dioxideBBCService.setProtocolInMonitor(ctx.getSdpContract().getContractAddress());
-
-        // check contract status
-        ctx = dioxideBBCService.getContext();
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, ctx.getMonitorContract().getStatus());
 
         // set up app
         String dappContractSource = new String(
@@ -574,21 +486,21 @@ public class DioxideBBCServiceTest {
         )));
         log.info("setup dapp, cid: {}", dappCid);
 
-        // set monitor to dapp
-        long monitorCid = Long.parseLong(ctx.getMonitorContract().getContractAddress());
-        String monitorAddress = String.format("0x%016X:contract", monitorCid);
+        // set protocol to dapp
+        long protocolCid = Long.parseLong(ctx.getSdpContract().getContractAddress());
+        String protocolAddress = String.format("0x%016X:contract", protocolCid);
         dioxideBBCService.getDioxideClient().sendTransaction(
                 JSON.toJSONString(Map.of(
                         "sender", dioxideBBCService.getDioxideClient().getDioxideAccount().getAddressInString(),
-                        "function", String.format("%s.%s.setMonitor", random_dapp_name, APP_CONTRACT),
+                        "function", String.format("%s.%s.setProtocol", random_dapp_name, APP_CONTRACT),
                         "args", Map.of(
-                                "_monitorContractId", monitorCid,
-                                "_monitorAddress", monitorAddress
+                                "_protocolContractId", protocolCid,
+                                "_protocolAddress", protocolAddress
                         )
                 )),
                 true
         );
-        log.info("set monitor to app contract");
+        log.info("set protocol to app contract");
 
         setupBBC = true;
     }
@@ -614,7 +526,7 @@ public class DioxideBBCServiceTest {
         return mockCtx;
     }
 
-    private AbstractBBCContext mockValidCtxWithPreDeployedContracts(String amAddr, String sdpAddr, String monitorAddr) {
+    private AbstractBBCContext mockValidCtxWithPreDeployedContracts(String amAddr, String sdpAddr) {
         DioxideConfig mockConf = new DioxideConfig();
         mockConf.setRpcUrl(RPC_URL);
         mockConf.setWsRpc(WS_RPC);
@@ -624,7 +536,6 @@ public class DioxideBBCServiceTest {
 
         mockConf.setAmContractAddressDeployed(amAddr);
         mockConf.setSdpContractAddressDeployed(sdpAddr);
-        mockConf.setMonitorContractAddressDeployed(monitorAddr);
 
         AbstractBBCContext mockCtx = new DefaultBBCContext();
         mockCtx.setConfForBlockchainClient(mockConf.toJsonString().getBytes());
@@ -632,7 +543,7 @@ public class DioxideBBCServiceTest {
         return mockCtx;
     }
 
-    private AbstractBBCContext mockValidCtxWithPreReadyContracts(String amAddr, String sdpAddr, String monitorAddr) {
+    private AbstractBBCContext mockValidCtxWithPreReadyContracts(String amAddr, String sdpAddr) {
         DioxideConfig mockConf = new DioxideConfig();
         mockConf.setRpcUrl(RPC_URL);
         mockConf.setWsRpc(WS_RPC);
@@ -642,7 +553,6 @@ public class DioxideBBCServiceTest {
 
         mockConf.setAmContractAddressDeployed(amAddr);
         mockConf.setSdpContractAddressDeployed(sdpAddr);
-        mockConf.setMonitorContractAddressDeployed(monitorAddr);
 
         AbstractBBCContext mockCtx = new DefaultBBCContext();
         mockCtx.setConfForBlockchainClient(mockConf.toJsonString().getBytes());
@@ -655,10 +565,6 @@ public class DioxideBBCServiceTest {
         sdpContract.setContractAddress(mockConf.getSdpContractAddressDeployed());
         sdpContract.setStatus(ContractStatusEnum.CONTRACT_READY);
         mockCtx.setSdpContract(sdpContract);
-        MonitorContract monitorContract = new MonitorContract();
-        monitorContract.setContractAddress(mockConf.getMonitorContractAddressDeployed());
-        monitorContract.setStatus(ContractStatusEnum.CONTRACT_READY);
-        mockCtx.setMonitorContract(monitorContract);
 
         return mockCtx;
     }
@@ -679,20 +585,13 @@ public class DioxideBBCServiceTest {
     private byte[] getRawMsgFromRelayer() throws IOException {
         String dappCidHex = String.format("%064x", dappCid);
 
-        IMonitorMessage monitorMessage = MonitorMessageFactory.createMonitorMessage(
-                1,
-                1,
-                "667788",
-                TEST_MESSAGE.getBytes(StandardCharsets.UTF_8)
-        );
-        
         ISDPMessage sdpMessage = SDPMessageFactory.createSDPMessage(
                 1,
                 new byte[32],
                 CHAIN_DOMAIN,
                 HexUtil.decodeHex(dappCidHex),
                 -1,
-                monitorMessage.encode()
+                TEST_MESSAGE.getBytes(StandardCharsets.UTF_8)
         );
 
         IAuthMessage am = AuthMessageFactory.createAuthMessage(
@@ -725,15 +624,6 @@ public class DioxideBBCServiceTest {
 
         return stream.toByteArray();
     }
-
-
-    @Test
-    public void testTba() throws IOException {
-        ThirdPartyBlockchainTrustAnchorV1 tpBtaOnlyRepresentDioxide = new ThirdPartyBlockchainTrustAnchorV1();
-        tpBtaOnlyRepresentDioxide.setCrossChainLane(new CrossChainLane(new CrossChainDomain("dioxide")));
-        System.out.println(tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain());
-    }
-
 
     @Getter
     @Setter

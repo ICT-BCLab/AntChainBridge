@@ -18,6 +18,4 @@ interface ISubProtocol {
      * @param newAmContract the address of the AuthMessage contract.
      */
     function setAmContract(address newAmContract) external;
-
-    function setMonitorContract(address newMonitorAddress) external;
 }

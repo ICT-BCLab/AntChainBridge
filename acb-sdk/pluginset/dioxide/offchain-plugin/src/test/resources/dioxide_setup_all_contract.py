@@ -15,7 +15,6 @@ BASE_DAPP = "kt3_01"
 CROSS_TRANSFER_DAPP = "cc_02"
 TRANSFER_CONTRACT_NAME = "CrossTransfer"
 APP_CONTRACT_NAME = "AppContract"
-MONITOR_CONTRACT_NAME = "Monitor"
 SDP_CONTRACT_NAME = "SDPMsg"
 AM_CONTRACT_NAME = "AuthMsg"
 
@@ -36,7 +35,6 @@ class Deployer:
         self.cross_transfer_dapp = CROSS_TRANSFER_DAPP
         self.transfer_contract_name = TRANSFER_CONTRACT_NAME
         self.app_contract_name = APP_CONTRACT_NAME
-        self.monitor_contract_name = MONITOR_CONTRACT_NAME
         self.sdp_contract_name = SDP_CONTRACT_NAME
         self.am_contract_name = AM_CONTRACT_NAME
         self.deployer = DioxAccount.from_key(DEPLOYER_PK)
@@ -181,13 +179,10 @@ class Deployer:
 
             contracts = {
                 os.path.join(self.contracts_dir, "interfaces", "IAuthMessage.gcl"): None,
-                os.path.join(self.contracts_dir, "interfaces", "IContractUsingMonitor.gcl"): None,
                 os.path.join(self.contracts_dir, "interfaces", "IContractUsingSDP.gcl"): None,
-                os.path.join(self.contracts_dir, "interfaces", "IMonitor.gcl"): None,
                 os.path.join(self.contracts_dir, "interfaces", "ISDPMessage.gcl"): None,
                 os.path.join(self.contracts_dir, "interfaces", "ISubProtocol.gcl"): None,
                 os.path.join(self.contracts_dir, "lib", "am", "AMLib.gcl"): None,
-                os.path.join(self.contracts_dir, "lib", "monitor", "MonitorLib.gcl"): None,
                 os.path.join(self.contracts_dir, "lib", "sdp", "SDPLib.gcl"): None,
                 os.path.join(self.contracts_dir, "lib", "utils", "BytesToTypes.gcl"): None,
                 os.path.join(self.contracts_dir, "lib", "utils", "SizeOf.gcl"): None,
@@ -195,34 +190,22 @@ class Deployer:
                 os.path.join(self.contracts_dir, "lib", "utils", "TypesToBytes.gcl"): None,
                 os.path.join(self.contracts_dir, "lib", "utils", "Utils.gcl"): None,
                 os.path.join(self.contracts_dir, "AuthMsg.gcl"): {"_owner": self.deployer.address, "_relayer": self.deployer.address},
-                os.path.join(self.contracts_dir, "SDPMsg.gcl"): {"_owner": self.deployer.address},
-                os.path.join(self.contracts_dir, "Monitor.gcl"): {"_owner": self.deployer.address}
+                os.path.join(self.contracts_dir, "SDPMsg.gcl"): {"_owner": self.deployer.address}
             }
 
             self.deploy_contracts_to_dapp(self.client, self.deployer, self.base_dapp, contracts)
             self._ensure_client()
             auth_msg_contract_info = self.client.get_contract_info(self.base_dapp, self.am_contract_name)
             sdp_msg_contract_info = self.client.get_contract_info(self.base_dapp, self.sdp_contract_name)
-            monitor_msg_contract_info = self.client.get_contract_info(self.base_dapp, self.monitor_contract_name)
 
             am_cid = auth_msg_contract_info.get("ContractVersionID")
             am_address = f"0x{am_cid:016X}:contract"
             sdp_cid = sdp_msg_contract_info.get("ContractVersionID")
             sdp_address = f"0x{sdp_cid:016X}:contract"
-            monitor_cid = monitor_msg_contract_info.get("ContractVersionID")
-            monitor_address = f"0x{monitor_cid:016X}:contract"
-
-            title_info("[Monitor]set sdp to monitor")
-            self.client.send_transaction(self.deployer, f"{self.base_dapp}.{self.monitor_contract_name}.setProtocol", {"_sdpContractId": sdp_cid, "_sdpAddress": sdp_address}, is_sync=False)
-            print("[Monitor]set sdp to monitor: " + sdp_address)
 
             title_info("[SDP]set am to sdp")
             self.client.send_transaction(self.deployer, f"{self.base_dapp}.{self.sdp_contract_name}.setAmContract", {"_amContractId": am_cid, "_amAddress": am_address}, is_sync=False)
             print("[SDP]set am to sdp: " + am_address)
-
-            title_info("[SDP]set monitor to sdp")
-            self.client.send_transaction(self.deployer, f"{self.base_dapp}.{self.sdp_contract_name}.setMonitorContract", {"_monitorContractId": monitor_cid, "_monitorAddress": monitor_address}, is_sync=False)
-            print("[SDP]set monitor to sdp: " + monitor_address)
 
             # relayer会在注册的时候重新设置的
             title_info("[SDP]set domain to sdp")
@@ -247,10 +230,10 @@ class Deployer:
             self.deploy_contracts_to_dapp(self.client, self.deployer, self.base_dapp, contracts, compile_time=10)
             title_info("setup AppContract")
             self._ensure_client()
-            monitor_msg_contract_info = self.client.get_contract_info(self.base_dapp, self.monitor_contract_name)
-            monitor_cid = monitor_msg_contract_info.get("ContractVersionID")
-            monitor_address = f"0x{monitor_cid:016X}:contract"
-            tx = self.client.send_transaction(self.deployer, f"{self.base_dapp}.{self.app_contract_name}.setMonitor", {"_monitorContractId": monitor_cid, "_monitorAddress": monitor_address}, is_sync=True)
+            sdp_contract_info = self.client.get_contract_info(self.base_dapp, self.sdp_contract_name)
+            sdp_cid = sdp_contract_info.get("ContractVersionID")
+            sdp_address = f"0x{sdp_cid:016X}:contract"
+            tx = self.client.send_transaction(self.deployer, f"{self.base_dapp}.{self.app_contract_name}.setProtocol", {"_protocolContractId": sdp_cid, "_protocolAddress": sdp_address}, is_sync=True)
             if not tx:
                 self._abort("setProtocol failed", self.app_contract_name)
             print(f"{self.base_dapp} status")
@@ -347,8 +330,6 @@ class Deployer:
         print(json.dumps(self.client.get_contract_state(self.base_dapp, self.am_contract_name, Scope.Global, None).to_dict(), indent=4, ensure_ascii=False))
         print("[sdp status]")
         print(json.dumps(self.client.get_contract_state(self.base_dapp, self.sdp_contract_name, Scope.Global, None).to_dict(), indent=4, ensure_ascii=False))
-        print("[monitor status]")
-        print(json.dumps(self.client.get_contract_state(self.base_dapp, self.monitor_contract_name, Scope.Global, None).to_dict(), indent=4, ensure_ascii=False))
 
         auth_msg_contract_info = self.client.get_contract_info(self.base_dapp, self.am_contract_name)
         am_cid = auth_msg_contract_info.get("ContractVersionID")
@@ -361,12 +342,6 @@ class Deployer:
         sdp_address = f"0x{sdp_cid:016X}:contract"
         print("sdp cid: " + str(sdp_cid))
         print("sdp addr: " + sdp_address)
-
-        monitor_msg_contract_info = self.client.get_contract_info(self.base_dapp, self.monitor_contract_name)
-        monitor_cid = monitor_msg_contract_info.get("ContractVersionID")
-        monitor_address = f"0x{monitor_cid:016X}:contract"
-        print("monitor cid: " + str(monitor_cid))
-        print("monitor addr: " + monitor_address)
 
         app_contract_info = self.client.get_contract_info(self.base_dapp, self.app_contract_name)
         app_cid = app_contract_info.get("ContractVersionID")
