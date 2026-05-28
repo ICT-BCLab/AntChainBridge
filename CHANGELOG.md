@@ -1,5 +1,8 @@
 # 本分支新增功能总结
 
+## 2026.05.28 插件优化
+- 将dioxide/dioxide2插件relayMsgToAuthMsg的默认gaslimit调整为10000000，避免项目调试出现gas不够的情况
+
 ## 2026.04.28 插件更新与系统优化
 - 将dioxide插件和以太坊插件拆成dioxide、dioxide2、ethereum2、ethereum3，其中dioxide和ethereum2插件不保留监管层，dioxide2和ethereum3保留监管层，同时系统只对将使用dioxide2发出的跨链消息转发至课题四监管系统，而不对dioxide作处理。
 - 优化监管节点兼容性，让其支持处理不含监管层的插件转发的消息。

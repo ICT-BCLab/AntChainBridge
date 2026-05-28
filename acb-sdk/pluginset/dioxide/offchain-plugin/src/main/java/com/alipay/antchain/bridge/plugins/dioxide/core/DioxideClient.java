@@ -570,7 +570,8 @@ public class DioxideClient {
                     "function", String.format("%s.%s.%s",config.getDappName(), config.getAmContractName(), "recvPkgFromRelayer"),
                     "args",  orderedMap(
                             "pkg", toIntArray(rawMessage)
-                    ))),
+                    ),
+                    "gaslimit", 10000000)),
                     true
             );
 
