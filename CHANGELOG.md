@@ -1,5 +1,11 @@
 # 本分支新增功能总结
 
+## 2026.05.29 Dioxide插件txhash存储优化
+- 调整dioxide/dioxide2插件读取跨链消息时blockhash和txhash的处理方式，不再对Dioxide原始hash做sha256或hex解码，而是按UTF-8字节传给relayer，使数据库中存储的hex值可以还原出Dioxide链上的原始hash。
+- 将relayer中ucp_pool表的blockhash和txhash字段长度从varchar(66)调整为varchar(128)，兼容Dioxide原始52字符hash经过relayer统一hex编码后形成的104字符存储值。
+- 同步更新测试环境ddl.sql中的ucp_pool表字段长度，避免测试库或新初始化环境仍使用旧的varchar(66)限制。
+- 将dioxide/dioxide2插件relayMsgToAuthMsg的默认gaslimit调整为50000000，并保留Dioxide链返回的原始txhash作为发送回执txhash。
+
 ## 2026.05.28 插件优化
 - 将dioxide/dioxide2插件relayMsgToAuthMsg的默认gaslimit调整为10000000，避免项目调试出现gas不够的情况
 

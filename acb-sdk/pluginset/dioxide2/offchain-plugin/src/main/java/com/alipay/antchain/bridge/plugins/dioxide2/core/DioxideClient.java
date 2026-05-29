@@ -248,14 +248,14 @@ public class DioxideClient {
                 if (StrUtil.isNotEmpty(dtx.getTarget())) {
                     if (dtx.getTarget().equals(SEND_AUTH_MESSAGE_EVENT_NAME) &&
                         StrUtil.contains(dtx.getFunction(), config.getDappName())) {
-                        getBbcLogger().info("send am event found in global shard, block: {}, block hash: {}, contract name: {}",
-                                block.getHeight(), block.getHash(), String.format("%s:%s", config.getDappName(), config.getAmContractName()));
+                        getBbcLogger().info("send am event found in global shard, block: {}, block hash: {}, tx hash: {} contract name: {}",
+                                block.getHeight(), block.getHash(), dtx.getTxHash(), String.format("%s:%s", config.getDappName(), config.getAmContractName()));
                         messageList.add(CrossChainMessage.createCrossChainMessage(
                                 CrossChainMessage.CrossChainMessageType.AUTH_MSG,
                                 dtx.getHeight(),
                                 getConsensusHeaderByHeight(height).getLongValue("Timestamp"),
-                                // NOTICE: use sha256 to ensure this blockHash have 32 bytes
-                                DigestUtil.sha256(block.getHash()),
+                                // Store the original Dioxide block hash reversibly: relayer will hex-encode these UTF-8 bytes.
+                                block.getHash().getBytes(StandardCharsets.UTF_8),
                                 deserializedSendMsgEventArgs(dtx.getInputAsString()),
                                 // todo: put ledger data, for SPV or other attestations
                                 // this time we need no verify. it's ok to set it with empty bytes
@@ -263,10 +263,8 @@ public class DioxideClient {
                                 // todo: put proof data
                                 // this time we need no proof data. it's ok to set it with empty bytes
                                 "".getBytes(),
-                                // NOTICE: use sha256 to ensure this txHash have 32 bytes
-                                DigestUtil.sha256(dtx.getTxHash())
-//                                dtx.getTxHash().getBytes(StandardCharsets.UTF_8)
-
+                                // Store the original Dioxide tx hash reversibly: relayer will hex-encode these UTF-8 bytes.
+                                dtx.getTxHash().getBytes(StandardCharsets.UTF_8)
                         ));
                     }
                 }
@@ -606,7 +604,7 @@ public class DioxideClient {
                     "args",  orderedMap(
                             "pkg", toIntArray(rawMessage)
                     ),
-                    "gaslimit", 10000000)),
+                    "gaslimit", 50000000)),
                     true
             );
 
