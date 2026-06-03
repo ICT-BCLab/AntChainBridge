@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS `anchor_process`
     `gmt_create`         datetime     DEFAULT CURRENT_TIMESTAMP,
     `gmt_modified`       datetime     DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `blockchain_product` (`blockchain_product`, `instance`, `task`)
+    UNIQUE KEY `anchor_process_unique_product_instance_task_lane` (`blockchain_product`, `instance`, `task`, `tpbta_lane_key`)
 );
 
 CREATE TABLE IF NOT EXISTS `domain_cert`
