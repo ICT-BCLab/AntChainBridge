@@ -15,6 +15,7 @@ import com.alipay.antchain.bridge.commons.core.base.*;
 import com.alipay.antchain.bridge.commons.core.bta.BlockchainTrustAnchorFactory;
 import com.alipay.antchain.bridge.commons.core.bta.IBlockchainTrustAnchor;
 import com.alipay.antchain.bridge.commons.utils.crypto.SignAlgoEnum;
+import com.alipay.antchain.bridge.plugins.ethereum2.core.EthConsensusStateData;
 import com.alipay.antchain.bridge.plugins.ethereum2.core.EthSubjectIdentity;
 import com.alipay.antchain.bridge.plugins.ethereum2.tools.EthBbcTools;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,7 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.web3j.utils.Numeric;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -145,6 +147,24 @@ public class EthereumHcdvsTest {
         var result = ETHEREUM_HCDVS_SERVICE.verifyCrossChainMessage(MSG1, CS_WHERE_MSG1);
         assertNotNull(result);
         assertTrue(result.isSuccess());
+    }
+
+    @Test
+    public void testPeriodTailBoundary() {
+        var chainConfig = BTA_SUBJECT_IDENTITY.getEth2ChainConfig();
+        var parentStateData = EthConsensusStateData.fromJson(
+                new String(PARENT_CS_WHERE_PERIOD_END.getStateData()),
+                chainConfig.getCurrentSchemaDefinitions(PARENT_CS_WHERE_PERIOD_END.getHeight()),
+                chainConfig.getSpecConfig()
+        );
+        var currStateData = EthConsensusStateData.fromJson(
+                new String(CS_WHERE_PERIOD_END.getStateData()),
+                chainConfig.getCurrentSchemaDefinitions(CS_WHERE_PERIOD_END.getHeight()),
+                chainConfig.getSpecConfig()
+        );
+
+        assertTrue(parentStateData.isLastSlotForCurrentPeriod(chainConfig.getSyncPeriodLength()));
+        assertFalse(currStateData.isLastSlotForCurrentPeriod(chainConfig.getSyncPeriodLength()));
     }
 
     @Test

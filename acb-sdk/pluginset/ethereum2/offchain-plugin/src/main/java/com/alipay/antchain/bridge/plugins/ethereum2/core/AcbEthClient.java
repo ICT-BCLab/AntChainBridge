@@ -512,7 +512,10 @@ public class AcbEthClient {
         ethConsensusStateData.setAmContractHex(amContract);
         // last slot for this period
         var currPeriod = currentSyncCommitteePeriod(slot);
-        var currPeriodEndSlot = currPeriod.multiply(BigInteger.valueOf(config.getEth2ChainConfig().getSyncPeriodLength()));
+        var currPeriodEndSlot = currPeriod
+                .add(BigInteger.ONE)
+                .multiply(BigInteger.valueOf(config.getEth2ChainConfig().getSyncPeriodLength()))
+                .subtract(BigInteger.ONE);
         if (currPeriodEndSlot.equals(slot)) {
             // fetch the sync committee update
             getBbcLogger().info("get light client update for next period: {}", currPeriod.add(BigInteger.ONE));

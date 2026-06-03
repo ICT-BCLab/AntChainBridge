@@ -96,6 +96,11 @@ public class EthConsensusStateData {
     }
 
     public void validate(SyncCommittee currSyncCommittee, EthConsensusEndorsements endorsements, Eth2ChainConfig eth2ChainConfig) {
+        validateBlock(currSyncCommittee, endorsements, eth2ChainConfig);
+        validateLightClientUpdate(currSyncCommittee, eth2ChainConfig);
+    }
+
+    public void validateBlock(SyncCommittee currSyncCommittee, EthConsensusEndorsements endorsements, Eth2ChainConfig eth2ChainConfig) {
         if (ObjectUtil.isNotNull(this.beaconBlockHeader)) {
             var schemaDefinitions = eth2ChainConfig.getCurrentSchemaDefinitions(this.beaconBlockHeader.getSlot().bigIntegerValue());
             var bodySchema = schemaDefinitions.getBlindedBeaconBlockBodySchema();
@@ -127,9 +132,10 @@ public class EthConsensusStateData {
                 }
             }
 
+            var signatureSlot = endorsements.getSignatureSlotOrDefault(this.beaconBlockHeader.getSlot().increment());
             var signingRoot = new SigningData(
                     this.beaconBlockHeader.getRoot(),
-                    Bytes32.wrap(eth2ChainConfig.getForkBySlot(this.beaconBlockHeader.getSlot().bigIntegerValue()).getDomain())
+                    Bytes32.wrap(eth2ChainConfig.getForkBySlot(signatureSlot.bigIntegerValue()).getDomain())
             ).hashTreeRoot();
 
             if (!BLSSignatureVerifier.SIMPLE.verify(
@@ -140,14 +146,16 @@ public class EthConsensusStateData {
                 throw new InvalidConsensusDataException("sync committee signature is invalid");
             }
         }
+    }
 
+    public void validateLightClientUpdate(SyncCommittee currSyncCommittee, Eth2ChainConfig eth2ChainConfig) {
         if (lightClientUpdateWrapper != null) {
-            validateLightClientUpdate(lightClientUpdateWrapper, currSyncCommittee, eth2ChainConfig);
+            validateLightClientUpdateInternal(lightClientUpdateWrapper, currSyncCommittee, eth2ChainConfig);
         }
     }
 
     public boolean isLastSlotForCurrentPeriod(long syncPeriodLength) {
-        return this.beaconBlockHeader.getSlot().mod(syncPeriodLength).equals(UInt64.ZERO);
+        return this.beaconBlockHeader.getSlot().mod(syncPeriodLength).equals(UInt64.valueOf(syncPeriodLength - 1L));
     }
 
     public UInt64 getCurrSyncPeriod(long syncPeriodLength) {
@@ -177,7 +185,7 @@ public class EthConsensusStateData {
         return jsonObject.toJSONString();
     }
 
-    private void validateLightClientUpdate(
+    private void validateLightClientUpdateInternal(
             LightClientUpdateWrapper lightClientUpdate,
             SyncCommittee currentSyncCommittee,
             Eth2ChainConfig eth2ChainConfig
@@ -216,7 +224,7 @@ public class EthConsensusStateData {
         // verify sync committee signature
         var signingRoot = new SigningData(
                 attestedHeader.hashTreeRoot(),
-                Bytes32.wrap(eth2ChainConfig.getForkBySlot(this.beaconBlockHeader.getSlot().bigIntegerValue()).getDomain())
+                Bytes32.wrap(eth2ChainConfig.getForkBySlot(lightClientUpdate.getSignatureSlot().bigIntegerValue()).getDomain())
         ).hashTreeRoot();
         if (!BLSSignatureVerifier.SIMPLE.verify(
                 contributionPubkeys,

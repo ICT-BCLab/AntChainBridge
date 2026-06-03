@@ -321,7 +321,12 @@ public class AcbBeaconClient implements BeaconNodeApi {
             switch (resp.statusCode()) {
                 case 200 -> {
                     var body = JSON.parseObject(resp.body(), ObjectAndMetaData.class);
-                    return JSON.parseObject(body.getData(), new TypeReference<>(){});
+                    Map<String, String> remoteSpec = JSON.parseObject(body.getData(), new TypeReference<>(){});
+                    remoteSpec.putIfAbsent("GOSSIP_MAX_SIZE", "10485760");
+                    remoteSpec.putIfAbsent("MAX_CHUNK_SIZE", "10485760");
+                    remoteSpec.putIfAbsent("TTFB_TIMEOUT", "5");
+                    remoteSpec.putIfAbsent("RESP_TIMEOUT", "10");
+                    return remoteSpec;
                 }
                 default -> throw new RuntimeException(StrUtil.format("failed to spec config: {}", resp.body()));
             }

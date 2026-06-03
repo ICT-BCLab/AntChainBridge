@@ -34,6 +34,10 @@ public class EthSubjectIdentity {
         if (subjectId.getCurrentSyncCommittee().getPubkeys().size() != subjectId.getEth2ChainConfig().getSyncCommitteeSize()) {
             throw new RuntimeException("sync committee size not match with chain config");
         }
+        if (subjectId.getNextSyncCommittee() != null
+                && subjectId.getNextSyncCommittee().getPubkeys().size() != subjectId.getEth2ChainConfig().getSyncCommitteeSize()) {
+            throw new RuntimeException("next sync committee size not match with chain config");
+        }
         return subjectId;
     }
 
@@ -73,8 +77,16 @@ public class EthSubjectIdentity {
     @JSONField(name = "current_sync_committee", deserializeUsing = SyncCommitteeDeserializer.class, serializeUsing = SyncCommitteeSerializer.class)
     private SyncCommittee currentSyncCommittee;
 
+    @JSONField(name = "next_sync_committee", deserializeUsing = SyncCommitteeDeserializer.class, serializeUsing = SyncCommitteeSerializer.class)
+    private SyncCommittee nextSyncCommittee;
+
     @JSONField(name = "eth2_chain_config", deserializeUsing = Eth2ChainConfigDeserializer.class)
     private Eth2ChainConfig eth2ChainConfig;
+
+    public EthSubjectIdentity(SyncCommittee currentSyncCommittee, Eth2ChainConfig eth2ChainConfig) {
+        this.currentSyncCommittee = currentSyncCommittee;
+        this.eth2ChainConfig = eth2ChainConfig;
+    }
 
     public String toJson() {
         return JSON.toJSONString(this);

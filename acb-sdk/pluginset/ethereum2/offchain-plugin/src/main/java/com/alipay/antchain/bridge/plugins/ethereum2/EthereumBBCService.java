@@ -436,15 +436,14 @@ public class EthereumBBCService extends AbstractBBCService {
             );
         }
 
-        var beaconBlock = this.acbEthClient.getBeaconBlockBySlot(slot.add(BigInteger.ONE));
-        if (ObjectUtil.isNull(beaconBlock)) {
-            throw new RuntimeException("get a null result for next beacon block by slot: " + slot.add(BigInteger.ONE));
-        }
-        if (beaconBlock.getBody().getOptionalSyncAggregate().isEmpty()) {
-            throw new RuntimeException("has no sync aggregate in beacon block by slot " + slot.add(BigInteger.ONE));
+        if (beaconBlockWithSyncAggregate.getBody().getOptionalSyncAggregate().isEmpty()) {
+            throw new RuntimeException("has no sync aggregate in beacon block by slot " + beaconBlockWithSyncAggregate.getSlot());
         }
 
-        var ethConsensusEndorsements = new EthConsensusEndorsements(beaconBlock.getBody().getOptionalSyncAggregate().get());
+        var ethConsensusEndorsements = new EthConsensusEndorsements(
+                beaconBlockWithSyncAggregate.getBody().getOptionalSyncAggregate().get(),
+                beaconBlockWithSyncAggregate.getSlot()
+        );
 
         return new ConsensusState(
                 slot,
