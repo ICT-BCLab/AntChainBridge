@@ -69,5 +69,11 @@ public class SystemConfigRepositoryTest extends TestBase {
                 "test",
                 systemConfigRepository.getSystemConfig("test")
         );
+
+        systemConfigRepository.setSystemConfig("test", "test2");
+        Assert.assertEquals(
+                "test2",
+                systemConfigRepository.getSystemConfig("test")
+        );
     }
 }

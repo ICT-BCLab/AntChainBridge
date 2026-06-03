@@ -21,6 +21,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import cn.hutool.core.collection.ListUtil;
+import cn.hutool.core.util.ArrayUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.alipay.antchain.bridge.commons.core.base.CrossChainLane;
 import com.alipay.antchain.bridge.ptc.committee.node.commons.exception.DataAccessLayerException;
@@ -87,6 +88,26 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
     }
 
     @Override
+    public TpBtaWrapper getMatchedTpBta(CrossChainLane lane, int tpbtaVersion, int btaSubjectVersion) {
+        try {
+            var entityList = searchTpBta(lane, tpbtaVersion).stream()
+                    .filter(entity -> entity.getBtaSubjectVersion() == btaSubjectVersion)
+                    .toList();
+            if (ObjectUtil.isEmpty(entityList)) {
+                return null;
+            }
+            return ConvertUtil.convertFrom(
+                    entityList.stream().max(Comparator.comparingInt(TpBtaEntity::getTpbtaVersion)).get()
+            );
+        } catch (Exception e) {
+            throw new DataAccessLayerException(
+                    e, "Failed to get tpbta for lane {}, version {} and bta subject version {}",
+                    lane.getLaneKey(), tpbtaVersion, btaSubjectVersion
+            );
+        }
+    }
+
+    @Override
     public TpBtaWrapper getExactTpBta(CrossChainLane lane) {
         return getExactTpBta(lane, -1);
     }
@@ -117,14 +138,19 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
 
     @Override
     public void setTpBta(TpBtaWrapper tpBtaWrapper) {
+        var lane = tpBtaWrapper.getCrossChainLane();
+        var tpbtaVersion = tpBtaWrapper.getTpbta().getTpbtaVersion();
         try {
-            if (hasTpBta(tpBtaWrapper.getCrossChainLane(), tpBtaWrapper.getTpbta().getTpbtaVersion())) {
-                throw new RuntimeException("tpBta already exists");
+            if (hasTpBta(lane, tpbtaVersion)) {
+                return;
             }
             tpBtaMapper.insert((TpBtaEntity) ConvertUtil.convertFrom(tpBtaWrapper));
         } catch (Exception e) {
+            if (hasTpBta(lane, tpbtaVersion)) {
+                return;
+            }
             throw new DataAccessLayerException(
-                    e, "Failed to save tpbta for lane {}", tpBtaWrapper.getCrossChainLane().getLaneKey()
+                    e, "Failed to save tpbta for lane {}", lane.getLaneKey()
             );
         }
     }
@@ -187,13 +213,41 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
     }
 
     @Override
+    public BtaWrapper getBta(String domain, BigInteger initHeight, byte[] initBlockHash) {
+        try {
+            var entityList = btaMapper.selectList(
+                    new LambdaQueryWrapper<BtaEntity>()
+                            .eq(BtaEntity::getDomain, domain)
+            );
+            if (ObjectUtil.isEmpty(entityList)) {
+                return null;
+            }
+            return entityList.stream()
+                    .map(ConvertUtil::convertFrom)
+                    .map(BtaWrapper.class::cast)
+                    .filter(wrapper -> wrapper.getBta().getInitHeight().equals(initHeight))
+                    .filter(wrapper -> ArrayUtil.equals(wrapper.getBta().getInitBlockHash(), initBlockHash))
+                    .max(Comparator.comparingInt(BtaWrapper::getSubjectVersion))
+                    .orElse(null);
+        } catch (Exception e) {
+            throw new DataAccessLayerException(
+                    e, "Failed to get bta for domain {}, init height {} and init block hash {}",
+                    domain, initHeight, initBlockHash
+            );
+        }
+    }
+
+    @Override
     public void setBta(BtaWrapper btaWrapper) {
         try {
-            if (hasBta(btaWrapper.getDomain(), btaWrapper.getBtaVersion())) {
-                throw new RuntimeException("bta already exists");
+            if (hasBta(btaWrapper.getDomain(), btaWrapper.getSubjectVersion())) {
+                return;
             }
             btaMapper.insert((BtaEntity) ConvertUtil.convertFrom(btaWrapper));
         } catch (Exception e) {
+            if (hasBta(btaWrapper.getDomain(), btaWrapper.getSubjectVersion())) {
+                return;
+            }
             throw new DataAccessLayerException(
                     e, "Failed to save bta for domain {} and subject version {}", btaWrapper.getDomain(), btaWrapper.getSubjectVersion()
             );
@@ -272,10 +326,13 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
     public void setValidatedConsensusState(ValidatedConsensusStateWrapper validatedConsensusStateWrapper) {
         try {
             if (hasValidatedConsensusState(validatedConsensusStateWrapper.getDomain(), validatedConsensusStateWrapper.getHeight())) {
-                throw new RuntimeException("validated consensus state already exists");
+                return;
             }
             validatedConsensusStatesMapper.insert((ValidatedConsensusStatesEntity) ConvertUtil.convertFrom(validatedConsensusStateWrapper));
         } catch (Exception e) {
+            if (hasValidatedConsensusState(validatedConsensusStateWrapper.getDomain(), validatedConsensusStateWrapper.getHeight())) {
+                return;
+            }
             throw new DataAccessLayerException(
                     e, "Failed to save validated consensus state for domain {} and height {}",
                     validatedConsensusStateWrapper.getDomain(),

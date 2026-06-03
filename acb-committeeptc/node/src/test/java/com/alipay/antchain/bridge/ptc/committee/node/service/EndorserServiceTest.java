@@ -280,7 +280,9 @@ public class EndorserServiceTest extends TestBase {
         var hcdvs = mock(IHeteroChainDataVerifierService.class);
         when(hcdvs.verifyAnchorConsensusState(any(), any())).thenReturn(VerifyResult.builder().success(true).build());
         when(endorseServiceRepository.getMatchedTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
+        when(endorseServiceRepository.getMatchedTpBta(any(), anyInt(), anyInt())).thenReturn(new TpBtaWrapper(tpbta));
         when(endorseServiceRepository.getBta(anyString())).thenReturn(new BtaWrapper(bta));
+        when(endorseServiceRepository.getBta(anyString(), any(), any())).thenReturn(new BtaWrapper(bta));
         when(hcdvsPluginService.getHCDVSService(anyString())).thenReturn(hcdvs);
 
         var vcs = BeanUtil.copyProperties(anchorState, ValidatedConsensusStateV1.class);
@@ -313,7 +315,9 @@ public class EndorserServiceTest extends TestBase {
         when(hcdvs.verifyConsensusState(any(), any())).thenReturn(VerifyResult.builder().success(true).build());
         when(endorseServiceRepository.getMatchedTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
         when(endorseServiceRepository.getBta(anyString())).thenReturn(new BtaWrapper(bta));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
         when(endorseServiceRepository.getValidatedConsensusState(anyString(), anyString())).thenReturn(new ValidatedConsensusStateWrapper(vcs));
+        when(endorseServiceRepository.getValidatedConsensusState(anyString(), any(BigInteger.class))).thenReturn(new ValidatedConsensusStateWrapper(vcs));
         when(hcdvsPluginService.getHCDVSService(anyString())).thenReturn(hcdvs);
 
         var vcsSigned = endorserService.commitConsensusState(crossChainLane, currState);
@@ -337,6 +341,7 @@ public class EndorserServiceTest extends TestBase {
         when(hcdvs.parseMessageFromLedgerData(any())).thenReturn(ucp.getSrcMessage().getMessage());
         when(endorseServiceRepository.getExactTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
         when(endorseServiceRepository.getBta(anyString())).thenReturn(new BtaWrapper(bta));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
         when(endorseServiceRepository.getValidatedConsensusState(anyString(), anyString())).thenReturn(new ValidatedConsensusStateWrapper(currVcs));
         when(hcdvsPluginService.getHCDVSService(anyString())).thenReturn(hcdvs);
 

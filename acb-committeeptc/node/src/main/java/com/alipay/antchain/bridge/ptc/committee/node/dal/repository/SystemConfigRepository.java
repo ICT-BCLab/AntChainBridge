@@ -29,6 +29,7 @@ import com.alipay.antchain.bridge.ptc.committee.node.dal.entities.SystemConfigEn
 import com.alipay.antchain.bridge.ptc.committee.node.dal.mapper.SystemConfigMapper;
 import com.alipay.antchain.bridge.ptc.committee.node.dal.repository.interfaces.ISystemConfigRepository;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import jakarta.annotation.Resource;
 import lombok.Synchronized;
 import org.springframework.stereotype.Component;
@@ -79,14 +80,7 @@ public class SystemConfigRepository implements ISystemConfigRepository {
     @Override
     public void setSystemConfig(Map<String, String> configs) {
         try {
-            configs.forEach((key, value) -> {
-                systemConfigMapper.insert(
-                        SystemConfigEntity.builder()
-                                .confKey(key)
-                                .confValue(value)
-                                .build()
-                );
-            });
+            configs.forEach(this::setSystemConfig);
         } catch (Exception e) {
             throw new DataAccessLayerException(
                     e, "Failed to set system config with key: {}", JSON.toJSONString(configs)
@@ -98,6 +92,10 @@ public class SystemConfigRepository implements ISystemConfigRepository {
     @Synchronized
     public void setSystemConfig(String key, String value) {
         try {
+            if (hasSystemConfig(key)) {
+                updateSystemConfig(key, value);
+                return;
+            }
             systemConfigMapper.insert(
                     SystemConfigEntity.builder()
                             .confKey(key)
@@ -105,6 +103,10 @@ public class SystemConfigRepository implements ISystemConfigRepository {
                             .build()
             );
         } catch (Exception e) {
+            if (hasSystemConfig(key)) {
+                updateSystemConfig(key, value);
+                return;
+            }
             throw new DataAccessLayerException(
                     e, "Failed to set system config with key: {}", key
             );
@@ -134,5 +136,15 @@ public class SystemConfigRepository implements ISystemConfigRepository {
     @Override
     public PTCTrustRoot getPtcTrustRoot() {
         return PTCTrustRoot.decode(Base64.decode(getSystemConfig(CURRENT_PTC_TRUST_ROOT)));
+    }
+
+    private void updateSystemConfig(String key, String value) {
+        systemConfigMapper.update(
+                SystemConfigEntity.builder()
+                        .confValue(value)
+                        .build(),
+                new LambdaUpdateWrapper<SystemConfigEntity>()
+                        .eq(SystemConfigEntity::getConfKey, key)
+        );
     }
 }

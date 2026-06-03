@@ -73,6 +73,7 @@ public class EndorseServiceRepositoryTest extends TestBase {
         var btaWrapper = new BtaWrapper();
         btaWrapper.setBta(bta);
         endorseServiceRepository.setBta(btaWrapper);
+        endorseServiceRepository.setBta(btaWrapper);
 
         var btaWrapperFromDB = endorseServiceRepository.getBta(btaWrapper.getDomain());
         Assert.assertEquals(
@@ -123,6 +124,7 @@ public class EndorseServiceRepositoryTest extends TestBase {
         var tpBtaWrapper = new TpBtaWrapper(tpbta);
 
         endorseServiceRepository.setTpBta(tpBtaWrapper);
+        endorseServiceRepository.setTpBta(tpBtaWrapper);
 
         Assert.assertNotNull(endorseServiceRepository.getMatchedTpBta(crossChainLane));
         Assert.assertTrue(endorseServiceRepository.hasTpBta(crossChainLane, 1));
@@ -143,6 +145,7 @@ public class EndorseServiceRepositoryTest extends TestBase {
         );
         var vcs = BeanUtil.copyProperties(cs, ValidatedConsensusStateV1.class);
 
+        endorseServiceRepository.setValidatedConsensusState(new ValidatedConsensusStateWrapper(vcs));
         endorseServiceRepository.setValidatedConsensusState(new ValidatedConsensusStateWrapper(vcs));
 
         Assert.assertTrue(endorseServiceRepository.hasValidatedConsensusState("test", BigInteger.valueOf(100L)));
