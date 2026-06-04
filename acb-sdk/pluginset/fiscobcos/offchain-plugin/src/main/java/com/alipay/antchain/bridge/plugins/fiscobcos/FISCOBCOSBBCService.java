@@ -68,7 +68,11 @@ import org.fisco.bcos.sdk.v3.transaction.model.dto.TransactionResponse;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
@@ -82,6 +86,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
     private BcosSDK sdk;
     private Client client;
+    private static volatile boolean providersLibraryLoaded;
     private CryptoKeyPair keyPair;
     private ContractCodec contractCodec;
     private AssembleTransactionProcessor transactionProcessorAM;
@@ -100,7 +105,14 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             Thread.currentThread().setContextClassLoader(this.getClass().getClassLoader());
             NativeInterface.secp256k1GenKeyPair();
         });
-        future.get();
+        try {
+            future.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("failed to initialize FISCO-BCOS native crypto", e);
+        } catch (ExecutionException e) {
+            throw new RuntimeException("failed to initialize FISCO-BCOS native crypto", e);
+        }
 
         if (ObjectUtil.isNull(abstractBBCContext)) {
             throw new RuntimeException("null bbc context");
@@ -181,6 +193,8 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             configOption.setJniConfig(configOption.generateJniConfig());
             configOption.setConfigProperty(configProperty);
 
+            loadOptionalProvidersLibrary();
+
             // Initialize BcosSDK
             sdk = new BcosSDK(configOption);
             // Initialize the client for the group
@@ -191,13 +205,14 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         }
 
         // 3. initialize keypair and create transaction processor
-        this.keyPair = client.getCryptoSuite().getCryptoKeyPair();
+        this.keyPair = loadConfiguredKeyPair();
+        client.getCryptoSuite().setCryptoKeyPair(this.keyPair);
         // AM
         this.transactionProcessorAM = TransactionProcessorFactory.createAssembleTransactionProcessor(
                 client,
                 keyPair,
                 "AuthMsg",
-                AuthMsg.ABI_ARRAY[0],
+                AuthMsg.ABI,
                 AuthMsg.BINARY_ARRAY[0]
         );
         // SDP
@@ -205,7 +220,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
                 client,
                 keyPair,
                 "SDPMsg",
-                SDPMsg.ABI_ARRAY[0],
+                SDPMsg.ABI,
                 SDPMsg.BINARY_ARRAY[0]
         );
         // PtcHub
@@ -213,7 +228,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
                 client,
                 keyPair,
                 "PtcHub",
-                PtcHub.ABI_ARRAY[0],
+                PtcHub.ABI,
                 PtcHub.BINARY_ARRAY[0]
         );
         this.contractCodec = new ContractCodec(client.getCryptoSuite(), false);
@@ -249,10 +264,71 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         getBBCLogger().info("FISCO-BCOS BBCService startup success for {}", this.config.getConnectPeer());
     }
 
+    private CryptoKeyPair loadConfiguredKeyPair() {
+        String privateKey = this.config.getPrivateKey();
+        if (StrUtil.isEmpty(privateKey)) {
+            return client.getCryptoSuite().getCryptoKeyPair();
+        }
+        return client.getCryptoSuite().loadKeyPair(privateKey.replaceFirst("^0x", ""));
+    }
+
     @Override
     public void shutdown() {
         getBBCLogger().info("shut down FISCO-BCOS BBCService!");
-        this.client.stop();
+        if (ObjectUtil.isNotNull(this.client)) {
+            try {
+                this.client.stop();
+            } catch (Exception e) {
+                getBBCLogger().warn("failed to stop FISCO-BCOS client", e);
+            }
+            try {
+                this.client.destroy();
+            } catch (Exception e) {
+                getBBCLogger().warn("failed to destroy FISCO-BCOS client", e);
+            } finally {
+                this.client = null;
+            }
+        }
+        if (ObjectUtil.isNotNull(this.sdk)) {
+            try {
+                this.sdk.stopAll();
+            } catch (Exception e) {
+                getBBCLogger().warn("failed to stop FISCO-BCOS SDK", e);
+            } finally {
+                this.sdk = null;
+            }
+        }
+    }
+
+    private void loadOptionalProvidersLibrary() {
+        if (providersLibraryLoaded) {
+            return;
+        }
+        String providerLib = System.getProperty("fiscobcos.providers.lib");
+        if (StrUtil.isEmpty(providerLib)) {
+            providerLib = System.getenv("FISCOBCOS_PROVIDERS_LIB");
+        }
+        if (StrUtil.isEmpty(providerLib)) {
+            return;
+        }
+
+        Path providerPath = Paths.get(providerLib).toAbsolutePath().normalize();
+        if (!Files.isRegularFile(providerPath)) {
+            getBBCLogger().warn("configured FISCO-BCOS provider library does not exist: {}", providerPath);
+            return;
+        }
+
+        synchronized (FISCOBCOSBBCService.class) {
+            if (providersLibraryLoaded) {
+                return;
+            }
+            try {
+                System.load(providerPath.toString());
+                providersLibraryLoaded = true;
+            } catch (UnsatisfiedLinkError e) {
+                getBBCLogger().warn("failed to load FISCO-BCOS provider library: {}", providerPath, e);
+            }
+        }
     }
 
     @Override
@@ -440,7 +516,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
                             try {
                                 // 解析事件数据
                                 List<Object> eventData = contractCodec.decodeEventByTopic(
-                                        AuthMsg.ABI_ARRAY[0],
+                                        AuthMsg.ABI,
                                         "SendAuthMessage",
                                         eventLog);
 
@@ -535,7 +611,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
                 // 解码交易收据中的事件
                 Map<String, List<List<Object>>> events;
                 try {
-                    events = decoder.decodeEvents(AuthMsg.ABI_ARRAY[0], receipt.getLogEntries());
+                    events = decoder.decodeEvents(AuthMsg.ABI, receipt.getLogEntries());
                 } catch (ContractCodecException e) {
                     getBBCLogger().error("Failed to decode events: " + e.getMessage(), e);
                     continue;
@@ -962,7 +1038,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 //            CallResponse preExecResponse = transactionProcessorAM.sendCall(
 //                    this.keyPair.getAddress(),  // from: 使用当前SDK的密钥对地址，确保与实际交易一致
 //                    amContractAddress,     // to: 合约地址
-//                    AuthMsg.ABI_ARRAY[0],  // abi: 合约ABI定义
+//                    AuthMsg.ABI,  // abi: 合约ABI定义
 //                    AuthMsg.FUNC_RECVPKGFROMRELAYER, // functionName: 要调用的合约函数名
 //                    Collections.singletonList(new DynamicBytes(rawMessage)) // paramsList: 函数参数列表
 //            );
@@ -984,7 +1060,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             // 2.1 发送实际交易
             TransactionResponse response = transactionProcessorAM.sendTransactionAndGetResponse(
                     amContractAddress,
-                    AuthMsg.ABI_ARRAY[0],
+                    AuthMsg.ABI,
                     AuthMsg.FUNC_RECVPKGFROMRELAYER,
                     Collections.singletonList(new DynamicBytes(rawMessage)));
 
