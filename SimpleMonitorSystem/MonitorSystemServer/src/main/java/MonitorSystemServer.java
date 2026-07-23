@@ -42,8 +42,13 @@ public class MonitorSystemServer {
             logInfo("Server shut down.");
         }));
 
-        // 启动控制线程，监听终端输入
-        new Thread(this::startCommandListener, "CommandListenerThread").start();
+        // 仅在交互式终端中启动控制线程。systemd/nohup 后台运行时没有可用的 stdin，
+        // 此时保持默认的验证成功行为，避免 Scanner.nextLine() 因 EOF 退出并打印异常。
+        if (System.console() != null) {
+            new Thread(this::startCommandListener, "CommandListenerThread").start();
+        } else {
+            logInfo("No interactive console detected; command listener disabled and verify result defaults to success.");
+        }
     }
 
     private void startCommandListener() {

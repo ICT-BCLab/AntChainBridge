@@ -56,6 +56,7 @@ import com.alipay.antchain.bridge.ptc.committee.types.tpbta.NodeEndorseInfo;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.OptionalEndorsePolicy;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.VerifyBtaExtension;
 import com.alipay.antchain.bridge.ptc.committee.types.trustroot.CommitteeVerifyAnchor;
+import com.alipay.antchain.bridge.ptc.types.PTCVerifyCrossChainMessageResult;
 import com.google.protobuf.ByteString;
 import lombok.SneakyThrows;
 import org.junit.*;
@@ -575,12 +576,17 @@ public class CommitteePTCServiceTest {
                         .setVerifyCrossChainMessageResp(
                                 VerifyCrossChainMessageResponse.newBuilder()
                                         .setRawNodeProof(ByteString.copyFrom(nodeProof.encode()))
+                                        .setRegulationStatus("approved")
                         ).build()
         );
 
-        ThirdPartyProof tpProof = ptcService.verifyCrossChainMessage(tpbta, currVcs, ucp);
+        PTCVerifyCrossChainMessageResult verifyResult =
+                ptcService.verifyCrossChainMessageWithResult(tpbta, currVcs, ucp);
+        ThirdPartyProof tpProof = verifyResult.getThirdPartyProof();
 
         assertEquals(tpbta.getCrossChainLane().getLaneKey(), tpProof.getTpbtaCrossChainLane().getLaneKey());
+        assertEquals("approved", verifyResult.getRegulationStatus());
+        assertEquals("", verifyResult.getRegulationReason());
         CommitteeEndorseProof endorseProof = CommitteeEndorseProof.decode(tpProof.getRawProof());
         assertEquals(COMMITTEE_ID, endorseProof.getCommitteeId());
         assertEquals(1, endorseProof.getSigs().size());

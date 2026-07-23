@@ -26,6 +26,7 @@ import com.alipay.antchain.bridge.commons.core.bta.IBlockchainTrustAnchor;
 import com.alipay.antchain.bridge.commons.core.ptc.ValidatedConsensusState;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.exception.InvalidBtaException;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.TpBtaWrapper;
+import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.MonitorNodeVerifyResult;
 import com.alipay.antchain.bridge.ptc.committee.types.basic.CommitteeNodeProof;
 import com.alipay.antchain.bridge.ptc.committee.types.basic.EndorseBlockStateResp;
 
@@ -41,9 +42,9 @@ public interface IEndorserService {
 
     CommitteeNodeProof verifyUcp(CrossChainLane crossChainLane, UniformCrosschainPacket ucp);
 
-    CommitteeNodeProof verifyUcpWithMonitorSystem(CrossChainLane crossChainLane, UniformCrosschainPacket ucp);
+    MonitorNodeVerifyResult verifyUcpWithMonitorSystem(CrossChainLane crossChainLane, UniformCrosschainPacket ucp);
 
-    CommitteeNodeProof relayUcpToMonitorSystem(UniformCrosschainPacket ucp);
+    MonitorNodeVerifyResult relayUcpToMonitorSystem(UniformCrosschainPacket ucp);
 
     EndorseBlockStateResp endorseBlockState(CrossChainLane crossChainLane, String receiverDomain, BigInteger height);
 }

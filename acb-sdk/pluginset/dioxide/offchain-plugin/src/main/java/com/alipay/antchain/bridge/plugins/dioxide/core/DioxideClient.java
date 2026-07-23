@@ -5,7 +5,6 @@ import cn.hutool.core.collection.ListUtil;
 import cn.hutool.core.util.HexUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
-import cn.hutool.crypto.digest.DigestUtil;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
@@ -22,6 +21,7 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Function;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
@@ -149,81 +149,166 @@ public class DioxideClient {
     }
 
     public CrossChainMessageReceipt getCrossChainMessageReceipt(DioxideTransaction dioxideTransaction) {
-        CrossChainMessageReceipt crossChainMessageReceipt = new CrossChainMessageReceipt();
-        // check if tx0 is null
         if (dioxideTransaction == null) {
-            crossChainMessageReceipt.setConfirmed(false);
-            crossChainMessageReceipt.setSuccessful(false);
-            crossChainMessageReceipt.setTxhash("");
-            crossChainMessageReceipt.setErrorMsg("tx0 is null");
-            return crossChainMessageReceipt;
+            return buildCrossChainMessageReceipt(null, false, false, "tx0 is null");
         }
 
-        // check if tx0 is confirmed
-        Long currHeight = queryLatestHeight();
-        if (dioxideTransaction.getHeight() == null || dioxideTransaction.getHeight().compareTo(currHeight) > 0) {
-            crossChainMessageReceipt.setConfirmed(false);
-            crossChainMessageReceipt.setSuccessful(true);
-            crossChainMessageReceipt.setTxhash(dioxideTransaction.getTxHash());
-            crossChainMessageReceipt.setErrorMsg("tx0 is not confirmed");
-            return crossChainMessageReceipt;
+        TxFinalityResult txFinalityResult = evaluateTxFinalityWithRelays(dioxideTransaction);
+        if (txFinalityResult.state() == TxFinalityState.FAILED) {
+            return buildCrossChainMessageReceipt(
+                    dioxideTransaction,
+                    true,
+                    false,
+                    String.format(
+                            "transaction %s reached terminal failure state %s",
+                            txFinalityResult.txHash(),
+                            txFinalityResult.confirmState()
+                    )
+            );
+        }
+        if (txFinalityResult.state() == TxFinalityState.PENDING) {
+            return buildCrossChainMessageReceipt(
+                    dioxideTransaction,
+                    false,
+                    true,
+                    String.format(
+                            "transaction %s is not finalized (state: %s)",
+                            StrUtil.emptyToDefault(txFinalityResult.txHash(), "unknown"),
+                            StrUtil.emptyToDefault(txFinalityResult.confirmState(), "unknown")
+                    )
+            );
         }
 
-        // check if tx1(inbound relay) in tx0 is confirmed
+        // A finalized tx0 may not have produced its inbound relay yet.
         if (dioxideTransaction.getInvocation() == null || CollUtil.isEmpty(dioxideTransaction.getInvocation().getRelays())) {
-            crossChainMessageReceipt.setConfirmed(false);
-            crossChainMessageReceipt.setSuccessful(true);
-            crossChainMessageReceipt.setTxhash(dioxideTransaction.getTxHash());
-            crossChainMessageReceipt.setErrorMsg("tx1(inbound relay) in tx0 is not confirmed");
-            return crossChainMessageReceipt;
+            return buildCrossChainMessageReceipt(
+                    dioxideTransaction,
+                    false,
+                    true,
+                    "tx1(inbound relay) in tx0 is not available"
+            );
         }
 
-        // check if tx2(contain recvMessageInProtocol event txHash) in tx1 is confirmed and successful
         List<String> tx2Hashes = dioxideTransaction.getInvocation().getRelays().stream()
                 .filter(Objects::nonNull)
-                .map(s -> {
-                    int idx = s.indexOf(':');
-                    return idx >= 0 ? s.substring(0, idx) : s;
-                })
+                .map(DioxideClient::normalizeRelayTxHash)
+                .filter(StrUtil::isNotEmpty)
                 .distinct()
                 .toList();
+
+        boolean eventStructurePending = false;
+        List<String> eventTargetTxHashes = new ArrayList<>();
         for (String tx2Hash : tx2Hashes) {
             JSONObject tx2 = getTransactionJonObjectByHash(tx2Hash);
-            // check if tx3 (is recvMessageInProtocol event tx) in tx2 is confirmed and successful
+            if (tx2 == null) {
+                eventStructurePending = true;
+                continue;
+            }
             JSONArray eventRelays = tx2.getJSONArray("Relays");
             if (CollUtil.isEmpty(eventRelays)) {
-                crossChainMessageReceipt.setConfirmed(false);
-                crossChainMessageReceipt.setSuccessful(true);
-                crossChainMessageReceipt.setTxhash(dioxideTransaction.getTxHash());
-                crossChainMessageReceipt.setErrorMsg("recvMessageInProtocol event in protocol contract is not confirmed");
-                return crossChainMessageReceipt;
+                eventStructurePending = true;
+                continue;
             }
-            List<DioxideTransaction> eventTxs = eventRelays.toJavaList(DioxideTransaction.class);
-            for (DioxideTransaction eventTx : eventTxs) {
-                if (eventTx.getInvocation() != null && CollUtil.isNotEmpty(eventTx.getInvocation().getRelays())) {
-                    // find recvMessageInProtocol event
-                    List<String> tx3Hashes = eventTx.getInvocation().getRelays();
-                    for (String tx3Hash : tx3Hashes) {
-                        DioxideTransaction dtx = getTransactionByHash(tx3Hash);
-                        if (dtx != null && StrUtil.isNotEmpty(dtx.getTarget()) && dtx.getTarget().equals(DioxideClient.RECV_MESSAGE_IN_PROTOCOL)) {
-                            crossChainMessageReceipt.setConfirmed(true);
-                            crossChainMessageReceipt.setSuccessful(true);
-                            crossChainMessageReceipt.setTxhash(dioxideTransaction.getTxHash());
-                            crossChainMessageReceipt.setErrorMsg("");
-                            return crossChainMessageReceipt;
-                        }
+            List<DioxideTransaction> currentEventTxs = eventRelays.toJavaList(DioxideTransaction.class);
+            if (CollUtil.isEmpty(currentEventTxs)) {
+                eventStructurePending = true;
+                continue;
+            }
+            int eventTargetTxCountBefore = eventTargetTxHashes.size();
+            for (DioxideTransaction eventTx : currentEventTxs) {
+                // Items in tx2.Relays are embedded invocation records, not standalone transactions.
+                if (eventTx == null || eventTx.getInvocation() == null
+                        || CollUtil.isEmpty(eventTx.getInvocation().getRelays())) {
+                    continue;
+                }
+                for (String eventTargetTxReference : eventTx.getInvocation().getRelays()) {
+                    String eventTargetTxHash = normalizeRelayTxHash(eventTargetTxReference);
+                    if (StrUtil.isEmpty(eventTargetTxHash)) {
+                        eventStructurePending = true;
+                    } else {
+                        eventTargetTxHashes.add(eventTargetTxHash);
                     }
                 }
             }
+            if (eventTargetTxHashes.size() == eventTargetTxCountBefore) {
+                eventStructurePending = true;
+            }
         }
 
-        // not find recvMessageInProtocol event: tx is confirmed but failed?
-        crossChainMessageReceipt.setConfirmed(true);
-        crossChainMessageReceipt.setSuccessful(false);
-        crossChainMessageReceipt.setTxhash(dioxideTransaction.getTxHash());
-        crossChainMessageReceipt.setErrorMsg("no recvMessageInProtocol event is protocol contract");
+        TxFinalityResult pendingEventFinality = eventStructurePending
+                ? new TxFinalityResult(TxFinalityState.PENDING, "", "")
+                : null;
+        List<DioxideTransaction> eventTargetTxs = new ArrayList<>();
+        for (String eventTargetTxHash : eventTargetTxHashes.stream().distinct().toList()) {
+            DioxideTransaction eventTargetTx = getTransactionByHash(eventTargetTxHash);
+            if (eventTargetTx == null) {
+                if (pendingEventFinality == null) {
+                    pendingEventFinality = new TxFinalityResult(
+                            TxFinalityState.PENDING,
+                            eventTargetTxHash,
+                            ""
+                    );
+                }
+                continue;
+            }
+            eventTargetTxs.add(eventTargetTx);
+            TxFinalityResult eventTargetFinality = evaluateTxFinalityWithRelays(eventTargetTx);
+            if (eventTargetFinality.state() == TxFinalityState.FAILED) {
+                return buildCrossChainMessageReceipt(
+                        dioxideTransaction,
+                        true,
+                        false,
+                        String.format(
+                                "transaction %s reached terminal failure state %s",
+                                eventTargetFinality.txHash(),
+                                eventTargetFinality.confirmState()
+                        )
+                );
+            }
+            if (eventTargetFinality.state() == TxFinalityState.PENDING && pendingEventFinality == null) {
+                pendingEventFinality = eventTargetFinality;
+            }
+        }
 
-        return crossChainMessageReceipt;
+        if (pendingEventFinality != null) {
+            return buildCrossChainMessageReceipt(
+                    dioxideTransaction,
+                    false,
+                    true,
+                    String.format(
+                            "transaction %s is not finalized (state: %s)",
+                            StrUtil.emptyToDefault(pendingEventFinality.txHash(), "unknown"),
+                            StrUtil.emptyToDefault(pendingEventFinality.confirmState(), "unknown")
+                    )
+            );
+        }
+
+        for (DioxideTransaction eventTargetTx : eventTargetTxs) {
+            if (StrUtil.equals(eventTargetTx.getTarget(), RECV_MESSAGE_IN_PROTOCOL)) {
+                return buildCrossChainMessageReceipt(dioxideTransaction, true, true, "");
+            }
+        }
+
+        return buildCrossChainMessageReceipt(
+                dioxideTransaction,
+                true,
+                false,
+                "no recvMessageInProtocol event in protocol contract"
+        );
+    }
+
+    private CrossChainMessageReceipt buildCrossChainMessageReceipt(
+            DioxideTransaction dioxideTransaction,
+            boolean confirmed,
+            boolean successful,
+            String errorMsg
+    ) {
+        CrossChainMessageReceipt receipt = new CrossChainMessageReceipt();
+        receipt.setConfirmed(confirmed);
+        receipt.setSuccessful(successful);
+        receipt.setTxhash(dioxideTransaction == null ? "" : StrUtil.nullToEmpty(dioxideTransaction.getTxHash()));
+        receipt.setErrorMsg(StrUtil.nullToEmpty(errorMsg));
+        return receipt;
     }
 
 
@@ -559,7 +644,6 @@ public class DioxideClient {
         }
     }
 
-    // NOTICE: 1.sync send tx, 2.truncate txHash to 32 bytes(temporary solution)
     public CrossChainMessageReceipt relayMsgToAuthMsg(byte[] rawMessage) {
         try {
             String txHash = sendTransaction(
@@ -570,7 +654,7 @@ public class DioxideClient {
                             "pkg", toIntArray(rawMessage)
                     ),
                     "gaslimit", 50000000)),
-                    true
+                    false
             );
 
             if (StrUtil.isEmpty(txHash)) {
@@ -578,10 +662,8 @@ public class DioxideClient {
             }
 
             CrossChainMessageReceipt crossChainMessageReceipt = new CrossChainMessageReceipt();
-            crossChainMessageReceipt.setConfirmed(true);
+            crossChainMessageReceipt.setConfirmed(false);
             crossChainMessageReceipt.setSuccessful(true);
-            // NOTICE: use sha256 to ensure txHash have 32 bytes
-            // crossChainMessageReceipt.setTxhash(DigestUtil.sha256Hex(txHash));
             crossChainMessageReceipt.setTxhash(txHash);
             crossChainMessageReceipt.setErrorMsg("");
             getBbcLogger().info("relay am msg by tx {}", txHash);
@@ -788,6 +870,113 @@ public class DioxideClient {
             return false;
         }
         return DioxideTypes.TXN_CONFIRMED_STATUS.contains(tx.getConfirmState());
+    }
+
+    public static boolean isTxFinalized(DioxideTransaction tx) {
+        if (tx == null || tx.getConfirmState() == null) {
+            return false;
+        }
+        return DioxideTypes.TXN_FINALIZED_STATUS.contains(tx.getConfirmState());
+    }
+
+    static boolean isTxTerminalFailed(DioxideTransaction tx) {
+        if (tx == null || tx.getConfirmState() == null) {
+            return false;
+        }
+        return StrUtil.equalsAny(
+                tx.getConfirmState(),
+                DioxideTypes.TxnConfirmState.TXN_RELAY_INVALIDED.name(),
+                DioxideTypes.TxnConfirmState.TXN_ABORTED.name(),
+                DioxideTypes.TxnConfirmState.TXN_EXPIRED.name()
+        );
+    }
+
+    private TxFinalityResult evaluateTxFinalityWithRelays(DioxideTransaction dioxideTransaction) {
+        return evaluateTxFinalityWithRelays(dioxideTransaction, this::getTransactionByHash);
+    }
+
+    static TxFinalityResult evaluateTxFinalityWithRelays(
+            DioxideTransaction dioxideTransaction,
+            Function<String, DioxideTransaction> transactionResolver
+    ) {
+        if (dioxideTransaction == null) {
+            return new TxFinalityResult(TxFinalityState.PENDING, "", "");
+        }
+
+        Queue<DioxideTransaction> queue = new ArrayDeque<>();
+        Set<String> queuedTxHashes = new HashSet<>();
+        queue.add(dioxideTransaction);
+        if (StrUtil.isNotEmpty(dioxideTransaction.getTxHash())) {
+            queuedTxHashes.add(normalizeRelayTxHash(dioxideTransaction.getTxHash()));
+        }
+
+        TxFinalityResult pendingResult = null;
+        while (!queue.isEmpty()) {
+            DioxideTransaction currentTx = queue.poll();
+            if (isTxTerminalFailed(currentTx)) {
+                return new TxFinalityResult(
+                        TxFinalityState.FAILED,
+                        currentTx.getTxHash(),
+                        currentTx.getConfirmState()
+                );
+            }
+            if (!isTxFinalized(currentTx) && pendingResult == null) {
+                pendingResult = new TxFinalityResult(
+                        TxFinalityState.PENDING,
+                        currentTx.getTxHash(),
+                        currentTx.getConfirmState()
+                );
+            }
+
+            if (currentTx.getInvocation() == null || CollUtil.isEmpty(currentTx.getInvocation().getRelays())) {
+                continue;
+            }
+            for (String relayTxReference : currentTx.getInvocation().getRelays()) {
+                String relayTxHash = normalizeRelayTxHash(relayTxReference);
+                if (StrUtil.isEmpty(relayTxHash)) {
+                    if (pendingResult == null) {
+                        pendingResult = new TxFinalityResult(TxFinalityState.PENDING, "", "");
+                    }
+                    continue;
+                }
+                if (!queuedTxHashes.add(relayTxHash)) {
+                    continue;
+                }
+                DioxideTransaction relayTx = transactionResolver.apply(relayTxHash);
+                if (relayTx == null) {
+                    if (pendingResult == null) {
+                        pendingResult = new TxFinalityResult(TxFinalityState.PENDING, relayTxHash, "");
+                    }
+                    continue;
+                }
+                queue.add(relayTx);
+            }
+        }
+
+        return pendingResult == null
+                ? new TxFinalityResult(
+                        TxFinalityState.FINALIZED,
+                        dioxideTransaction.getTxHash(),
+                        dioxideTransaction.getConfirmState()
+                )
+                : pendingResult;
+    }
+
+    static String normalizeRelayTxHash(String relayTxReference) {
+        if (StrUtil.isEmpty(relayTxReference)) {
+            return "";
+        }
+        int separatorIndex = relayTxReference.indexOf(':');
+        return separatorIndex >= 0 ? relayTxReference.substring(0, separatorIndex) : relayTxReference;
+    }
+
+    enum TxFinalityState {
+        PENDING,
+        FINALIZED,
+        FAILED
+    }
+
+    record TxFinalityResult(TxFinalityState state, String txHash, String confirmState) {
     }
 
     @SneakyThrows

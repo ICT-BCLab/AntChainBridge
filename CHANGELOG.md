@@ -1,5 +1,10 @@
 # 本分支新增功能总结
 
+## 2026.07.23 Dioxide插件、SimpleMonitorSystem优化 适配课题1POST接口
+- 优化dioxide/dioxide2提交跨链交易时为异步提交，并且等交易finalized后再返回confirmed为true
+- SimpleMonitorSystem能作为系统服务启动，在后台运行（与其他组件类似，通过./bin/start.sh ./bin/stop.sh启动和关闭）
+- 适配课题1提出的4个POST接口，relayer拿到ucp、获得ucp的监管结果、提交ucp到目的链、确认ucp在目的链落块归档四个时间向课题1提供ucp的相关执行结果。
+
 ## 2026.05.29 Dioxide插件txhash存储优化
 - 调整dioxide/dioxide2插件读取跨链消息时blockhash和txhash的处理方式，不再对Dioxide原始hash做sha256或hex解码，而是按UTF-8字节传给relayer，使数据库中存储的hex值可以还原出Dioxide链上的原始hash。
 - 将relayer中ucp_pool表的blockhash和txhash字段长度从varchar(66)调整为varchar(128)，兼容Dioxide原始52字符hash经过relayer统一hex编码后形成的104字符存储值。

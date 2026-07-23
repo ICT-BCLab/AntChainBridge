@@ -36,3 +36,9 @@ relayer:
   # 注意core_validation.ptc_id要属于存在的PTC服务的id之一
   core_validation:
     ptc_id: ptc01
+  platform_report:
+    enabled: true
+    endpoint: http://106.14.90.52:49200
+    api_key_path: file:conf-local/platform-report-api-key
+    connect_timeout_ms: 3000
+    read_timeout_ms: 5000

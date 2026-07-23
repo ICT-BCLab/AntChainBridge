@@ -30,6 +30,7 @@ import com.alipay.antchain.bridge.relayer.core.manager.blockchain.IBlockchainMan
 import com.alipay.antchain.bridge.relayer.core.types.blockchain.AbstractBlockchainClient;
 import com.alipay.antchain.bridge.relayer.core.types.blockchain.BlockchainClientPool;
 import com.alipay.antchain.bridge.relayer.core.types.blockchain.HeteroBlockchainClient;
+import com.alipay.antchain.bridge.relayer.core.service.report.PlatformReportClient;
 import com.alipay.antchain.bridge.relayer.core.utils.ProcessUtils;
 import com.alipay.antchain.bridge.relayer.dal.repository.ICrossChainMessageRepository;
 import com.alipay.antchain.bridge.relayer.dal.repository.ISystemConfigRepository;
@@ -68,6 +69,9 @@ public class CommitterService {
 
     @Resource
     private TransactionTemplate transactionTemplate;
+
+    @Resource
+    private PlatformReportClient platformReportClient;
 
     @Value("${relayer.service.committer.ccmsg.batch_size:32}")
     private int commitBatchSize;
@@ -446,6 +450,10 @@ public class CommitterService {
                         res.getErrorCode(), res.getErrorMessage()));
             }
         }
+
+        String ucpId = sdpMsgWrapper.getAuthMsgWrapper().getUcpId();
+        platformReportClient.reportTargetChainSubmission(ucpId, sdpMsgWrapper, res);
+        platformReportClient.reportTargetChainExecution(ucpId, res, isTimeout);
 
         // 4. 更新sdp记录表（若当前未成功，等待AMComfiredService查询提交结果）
         SDPMsgProcessStateEnum state = calculateSDPProcessState(res.isConfirmed(), res.isSuccess(), isTimeout);

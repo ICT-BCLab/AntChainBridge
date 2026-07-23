@@ -465,6 +465,14 @@ public class MonitorNodeServiceTest extends TestBase {
         var results = responseObserver.getValues();
         Assert.assertEquals(1, results.size());
         Assert.assertEquals(0, results.getFirst().getCode());
+        Assert.assertEquals(
+                "approved",
+                results.getFirst().getVerifyCrossChainMessageResp().getRegulationStatus()
+        );
+        Assert.assertEquals(
+                "",
+                results.getFirst().getVerifyCrossChainMessageResp().getRegulationReason()
+        );
 
         var nodeProof = CommitteeNodeProof.decode(results.getFirst().getVerifyCrossChainMessageResp().getRawNodeProof().toByteArray());
         Assert.assertTrue(

@@ -46,6 +46,7 @@ import com.alipay.antchain.bridge.ptc.committee.monitor.node.client.CrossChainSe
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.client.MonitorSystemGrpcClientManager;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.exception.*;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.BtaWrapper;
+import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.MonitorNodeVerifyResult;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.TpBtaWrapper;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.ValidatedConsensusStateWrapper;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.dal.repository.interfaces.IBCDNSRepository;
@@ -301,7 +302,7 @@ public class EndorserServiceImpl implements IEndorserService {
     }
 
     @Override
-    public CommitteeNodeProof verifyUcpWithMonitorSystem(CrossChainLane crossChainLane, UniformCrosschainPacket ucp) {
+    public MonitorNodeVerifyResult verifyUcpWithMonitorSystem(CrossChainLane crossChainLane, UniformCrosschainPacket ucp) {
 
         var tpbta = endorseServiceRepository.getExactTpBta(crossChainLane);
         if (ObjectUtil.isNull(tpbta)) {
@@ -330,24 +331,24 @@ public class EndorserServiceImpl implements IEndorserService {
         } catch (RuntimeException e) {
             log.error("failed to call monitor system for domain {}, treat it as monitor verification failure",
                     crossChainLane.getSenderDomain().getDomain(), e);
-            return CommitteeNodeProof.builder()
-                    .nodeId(committeeNodeId)
-                    .signAlgo(nodeSignAlgo)
-                    .signature(new byte[65]).build();
+            return MonitorNodeVerifyResult.error(emptySignatureProof(), e.getMessage());
         }
 
         if (ObjectUtil.isNull(responseFromMonitorSystem)) {
-            throw new RuntimeException("null response from monitor system");
+            return MonitorNodeVerifyResult.error(emptySignatureProof(), "null response from monitor system");
         }
         if (responseFromMonitorSystem.getCode() != 0) {
-            throw new RuntimeException(String.format("[MonitorSystemGRpcClient] verifyCrossChainMessageInMonitorSystem request failed for plugin server: %s",
-                    responseFromMonitorSystem.getErrorMsg()));
+            return MonitorNodeVerifyResult.error(
+                    emptySignatureProof(),
+                    String.format("[MonitorSystemGRpcClient] verifyCrossChainMessageInMonitorSystem request failed: %s",
+                            responseFromMonitorSystem.getErrorMsg())
+            );
         }
         if (responseFromMonitorSystem.getVerifyCrossChainMessageInMonitorSystemResp().getResult() == 0) {
             // 监管通过 流程正常
 //            log.info("verify ucp with monitor system for domain {}: success", bta.getDomain());
             log.info("verify ucp with monitor system for domain {}: success", crossChainLane.getSenderDomain().getDomain());
-            return CommitteeNodeProof.builder()
+            CommitteeNodeProof proof = CommitteeNodeProof.builder()
                     .nodeId(committeeNodeId)
                     .signAlgo(nodeSignAlgo)
                     .signature(nodeSignAlgo.getSigner().sign(
@@ -358,6 +359,7 @@ public class EndorserServiceImpl implements IEndorserService {
                                     crossChainLane
                             ).getEncodedToSign()
                     )).build();
+            return MonitorNodeVerifyResult.approved(proof);
         } else {
             // [监管回滚的v1版本逻辑]
             // 监管未通过 直接向监管合约发送回滚交易 并且不跑出异常 而是返回一个签名
@@ -402,10 +404,10 @@ public class EndorserServiceImpl implements IEndorserService {
 
             // [监管回滚的v2版本逻辑]
             // 返回一个ethereum格式(65字节)的空签名 由目的链的监管合约验证签名时识别为监管失败 构造监管回滚消息
-            return CommitteeNodeProof.builder()
-                    .nodeId(committeeNodeId)
-                    .signAlgo(nodeSignAlgo)
-                    .signature(new byte[65]).build();
+            return MonitorNodeVerifyResult.rejected(
+                    emptySignatureProof(),
+                    responseFromMonitorSystem.getVerifyCrossChainMessageInMonitorSystemResp().getMsg()
+            );
 
             // throw new InvalidCrossChainMessageException("[monitor system] illegal crosschain message(block hash: {}): {}",
             //         ucp.getSrcMessage().getProvableData().getBlockHashHex(), responseFromMonitorSystem.getVerifyCrossChainMessageInMonitorSystemResp().getMsg());
@@ -413,7 +415,7 @@ public class EndorserServiceImpl implements IEndorserService {
     }
 
     @Override
-    public CommitteeNodeProof relayUcpToMonitorSystem(UniformCrosschainPacket ucp) {
+    public MonitorNodeVerifyResult relayUcpToMonitorSystem(UniformCrosschainPacket ucp) {
         MonitorSystemResponse responseFromMonitorSystem;
         try {
             responseFromMonitorSystem = monitorSystemGrpcClientManager.withStub(
@@ -425,21 +427,25 @@ public class EndorserServiceImpl implements IEndorserService {
             );
         } catch (RuntimeException e) {
             log.error("failed to relay ucp to monitor system, monitor system may not receive the message", e);
-            return CommitteeNodeProof.builder()
-                    .nodeId(committeeNodeId)
-                    .signAlgo(nodeSignAlgo)
-                    .signature(new byte[65]).build();
+            return MonitorNodeVerifyResult.error(emptySignatureProof(), e.getMessage());
         }
 
         if (ObjectUtil.isNull(responseFromMonitorSystem)) {
-            throw new RuntimeException("null response from monitor system");
+            return MonitorNodeVerifyResult.error(emptySignatureProof(), "null response from monitor system");
         }
         if (responseFromMonitorSystem.getCode() != 0) {
-            throw new RuntimeException(String.format("[MonitorSystemGRpcClient] relayUcpToMonitorSystem request failed: %s",
-                    responseFromMonitorSystem.getErrorMsg()));
+            return MonitorNodeVerifyResult.error(
+                    emptySignatureProof(),
+                    String.format("[MonitorSystemGRpcClient] relayUcpToMonitorSystem request failed: %s",
+                            responseFromMonitorSystem.getErrorMsg())
+            );
         }
 
         // 返回一个ethereum格式(65字节)的空签名 根据具体业务需求决定是否使用
+        return MonitorNodeVerifyResult.approved(emptySignatureProof());
+    }
+
+    private CommitteeNodeProof emptySignatureProof() {
         return CommitteeNodeProof.builder()
                 .nodeId(committeeNodeId)
                 .signAlgo(nodeSignAlgo)

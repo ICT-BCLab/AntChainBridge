@@ -35,6 +35,7 @@ import com.alipay.antchain.bridge.commons.core.ptc.ValidatedConsensusState;
 import com.alipay.antchain.bridge.commons.core.ptc.ThirdPartyBlockchainTrustAnchorV1;
 import com.alipay.antchain.bridge.commons.core.ptc.ValidatedConsensusStateV1;
 import com.alipay.antchain.bridge.ptc.service.IPTCService;
+import com.alipay.antchain.bridge.ptc.types.PTCVerifyCrossChainMessageResult;
 import com.alipay.antchain.bridge.relayer.commons.constant.AuthMsgProcessStateEnum;
 import com.alipay.antchain.bridge.relayer.commons.constant.UniformCrosschainPacketStateEnum;
 import com.alipay.antchain.bridge.relayer.commons.exception.UcpValidationException;
@@ -42,6 +43,7 @@ import com.alipay.antchain.bridge.relayer.commons.model.TpBtaDO;
 import com.alipay.antchain.bridge.relayer.commons.model.UniformCrosschainPacketContext;
 import com.alipay.antchain.bridge.relayer.commons.model.ValidatedConsensusStateDO;
 import com.alipay.antchain.bridge.relayer.core.manager.ptc.PtcManager;
+import com.alipay.antchain.bridge.relayer.core.service.report.PlatformReportClient;
 import com.alipay.antchain.bridge.relayer.dal.repository.IBlockchainRepository;
 import com.alipay.antchain.bridge.relayer.dal.repository.ICrossChainMessageRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -60,6 +62,9 @@ public class UniformCrosschainPacketValidator {
 
     @Resource
     private PtcManager ptcManager;
+
+    @Resource
+    private PlatformReportClient platformReportClient;
 
     @Value("${core_validation.ptc_id:ptc01}")
     private String ptcId;
@@ -110,12 +115,22 @@ public class UniformCrosschainPacketValidator {
                 }
 
                 log.info("calling ptc {} to verify ucp {} with TpBTA {}", tpBtaDO.getPtcServiceId(), ucpContext.getUcpId(), ucpContext.getTpbtaLaneKey());
-                ThirdPartyProof tpProof = ptcService.verifyCrossChainMessage(tpBtaDO.getTpbta(), vcs, ucpContext.getUcp());
+                PTCVerifyCrossChainMessageResult verifyResult = ptcService.verifyCrossChainMessageWithResult(
+                        tpBtaDO.getTpbta(),
+                        vcs,
+                        ucpContext.getUcp()
+                );
+                ThirdPartyProof tpProof = verifyResult.getThirdPartyProof();
                 if (ObjectUtil.isNull(tpProof)) {
                     throw new UcpValidationException(ucpContext.getUcpId(), ucpContext.getSrcDomain(), ucpContext.getTpbtaLaneKey(), "none tp proof found");
                 }
                 log.info("successful to verify ucp {} with TpBTA {}", ucpContext.getUcpId(), ucpContext.getTpbtaLaneKey());
 
+                platformReportClient.reportRegulation(
+                        ucpContext.getUcpId(),
+                        verifyResult.getRegulationStatus(),
+                        verifyResult.getRegulationReason()
+                );
                 ucpContext.getUcp().setTpProof(tpProof);
                 crossChainMessageRepository.putTpProof(ucpContext.getUcpId(), ucpContext.getTpProof());
             }
@@ -130,7 +145,16 @@ public class UniformCrosschainPacketValidator {
                 log.info("[1]tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain() = {}", tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain());
                 tpBtaOnlyRepresentDioxide.setCrossChainLane(new CrossChainLane(new CrossChainDomain("dioxide2")));
                 log.info("[2]tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain() = {}", tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain());
-                ptcService.verifyCrossChainMessage(tpBtaOnlyRepresentDioxide, new ValidatedConsensusStateV1(), ucpContext.getUcp());
+                PTCVerifyCrossChainMessageResult verifyResult = ptcService.verifyCrossChainMessageWithResult(
+                        tpBtaOnlyRepresentDioxide,
+                        new ValidatedConsensusStateV1(),
+                        ucpContext.getUcp()
+                );
+                platformReportClient.reportRegulation(
+                        ucpContext.getUcpId(),
+                        verifyResult.getRegulationStatus(),
+                        verifyResult.getRegulationReason()
+                );
             }
 
             crossChainMessageRepository.updateUniformCrosschainPacketState(

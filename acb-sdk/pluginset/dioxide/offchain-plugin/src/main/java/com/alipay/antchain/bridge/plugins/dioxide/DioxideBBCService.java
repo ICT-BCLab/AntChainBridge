@@ -123,8 +123,7 @@ public class DioxideBBCService extends AbstractBBCService {
         return this.bbcContext;
     }
 
-    // NOTICE: for the databases in relayer can only store 32 bytes tx hash, interface [relayAuthMessage] will adopt send ucp in a synchronous way.
-    // In this case, interface [readCrossChainMessageReceipt] will not be used.
+    // Relayer polls this interface after relayAuthMessage returns an unconfirmed receipt.
     @Override
     public CrossChainMessageReceipt readCrossChainMessageReceipt(String txHash) {
         DioxideTransaction dioxideTransaction = dioxideClient.getTransactionByHash(txHash);

@@ -38,6 +38,7 @@ import com.alipay.antchain.bridge.ptc.committee.grpc.*;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.enums.MonitorTypeEnum;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.exception.*;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.TpBtaWrapper;
+import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.MonitorNodeVerifyResult;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.dal.repository.interfaces.IEndorseServiceRepository;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.server.interceptor.RequestTraceInterceptor;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.service.IEndorserService;
@@ -339,13 +340,15 @@ public class MonitorNodeServiceImpl extends CommitteeNodeServiceGrpc.CommitteeNo
             // 为dioxide链定制的逻辑，支持在无实际监管逻辑和PTC逻辑的情形下将跨链信息传递给外部监管系统
             if (Objects.equals(crossChainLane.getSenderDomain().getDomain(), "dioxide2")) {
                 log.info("receive crosschain message from Dioxide, relay to monitor system directly without verification");
-                CommitteeNodeProof proof = endorserService.relayUcpToMonitorSystem(ucp);
+                MonitorNodeVerifyResult verifyResult = endorserService.relayUcpToMonitorSystem(ucp);
                 responseObserver.onNext(
                         Response.newBuilder()
                                 .setCode(0)
                                 .setVerifyCrossChainMessageResp(
                                         VerifyCrossChainMessageResponse.newBuilder()
-                                                .setRawNodeProof(ByteString.copyFrom(proof.encode()))
+                                                .setRawNodeProof(ByteString.copyFrom(verifyResult.getNodeProof().encode()))
+                                                .setRegulationStatus(verifyResult.getRegulationStatus())
+                                                .setRegulationReason(StrUtil.nullToEmpty(verifyResult.getRegulationReason()))
                                                 .build()
                                 ).build()
                 );
@@ -361,20 +364,24 @@ public class MonitorNodeServiceImpl extends CommitteeNodeServiceGrpc.CommitteeNo
                 ISDPMessage sdpMessage = SDPMessageFactory.createSDPMessage(authMessage.getPayload());
                 IMonitorMessage monitorMessage = tryCreateMonitorMessage(sdpMessage.getPayload());
 
-                CommitteeNodeProof proof;
+                MonitorNodeVerifyResult verifyResult;
     
                 // 根据监管字段内容 判断是否需要监管
                 if (ObjectUtil.isNull(monitorMessage)) {
                     log.info("crosschain message: no monitor layer");
-                    proof = endorserService.verifyUcp(crossChainLane, ucp);
+                    verifyResult = MonitorNodeVerifyResult.approved(endorserService.verifyUcp(crossChainLane, ucp));
                 } else if (monitorMessage.getMonitorType() == MonitorTypeEnum.MONITOR_OPEN.getCode()) {
                     log.info("crosschain message: need monitor");
-                    proof = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp);
+                    verifyResult = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp);
                 } else {
                     // 不监管 把跨链消息发给监管系统即可
                     log.info("crosschain message: don't need monitor");
-                    endorserService.relayUcpToMonitorSystem(ucp);
-                    proof = endorserService.verifyUcp(crossChainLane, ucp);
+                    MonitorNodeVerifyResult relayResult = endorserService.relayUcpToMonitorSystem(ucp);
+                    verifyResult = new MonitorNodeVerifyResult(
+                            endorserService.verifyUcp(crossChainLane, ucp),
+                            relayResult.getRegulationStatus(),
+                            relayResult.getRegulationReason()
+                    );
                 }
     
                 responseObserver.onNext(
@@ -382,7 +389,9 @@ public class MonitorNodeServiceImpl extends CommitteeNodeServiceGrpc.CommitteeNo
                                 .setCode(0)
                                 .setVerifyCrossChainMessageResp(
                                         VerifyCrossChainMessageResponse.newBuilder()
-                                                .setRawNodeProof(ByteString.copyFrom(proof.encode()))
+                                                .setRawNodeProof(ByteString.copyFrom(verifyResult.getNodeProof().encode()))
+                                                .setRegulationStatus(verifyResult.getRegulationStatus())
+                                                .setRegulationReason(StrUtil.nullToEmpty(verifyResult.getRegulationReason()))
                                                 .build()
                                 ).build()
                 );
