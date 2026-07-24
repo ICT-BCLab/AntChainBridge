@@ -131,6 +131,13 @@ interface ISDPMessage is ISubProtocol {
      */
     function sendMessage(string calldata receiverDomain, identity receiverID, bytes calldata message) external;
 
+    function sendMessageFromMonitor(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bytes calldata message
+    ) external;
+
     /**
      * @dev Smart contracts call this method to send cross-chain messages out of order in SDPv2.
      *
@@ -155,6 +162,13 @@ interface ISDPMessage is ISubProtocol {
      * @param message the raw message from DApp contracts
      */
     function sendUnorderedMessage(string calldata receiverDomain, identity receiverID, bytes calldata message) external;
+
+    function sendUnorderedMessageFromMonitor(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bytes calldata message
+    ) external;
 
     /**
      * @dev Query the current sdp message sequence for the channel identited by `senderDomain`, 

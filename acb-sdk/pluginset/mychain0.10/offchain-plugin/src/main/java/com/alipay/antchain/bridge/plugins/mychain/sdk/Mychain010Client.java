@@ -752,17 +752,15 @@ public class Mychain010Client {
         if (!MychainUtils.bloomTopicsMatch(MychainUtils.CONSENSUS_UPDATE_EVENT_TOPICS_LIST, this.config.getMychainHashType(), blockHeader.getLogBloom())) {
             return ConsensusNodeInfo.builder()
                     .mychainHashType(config.getMychainHashType())
-                    .amContractIds(CollectionUtil.newHashSet(
-                            amAddressInfo.getEvmContractAddress(), amAddressInfo.getWasmContractAddress()
-                    )).build();
+                    .amContractIds(amAddressInfo.toSet())
+                    .build();
         }
 
         BlockBody blockBody = getBlockBodyByHash(blockHeader.getHash());
         return ConsensusNodeInfo.builder()
                 .mychainHashType(config.getMychainHashType())
-                .amContractIds(CollectionUtil.newHashSet(
-                        amAddressInfo.getEvmContractAddress(), amAddressInfo.getWasmContractAddress()
-                )).transactionReceipts(blockBody.getReceiptList())
+                .amContractIds(amAddressInfo.toSet())
+                .transactionReceipts(blockBody.getReceiptList())
                 .transactions(blockBody.getTransactionList())
                 .build();
     }

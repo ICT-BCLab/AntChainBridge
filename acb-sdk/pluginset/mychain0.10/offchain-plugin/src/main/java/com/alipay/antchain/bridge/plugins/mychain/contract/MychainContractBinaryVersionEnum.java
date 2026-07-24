@@ -11,6 +11,7 @@ public enum MychainContractBinaryVersionEnum {
             "/contract/v0/wasm/auth_message.wasc", "/contract/v0/solidity/am_client_mychain010_0_0_1.bin", "/contract/v0/wasm/auth_message_tee.wasc",
             "/contract/v0/wasm/p2p_message.wasc", "/contract/v0/solidity/am_p2p_msg_mychain010_0_0_1.bin", "/contract/v0/wasm/p2p_message.wasc",
             "", "",
+            "", "",
             "/contract/v0/wasm/jit/crosschain_sys.wasc"
     ),
     
@@ -19,6 +20,7 @@ public enum MychainContractBinaryVersionEnum {
             "/contract/v1/wasm/auth_message.wasc", "/contract/v1/solidity/AuthMsg_sol_AuthMsg.bin", "/contract/v1/wasm/auth_message_tee.wasc",
                     "/contract/v1/wasm/sdp_message.wasc", "/contract/v1/solidity/SDPMsg_sol_SDPMsg.bin", "/contract/v1/wasm/sdp_message.wasc",
                     "/contract/v1/solidity/PtcHub_sol_PtcHub.bin", "/contract/v1/solidity/CommitteePtcVerifier_sol_CommitteePtcVerifier.bin",
+                    "/contract/v1/solidity/Monitor_sol_Monitor.bin", "/contract/v1/solidity/MonitorVerifier_sol_MonitorVerifier.bin",
                     "/contract/v1/wasm/jit/crosschain_sys.wasc"
     );
 
@@ -39,6 +41,7 @@ public enum MychainContractBinaryVersionEnum {
             String amClientWasm, String amClientEvm, String amClientTeeWasm,
             String sdpWasm, String sdpEvm, String sdpTeeWasm,
             String ptcHubEvm, String committeeVerifierEvm,
+            String monitorEvm, String monitorVerifierEvm,
             String sysContractAllInOneWasm
     ) {
         this.version = version;
@@ -53,6 +56,8 @@ public enum MychainContractBinaryVersionEnum {
 
         this.ptcHubEvm = ptcHubEvm;
         this.committeeVerifierEvm = committeeVerifierEvm;
+        this.monitorEvm = monitorEvm;
+        this.monitorVerifierEvm = monitorVerifierEvm;
 
         this.sysContractAllInOneWasm = sysContractAllInOneWasm;
     }
@@ -70,6 +75,10 @@ public enum MychainContractBinaryVersionEnum {
     private String ptcHubEvm;
 
     private String committeeVerifierEvm;
+
+    private String monitorEvm;
+
+    private String monitorVerifierEvm;
 
     private String amClientTeeWasm;
 

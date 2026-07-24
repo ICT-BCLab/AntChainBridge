@@ -63,6 +63,13 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
 
     @Override
     public boolean deployContract(String bcdnsRootCertPem) {
+        if (StringUtils.isNotEmpty(this.getContractAddress())) {
+            // A configured PTC Hub was initialized when it was deployed. Keep it
+            // ready when setup is retried after the plugin or relayer restarts.
+            this.setStatus(ContractStatusEnum.CONTRACT_READY);
+            return true;
+        }
+
         String contractPath = MychainContractBinaryVersionEnum.selectBinaryByVersion(
                 mychain010Client.getConfig().getMychainContractBinaryVersion()
         ).getPtcHubEvm();
@@ -71,38 +78,33 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
             return false;
         }
 
-        if (StringUtils.isEmpty(this.getContractAddress())) {
+        String contractName = PTC_HUB_EVM_CONTRACT_PREFIX + UUID.randomUUID();
 
-            String contractName = PTC_HUB_EVM_CONTRACT_PREFIX + UUID.randomUUID();
-
-            CommitteePtcVerifierContractEvm committeePtcVerifierContractEvm = new CommitteePtcVerifierContractEvm(mychain010Client, logger);
-            if (!committeePtcVerifierContractEvm.deployContract()) {
-                logger.error("failed to deploy committee ptc verifier contract");
-                return false;
-            }
-
-            logger.info("Deploying PTC hub contract {} with code from {}", contractName, contractPath);
-            AbstractCrossChainCertificate bcdnsRootCert = CrossChainCertificateUtil.readCrossChainCertificateFromPem(bcdnsRootCertPem.getBytes());
-            if (bcdnsRootCert.getType() != CrossChainCertificateTypeEnum.BCDNS_TRUST_ROOT_CERTIFICATE) {
-                logger.error("for now, PTC hub contract only support BCDNS trust root certificate to initialize");
-                return false;
-            }
-
-            EVMParameter parameter = new EVMParameter();
-            parameter.addBytes(bcdnsRootCert.encode());
-            if (!mychain010Client.deployContract(contractPath, contractName, VMTypeEnum.EVM, parameter)) {
-                logger.error("failed to deploy ptc hub contract");
-                return false;
-            }
-            this.setContractAddress(contractName);
-
-            logger.info("Set committee verifier {} into ptc hub now...", committeePtcVerifierContractEvm.getContractAddress());
-            setCommitteeVerifier(committeePtcVerifierContractEvm.getContractAddress());
-
-            this.setStatus(ContractStatusEnum.CONTRACT_READY);
-            return true;
+        CommitteePtcVerifierContractEvm committeePtcVerifierContractEvm = new CommitteePtcVerifierContractEvm(mychain010Client, logger);
+        if (!committeePtcVerifierContractEvm.deployContract()) {
+            logger.error("failed to deploy committee ptc verifier contract");
+            return false;
         }
 
+        logger.info("Deploying PTC hub contract {} with code from {}", contractName, contractPath);
+        AbstractCrossChainCertificate bcdnsRootCert = CrossChainCertificateUtil.readCrossChainCertificateFromPem(bcdnsRootCertPem.getBytes());
+        if (bcdnsRootCert.getType() != CrossChainCertificateTypeEnum.BCDNS_TRUST_ROOT_CERTIFICATE) {
+            logger.error("for now, PTC hub contract only support BCDNS trust root certificate to initialize");
+            return false;
+        }
+
+        EVMParameter parameter = new EVMParameter();
+        parameter.addBytes(bcdnsRootCert.encode());
+        if (!mychain010Client.deployContract(contractPath, contractName, VMTypeEnum.EVM, parameter)) {
+            logger.error("failed to deploy ptc hub contract");
+            return false;
+        }
+        this.setContractAddress(contractName);
+
+        logger.info("Set committee verifier {} into ptc hub now...", committeePtcVerifierContractEvm.getContractAddress());
+        setCommitteeVerifier(committeePtcVerifierContractEvm.getContractAddress());
+
+        this.setStatus(ContractStatusEnum.CONTRACT_READY);
         return true;
     }
 
@@ -130,6 +132,21 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
         }
 
         logger.info("Set committee verifier {} with tx {} successfully!", committeeVerifierName, result.getTxId());
+    }
+
+    public void setMonitorVerifier(String monitorVerifierName) {
+        EVMParameter parameters = new EVMParameter("setMonitorVerifier(identity)");
+        parameters.addIdentity(Utils.getIdentityByName(
+                monitorVerifierName,
+                mychain010Client.getConfig().getMychainHashType()
+        ));
+
+        SendResponseResult result = mychain010Client.callContract(this.getContractAddress(), parameters, true);
+        if (!result.isSuccess()) {
+            throw new CallContractException(getContractAddress(), result.getTxId(), result.getErrorMessage());
+        }
+
+        logger.info("Set monitor verifier {} with tx {} successfully!", monitorVerifierName, result.getTxId());
     }
 
     public String getCommitteeVerifier() {

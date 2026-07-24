@@ -41,6 +41,7 @@ public class AMContractClientEVM extends AuthMessageContract implements Abstract
     // 合约接口名
     public static final String ADD_RELAYERS_METHOD = "addRelayers(identity)";
     public static final String SET_PROTOCOL_METHOD = "setProtocol(identity,uint32)";
+    public static final String GET_PROTOCOL_METHOD = "getProtocol(uint32)";
     public static final String AM_RECV_PKG_METHOD = "recvPkgFromRelayer(bytes)";
     private static final String SET_PTC_HUB_METHOD = "setPtcHub(identity)";
 
@@ -87,6 +88,13 @@ public class AMContractClientEVM extends AuthMessageContract implements Abstract
      */
     @Override
     public boolean setProtocol(String protocolContractName, String protocolType) {
+        if (isProtocolSet(protocolContractName, protocolType)) {
+            markContractConfigured();
+            logger.info("AM protocol {} already points to {}, skip setting it again.",
+                    protocolType, protocolContractName);
+            return true;
+        }
+
         EVMParameter parameters = new EVMParameter(SET_PROTOCOL_METHOD);
         parameters.addIdentity(Utils.getIdentityByName(
                 protocolContractName,
@@ -99,13 +107,41 @@ public class AMContractClientEVM extends AuthMessageContract implements Abstract
                         parameters,
                         true)
                 .isSuccess()) {
-            if (stateCounter.incrementAndGet() == 2) {
-                logger.info("AM contract is ready after set protocol.");
-                this.setStatus(ContractStatusEnum.CONTRACT_READY);
-            }
+            markContractConfigured();
             return true;
         } else {
             return false;
+        }
+    }
+
+    private boolean isProtocolSet(String protocolContractName, String protocolType) {
+        try {
+            EVMParameter parameters = new EVMParameter(GET_PROTOCOL_METHOD);
+            parameters.addUint(BigInteger.valueOf(Integer.parseInt(protocolType)));
+
+            TransactionReceipt receipt = mychain010Client.localCallContract(this.getContractAddress(), parameters);
+            if (ObjectUtil.isEmpty(receipt) || ObjectUtil.isEmpty(receipt.getOutput())) {
+                return false;
+            }
+
+            String expectedProtocol = Utils.getIdentityByName(
+                    protocolContractName,
+                    mychain010Client.getConfig().getMychainHashType()).hexStrValue();
+            String configuredProtocol = new EVMOutput(Hex.toHexString(receipt.getOutput()))
+                    .getIdentity()
+                    .hexStrValue();
+            return expectedProtocol.equals(configuredProtocol);
+        } catch (Exception e) {
+            logger.warn("Failed to query protocol {} from AM contract {}, continue with setProtocol.",
+                    protocolType, this.getContractAddress(), e);
+            return false;
+        }
+    }
+
+    private void markContractConfigured() {
+        if (stateCounter.incrementAndGet() == 2) {
+            logger.info("AM contract is ready after protocol and PTC hub are configured.");
+            this.setStatus(ContractStatusEnum.CONTRACT_READY);
         }
     }
 
@@ -117,10 +153,7 @@ public class AMContractClientEVM extends AuthMessageContract implements Abstract
         if (!result.isSuccess()) {
             throw new CallContractException(getContractAddress(), result.getTxId(), result.getErrorMessage());
         }
-        if (stateCounter.incrementAndGet() == 2) {
-            logger.info("AM contract is ready after set ptc hub.");
-            this.setStatus(ContractStatusEnum.CONTRACT_READY);
-        }
+        markContractConfigured();
     }
 
     @Override

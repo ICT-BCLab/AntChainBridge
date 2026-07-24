@@ -18,6 +18,8 @@ contract SDPMsg is ISDPMessage, Ownable {
 
     identity public amAddress;
 
+    identity public monitorAddress;
+
     bytes32 public localDomainHash;
 
     mapping(bytes32 => uint32) sendSeq;
@@ -46,6 +48,14 @@ contract SDPMsg is ISDPMessage, Ownable {
         _;
     }
 
+    modifier onlyMonitorOrLegacySender() {
+        require(
+            monitorAddress == identity(0) || monitorAddress == msg.sender,
+            "SDPMsg: not valid monitor contract"
+        );
+        _;
+    }
+
     modifier onlyRelayer {
         require(
             relayerAuthMap[msg.sender],
@@ -64,6 +74,11 @@ contract SDPMsg is ISDPMessage, Ownable {
     function setAmContract(identity newAmContract) override external onlyOwner {
         require(newAmContract != identity(0), "SDPMsg: invalid am contract");
         amAddress = newAmContract;
+    }
+
+    function setMonitorContract(identity newMonitorContract) external onlyOwner {
+        require(newMonitorContract != identity(0), "SDPMsg: invalid monitor contract");
+        monitorAddress = newMonitorContract;
     }
 
     function getAmAddress() external view returns (identity) {
@@ -91,7 +106,20 @@ contract SDPMsg is ISDPMessage, Ownable {
     }
 
     // 发送有序消息 SDPv1
-    function sendMessage(string calldata receiverDomain, identity receiverID, bytes calldata message) override external {
+    function sendMessage(string calldata receiverDomain, identity receiverID, bytes calldata message) override external onlyMonitorOrLegacySender {
+        _sendMessage(receiverDomain, receiverID, msg.sender, message);
+    }
+
+    function sendMessageFromMonitor(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bytes calldata message
+    ) override external onlyMonitorOrLegacySender {
+        _sendMessage(receiverDomain, receiverID, senderID, message);
+    }
+
+    function _sendMessage(string calldata receiverDomain, identity receiverID, identity senderID, bytes calldata message) internal {
         _beforeSend(receiverDomain, receiverID, message);
         bytes32 receiver = bytes32(receiverID);
         SDPMessage memory sdpMessage = SDPMessage(
@@ -99,19 +127,32 @@ contract SDPMsg is ISDPMessage, Ownable {
                 receiveDomain: receiverDomain,
                 receiver: receiver,
                 message: message,
-                sequence: _getAndUpdateSendSeq(receiverDomain, msg.sender, receiver)
+                sequence: _getAndUpdateSendSeq(receiverDomain, senderID, receiver)
             }
         );
 
         bytes memory rawMsg = sdpMessage.encode();
 
-        IAuthMessage(amAddress).recvFromProtocol(msg.sender, rawMsg);
+        IAuthMessage(amAddress).recvFromProtocol(senderID, rawMsg);
 
         _afterSend();
     }
 
     // 发送无序消息 SDPv1
-    function sendUnorderedMessage(string calldata receiverDomain, identity receiverID, bytes calldata message) override external {
+    function sendUnorderedMessage(string calldata receiverDomain, identity receiverID, bytes calldata message) override external onlyMonitorOrLegacySender {
+        _sendUnorderedMessage(receiverDomain, receiverID, msg.sender, message);
+    }
+
+    function sendUnorderedMessageFromMonitor(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bytes calldata message
+    ) override external onlyMonitorOrLegacySender {
+        _sendUnorderedMessage(receiverDomain, receiverID, senderID, message);
+    }
+
+    function _sendUnorderedMessage(string calldata receiverDomain, identity receiverID, identity senderID, bytes calldata message) internal {
         _beforeSendUnordered(receiverDomain, receiverID, message);
 
         SDPMessage memory sdpMessage = SDPMessage(
@@ -123,7 +164,7 @@ contract SDPMsg is ISDPMessage, Ownable {
             }
         );
 
-        IAuthMessage(amAddress).recvFromProtocol(msg.sender, sdpMessage.encode());
+        IAuthMessage(amAddress).recvFromProtocol(senderID, sdpMessage.encode());
 
         _afterSendUnordered();
     }

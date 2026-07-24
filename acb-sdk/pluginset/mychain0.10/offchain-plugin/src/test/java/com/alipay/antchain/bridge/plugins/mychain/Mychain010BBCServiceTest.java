@@ -46,6 +46,7 @@ import com.alipay.mychain.sdk.api.utils.Utils;
 import com.alipay.mychain.sdk.crypto.hash.HashTypeEnum;
 import com.alipay.mychain.sdk.domain.account.Identity;
 import com.alipay.mychain.sdk.domain.block.BlockHeader;
+import com.alipay.mychain.sdk.domain.transaction.TransactionReceipt;
 import com.alipay.mychain.sdk.domain.spv.BlockHeaderInfo;
 import com.alipay.mychain.sdk.errorcode.ErrorCode;
 import com.alipay.mychain.sdk.message.query.QueryTransactionReceiptResponse;
@@ -57,6 +58,7 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.bouncycastle.util.encoders.Hex;
 import org.slf4j.Logger;
 
 import java.io.ByteArrayInputStream;
@@ -65,6 +67,9 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.security.PrivateKey;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -278,6 +283,52 @@ public class Mychain010BBCServiceTest {
         );
         Assert.assertNotEquals("0000000000000000000000000000000000000000000000000000000000000000",
                 ((Mychain010BBCContext) contextAfter).getPtcContractEvm().getCommitteeVerifier());
+    }
+
+    /**
+     * Requires -Dmychain.config.path to point to an isolated MyChain test configuration.
+     * The test deploys a fresh AM/SDP/PTC/Monitor contract set and must be run explicitly.
+     */
+    @Test
+    public void setupMonitorContractsOnChainTest() {
+        mychain010BBCService.setupAuthMessageContract();
+        mychain010BBCService.setupSDPMessageContract();
+        mychain010BBCService.setupPTCContract();
+
+        mychain010BBCService.setLocalDomain(CHAIN_DOMAIN);
+        mychain010BBCService.setProtocol("", "0");
+        mychain010BBCService.setPtcContract("");
+        mychain010BBCService.setupMonitorContract();
+        mychain010BBCService.setPtcHubInMonitorVerifier("");
+        mychain010BBCService.setMonitorControl(2);
+
+        Mychain010BBCContext context = (Mychain010BBCContext) mychain010BBCService.getContext();
+        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, context.getAuthMessageContract().getStatus());
+        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, context.getSdpContract().getStatus());
+        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, context.getPtcContract().getStatus());
+        Assert.assertNotNull(context.getMonitorContract());
+        Assert.assertEquals(
+                context.getMonitorContractClientEVM().getContractAddress(),
+                context.getMonitorContract().getContractAddress());
+        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, context.getMonitorContractClientEVM().getStatus());
+        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, context.getMonitorVerifierContractEVM().getStatus());
+
+        Assert.assertEquals(
+                Utils.getIdentityByName(
+                        context.getSdpContractClientEVM().getContractAddress(),
+                        mychain010Client.getConfig().getMychainHashType()).hexStrValue(),
+                localCallIdentity(context.getMonitorContractClientEVM().getContractAddress(), "getProtocol()"));
+        Assert.assertEquals(
+                Utils.getIdentityByName(
+                        context.getPtcContractEvm().getContractAddress(),
+                        mychain010Client.getConfig().getMychainHashType()).hexStrValue(),
+                localCallIdentity(context.getMonitorVerifierContractEVM().getContractAddress(), "getPtcHubAddress()"));
+        Assert.assertEquals(
+                Utils.getIdentityByName(
+                        context.getMonitorContractClientEVM().getContractAddress(),
+                        mychain010Client.getConfig().getMychainHashType()).hexStrValue(),
+                localCallIdentity(context.getSdpContractClientEVM().getContractAddress(), "monitorAddress()"));
+        Assert.assertEquals(BigInteger.valueOf(2), localCallUint(context.getMonitorContractClientEVM().getContractAddress(), "getMonitorControl()"));
     }
 
     @Test
@@ -566,8 +617,25 @@ public class Mychain010BBCServiceTest {
         Assert.assertNotEquals(0L, (long) mychain010BBCService.queryLatestHeight());
     }
 
+    private String localCallIdentity(String contractName, String method) {
+        TransactionReceipt receipt = mychain010Client.localCallContract(contractName, new EVMParameter(method));
+        Assert.assertEquals(ErrorCode.SUCCESS.getErrorCode(), receipt.getResult());
+        Assert.assertNotNull(receipt.getOutput());
+        return new EVMOutput(Hex.toHexString(receipt.getOutput())).getIdentity().hexStrValue();
+    }
+
+    private BigInteger localCallUint(String contractName, String method) {
+        TransactionReceipt receipt = mychain010Client.localCallContract(contractName, new EVMParameter(method));
+        Assert.assertEquals(ErrorCode.SUCCESS.getErrorCode(), receipt.getResult());
+        Assert.assertNotNull(receipt.getOutput());
+        return new EVMOutput(Hex.toHexString(receipt.getOutput())).getUint();
+    }
+
     private AbstractBBCContext mychainNoContractCtx() throws IOException {
-        String jsonStr = Mychain010Config.readFileJson("test.domain.json");
+        String configPath = System.getProperty("mychain.config.path");
+        String jsonStr = configPath == null || configPath.trim().isEmpty()
+                ? Mychain010Config.readFileJson("test.domain.json")
+                : new String(Files.readAllBytes(Paths.get(configPath)), StandardCharsets.UTF_8);
         Mychain010Config mockConf = Mychain010Config.fromJsonString(jsonStr);
 
         AbstractBBCContext mockCtx = new DefaultBBCContext();

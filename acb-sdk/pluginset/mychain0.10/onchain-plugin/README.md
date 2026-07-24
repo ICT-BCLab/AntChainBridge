@@ -12,9 +12,10 @@
 合约编译依赖`0.4.24`版本的[`solc`编译器](https://antdigital.com/docs/11/101793#h2--solc-5:~:text=%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E3%80%82-,%E4%BA%8C%E8%BF%9B%E5%88%B6%C2%A0solc%C2%A0%E7%BC%96%E8%AF%91%E5%B7%A5%E5%85%B7,-solc%2Djs%C2%A0%E7%BC%96%E8%AF%91)
 和[`solc-js`编译器](https://antdigital.com/docs/11/101793#h2--solc-js1:~:text=%E8%BF%9B%E8%A1%8C%E7%AE%80%E8%A6%81%E8%AF%B4%E6%98%8E%E3%80%82-,%E4%B8%8B%E8%BD%BD%C2%A0solc%2Djs,-%E5%8D%95%E5%87%BB%E6%AD%A4%E5%A4%84)
 
-执行`onchain-plugin/src`目录下的`compile_evm_all.sh`脚本可以编译合约，
+执行`onchain-plugin/solidity/v1`目录下的`compile_evm_all.sh`脚本可以编译 v1 EVM 合约，
 并将编译生成的`*.bin`（用于合约部署）和`*_runtime.bin`（用于合约升级）
-自动更新到`offchain-plugin/src/main/resources/contract/1.5.0/solidity`目录
+自动更新到`offchain-plugin/src/main/resources/contract/v1/solidity`目录。监管合约新增后，
+该脚本也会生成并拷贝`Monitor_sol_Monitor.bin`和`MonitorVerifier_sol_MonitorVerifier.bin`。
 
 ## Mychain BBC系统合约（c++）
 

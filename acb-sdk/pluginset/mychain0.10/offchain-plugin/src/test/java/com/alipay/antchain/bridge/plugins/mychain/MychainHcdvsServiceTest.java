@@ -19,6 +19,7 @@ package com.alipay.antchain.bridge.plugins.mychain;
 import java.io.ByteArrayInputStream;
 import java.lang.reflect.Method;
 import java.security.PrivateKey;
+import java.util.HashSet;
 
 import cn.hutool.core.collection.ListUtil;
 import cn.hutool.core.util.HexUtil;
@@ -33,6 +34,7 @@ import com.alipay.antchain.bridge.commons.core.bta.IBlockchainTrustAnchor;
 import com.alipay.antchain.bridge.commons.utils.crypto.SignAlgoEnum;
 import com.alipay.antchain.bridge.plugins.mychain.crypto.CryptoSuiteEnum;
 import com.alipay.antchain.bridge.plugins.mychain.model.ContractAddressInfo;
+import com.alipay.antchain.bridge.plugins.mychain.model.ConsensusNodeInfo;
 import com.alipay.antchain.bridge.plugins.mychain.model.MychainSubjectIdentity;
 import com.alipay.antchain.bridge.plugins.spi.ptc.core.VerifyResult;
 import lombok.extern.slf4j.Slf4j;
@@ -130,6 +132,27 @@ public class MychainHcdvsServiceTest {
         VerifyResult result = mychainHcdvsService.verifyConsensusState(currentState, anchorState);
         Assert.assertNotNull(result);
         Assert.assertTrue(result.isSuccess());
+    }
+
+    @Test
+    public void testVerifyConsensusStateWithMissingWasmAddress() {
+        mychainHcdvsService.verifyAnchorConsensusState(mychainBta, anchorState);
+        ConsensusNodeInfo currentNodeInfo = ConsensusNodeInfo.decode(currentState.getConsensusNodeInfo());
+        currentNodeInfo.setAmContractIds(new HashSet<>(currentNodeInfo.getAmContractIds()));
+        currentNodeInfo.getAmContractIds().add(null);
+        currentState.setConsensusNodeInfo(currentNodeInfo.encode());
+
+        VerifyResult result = mychainHcdvsService.verifyConsensusState(currentState, anchorState);
+
+        Assert.assertNotNull(result);
+        Assert.assertTrue(result.isSuccess());
+        Assert.assertFalse(ConsensusNodeInfo.decode(currentState.getConsensusNodeInfo()).getAmContractIds().contains(null));
+    }
+
+    @Test
+    public void testContractAddressInfoOmitsMissingVmAddress() {
+        Assert.assertEquals(1, new ContractAddressInfo(amEvm, null).toSet().size());
+        Assert.assertTrue(new ContractAddressInfo(amEvm, null).toSet().contains(amEvm));
     }
 
     @Test

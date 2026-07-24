@@ -103,6 +103,10 @@ public class Mychain010Config {
     private String sdpContractName;
     @JSONField(name = "ptc_contract_address")
     private String ptcContractName;
+    @JSONField(name = "monitor_contract_address")
+    private String monitorContractName;
+    @JSONField(name = "monitor_verifier_contract_address")
+    private String monitorVerifierContractName;
 
     @JSONField(name = "bcdns_root_cert_pem")
     private String bcdnsRootCertPem;
