@@ -77,6 +77,9 @@ public class PlatformReportClient {
     }
 
     public void reportUcp(UniformCrosschainPacketContext context) {
+        if (!enabled || StrUtil.isEmpty(apiKey)) {
+            return;
+        }
         post("/api/cc-relayer/ucps", context.getUcpId(), ucpReportJsonBuilder.build(context));
     }
 
