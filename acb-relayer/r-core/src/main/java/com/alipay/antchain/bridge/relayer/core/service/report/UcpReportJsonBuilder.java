@@ -5,6 +5,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 
 import cn.hutool.core.util.HexUtil;
@@ -33,47 +34,54 @@ import org.springframework.stereotype.Component;
 @Component
 public class UcpReportJsonBuilder {
 
+    private static final int MAX_MONITOR_MESSAGE_BYTES = 4 * 1024 * 1024;
+
     public JSONObject build(UniformCrosschainPacketContext context) {
         JSONObject body = new JSONObject(true);
         body.put("ucpId", context.getUcpId());
-        body.put("rawUcp", hex(context.getUcp().encode()));
+        byte[] rawUcp = context.getUcp().encode();
+        body.put("rawUcpBase64", Base64.getEncoder().encodeToString(rawUcp));
+        // Retained for older receivers while rawUcpBase64 is the current API contract.
+        body.put("rawUcp", hex(rawUcp));
 
         JSONObject source = new JSONObject(true);
         source.put("product", context.getProduct());
         source.put("blockchainId", context.getBlockchainId());
         source.put("domain", context.getSrcDomain());
         body.put("source", source);
-        body.put("ucp", buildUcp(context.getUcp()));
+        JSONObject ucp = buildUcp(context.getUcp(), isMonitorProduct(context.getProduct()));
+        body.put("ucp", ucp);
+        addCompatibilityMessageFields(body, ucp);
         return body;
     }
 
-    private JSONObject buildUcp(UniformCrosschainPacket ucp) {
+    private JSONObject buildUcp(UniformCrosschainPacket ucp, boolean monitorProduct) {
         JSONObject json = new JSONObject(true);
         json.put("version", ucp.getVersion());
         json.put("srcDomain", ucp.getSrcDomain().getDomain());
-        json.put("srcMessage", buildCrossChainMessage(ucp.getSrcMessage()));
+        json.put("srcMessage", buildCrossChainMessage(ucp.getSrcMessage(), monitorProduct));
         json.put("ptcId", buildObjectIdentity(ucp.getPtcId()));
         json.put("tpProof", buildThirdPartyProof(ucp.getTpProof()));
         return json;
     }
 
-    private JSONObject buildCrossChainMessage(CrossChainMessage message) {
+    private JSONObject buildCrossChainMessage(CrossChainMessage message, boolean monitorProduct) {
         JSONObject json = new JSONObject(true);
         json.put("type", message.getType().name());
-        json.put("message", buildMessageBody(message));
+        json.put("message", buildMessageBody(message, monitorProduct));
         json.put("provableData", buildProvableData(message.getProvableData()));
         return json;
     }
 
-    private Object buildMessageBody(CrossChainMessage message) {
+    private Object buildMessageBody(CrossChainMessage message, boolean monitorProduct) {
         if (message.getType() != CrossChainMessage.CrossChainMessageType.AUTH_MSG) {
             return parseOpaqueData(message.getMessage());
         }
-        JSONObject authMessage = tryBuildAuthMessage(message.getMessage());
+        JSONObject authMessage = tryBuildAuthMessage(message.getMessage(), monitorProduct);
         return ObjectUtil.isNull(authMessage) ? parseOpaqueData(message.getMessage()) : authMessage;
     }
 
-    private JSONObject tryBuildAuthMessage(byte[] rawMessage) {
+    private JSONObject tryBuildAuthMessage(byte[] rawMessage, boolean monitorProduct) {
         try {
             IAuthMessage authMessage = AuthMessageFactory.createAuthMessage(rawMessage);
             JSONObject json = new JSONObject(true);
@@ -83,7 +91,7 @@ public class UcpReportJsonBuilder {
             if (authMessage instanceof AuthMessageV2) {
                 json.put("trustLevel", ((AuthMessageV2) authMessage).getTrustLevel().name());
             }
-            json.put("payload", buildAuthPayload(authMessage));
+            json.put("payload", buildAuthPayload(authMessage, monitorProduct));
 
             JSONObject result = new JSONObject(true);
             result.put("authMessage", json);
@@ -93,7 +101,7 @@ public class UcpReportJsonBuilder {
         }
     }
 
-    private Object buildAuthPayload(IAuthMessage authMessage) {
+    private Object buildAuthPayload(IAuthMessage authMessage, boolean monitorProduct) {
         if (authMessage.getUpperProtocol() != 0) {
             return parseOpaqueData(authMessage.getPayload());
         }
@@ -114,7 +122,7 @@ public class UcpReportJsonBuilder {
                 sdpJson.put("timeoutMeasure", sdpMessage.getTimeoutMeasure().name());
                 sdpJson.put("timeout", sdpMessage.getTimeout().toString());
             }
-            sdpJson.put("payload", buildSdpPayload(sdpMessage.getPayload()));
+            sdpJson.put("payload", buildSdpPayload(sdpMessage.getPayload(), monitorProduct));
 
             JSONObject result = new JSONObject(true);
             result.put("sdpMessage", sdpJson);
@@ -124,7 +132,10 @@ public class UcpReportJsonBuilder {
         }
     }
 
-    private Object buildSdpPayload(byte[] payload) {
+    private Object buildSdpPayload(byte[] payload, boolean monitorProduct) {
+        if (!monitorProduct || !isStructurallyValidMonitorMessage(payload)) {
+            return parseOpaqueData(payload);
+        }
         try {
             IMonitorMessage monitorMessage = MonitorMessageFactory.createMonitorMessage(payload);
             if (monitorMessage.getMonitorType() < 1 || monitorMessage.getMonitorType() > 4) {
@@ -141,6 +152,74 @@ public class UcpReportJsonBuilder {
             return result;
         } catch (RuntimeException e) {
             return parseOpaqueData(payload);
+        }
+    }
+
+    private boolean isMonitorProduct(String product) {
+        return "dioxide2".equalsIgnoreCase(product) || "ethereum3".equalsIgnoreCase(product);
+    }
+
+    private boolean isStructurallyValidMonitorMessage(byte[] payload) {
+        if (ObjectUtil.isNull(payload)
+                || payload.length < 68
+                || payload.length > MAX_MONITOR_MESSAGE_BYTES) {
+            return false;
+        }
+        int monitorType = readInt(payload, payload.length - 4);
+        if (monitorType < 1 || monitorType > 4) {
+            return false;
+        }
+        int offset = payload.length - 4;
+        offset = previousVarBytesOffset(payload, offset);
+        if (offset < 0) {
+            return false;
+        }
+        offset = previousVarBytesOffset(payload, offset);
+        return offset == 0;
+    }
+
+    private int previousVarBytesOffset(byte[] payload, int offset) {
+        if (offset < 32 || offset > payload.length) {
+            return -1;
+        }
+        int length = readInt(payload, offset - 4);
+        if (length < 0 || length > MAX_MONITOR_MESSAGE_BYTES) {
+            return -1;
+        }
+        long paddedLength = ((long) length + 31L) / 32L * 32L;
+        long previousOffset = (long) offset - 32L - paddedLength;
+        return previousOffset < 0L ? -1 : (int) previousOffset;
+    }
+
+    private int readInt(byte[] value, int offset) {
+        return ((value[offset] & 0xff) << 24)
+                | ((value[offset + 1] & 0xff) << 16)
+                | ((value[offset + 2] & 0xff) << 8)
+                | (value[offset + 3] & 0xff);
+    }
+
+    private void addCompatibilityMessageFields(JSONObject body, JSONObject ucp) {
+        JSONObject srcMessage = ucp.getJSONObject("srcMessage");
+        if (ObjectUtil.isNull(srcMessage)) {
+            return;
+        }
+        Object messageValue = srcMessage.get("message");
+        if (!(messageValue instanceof JSONObject)) {
+            return;
+        }
+        JSONObject message = (JSONObject) messageValue;
+        JSONObject authMessage = message.getJSONObject("authMessage");
+        if (ObjectUtil.isNull(authMessage)) {
+            return;
+        }
+        body.put("am", authMessage);
+        Object authPayloadValue = authMessage.get("payload");
+        if (authPayloadValue instanceof JSONObject) {
+            JSONObject authPayload = (JSONObject) authPayloadValue;
+            JSONObject sdpMessage = authPayload.getJSONObject("sdpMessage");
+            if (ObjectUtil.isNotNull(sdpMessage)) {
+                body.put("sdp", sdpMessage);
+            }
         }
     }
 
@@ -177,7 +256,7 @@ public class UcpReportJsonBuilder {
         json.put("tpbtaVersion", proof.getTpbtaVersion());
         JSONObject resp = new JSONObject(true);
         if (ObjectUtil.isNotNull(proof.getResp())) {
-            JSONObject authMessage = tryBuildAuthMessage(proof.getResp().getBody());
+            JSONObject authMessage = tryBuildAuthMessage(proof.getResp().getBody(), false);
             resp.put(
                     "body",
                     ObjectUtil.isNull(authMessage) ? parseOpaqueData(proof.getResp().getBody()) : authMessage

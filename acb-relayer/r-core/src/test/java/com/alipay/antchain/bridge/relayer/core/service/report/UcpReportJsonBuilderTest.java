@@ -2,6 +2,7 @@ package com.alipay.antchain.bridge.relayer.core.service.report;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Collections;
 
 import cn.hutool.core.util.HexUtil;
@@ -61,7 +62,7 @@ public class UcpReportJsonBuilderTest {
         );
         UniformCrosschainPacketContext context = new UniformCrosschainPacketContext();
         context.setUcpId("ucp-test");
-        context.setProduct("test-product");
+        context.setProduct("dioxide2");
         context.setBlockchainId("test-chain");
         context.setUcp(new UniformCrosschainPacket(new CrossChainDomain("source.example"), crossChainMessage, null));
 
@@ -74,6 +75,12 @@ public class UcpReportJsonBuilderTest {
 
         Assert.assertEquals("ucp-test", body.getString("ucpId"));
         Assert.assertEquals(HexUtil.encodeHexStr(context.getUcp().encode()), body.getString("rawUcp"));
+        Assert.assertEquals(
+                Base64.getEncoder().encodeToString(context.getUcp().encode()),
+                body.getString("rawUcpBase64")
+        );
+        Assert.assertEquals(1, body.getJSONObject("am").getIntValue("version"));
+        Assert.assertEquals("target.example", body.getJSONObject("sdp").getString("targetDomain"));
         Assert.assertEquals("source.example", ucp.getString("srcDomain"));
         Assert.assertEquals("AUTH_MSG", srcMessage.getString("type"));
         Assert.assertEquals("target.example", sdp.getString("targetDomain"));
@@ -83,6 +90,63 @@ public class UcpReportJsonBuilderTest {
         Assert.assertEquals("0102", srcMessage.getJSONObject("provableData").getString("blockHash"));
         Assert.assertEquals("03", srcMessage.getJSONObject("provableData").getString("ledgerData"));
         Assert.assertFalse(body.toJSONString().contains("\"rawHex\""));
+    }
+
+    @Test
+    public void testMalformedMonitorLengthFallsBackWithoutAllocation() {
+        byte[] malformedPayload = new byte[68];
+        malformedPayload[60] = 0x7f;
+        malformedPayload[61] = (byte) 0xff;
+        malformedPayload[62] = (byte) 0xff;
+        malformedPayload[63] = (byte) 0xff;
+        malformedPayload[67] = 1;
+
+        SDPMessageV1 sdpMessage = new SDPMessageV1();
+        sdpMessage.setTargetDomain(new CrossChainDomain("target.example"));
+        sdpMessage.setTargetIdentity(new CrossChainIdentity(new byte[32]));
+        sdpMessage.setSequence(-1);
+        sdpMessage.setPayload(malformedPayload);
+
+        AuthMessageV1 authMessage = new AuthMessageV1();
+        authMessage.setIdentity(new CrossChainIdentity(new byte[32]));
+        authMessage.setUpperProtocol(0);
+        authMessage.setPayload(sdpMessage.encode());
+
+        UniformCrosschainPacketContext context = buildContext(createAuthMessage(authMessage));
+        context.setProduct("dioxide2");
+        Object payload = new UcpReportJsonBuilder().build(context)
+                .getJSONObject("sdp")
+                .get("payload");
+
+        Assert.assertEquals(HexUtil.encodeHexStr(malformedPayload), payload);
+    }
+
+    @Test
+    public void testUnmonitoredProductTreatsMonitorEnvelopeAsOpaque() {
+        MonitorMessageV1 monitorMessage = new MonitorMessageV1();
+        monitorMessage.setMonitorType(2);
+        monitorMessage.setMonitorMsg("rule-hit");
+        monitorMessage.setPayload("business-data".getBytes(StandardCharsets.UTF_8));
+
+        SDPMessageV1 sdpMessage = new SDPMessageV1();
+        sdpMessage.setTargetDomain(new CrossChainDomain("target.example"));
+        sdpMessage.setTargetIdentity(new CrossChainIdentity(new byte[32]));
+        sdpMessage.setSequence(-1);
+        sdpMessage.setPayload(monitorMessage.encode());
+
+        AuthMessageV1 authMessage = new AuthMessageV1();
+        authMessage.setIdentity(new CrossChainIdentity(new byte[32]));
+        authMessage.setUpperProtocol(0);
+        authMessage.setPayload(sdpMessage.encode());
+
+        UniformCrosschainPacketContext context = buildContext(createAuthMessage(authMessage));
+        context.setProduct("dioxide");
+        Object payload = new UcpReportJsonBuilder().build(context)
+                .getJSONObject("sdp")
+                .get("payload");
+
+        Assert.assertTrue(payload instanceof String);
+        Assert.assertFalse(String.valueOf(payload).contains("monitorMessage"));
     }
 
     @Test
