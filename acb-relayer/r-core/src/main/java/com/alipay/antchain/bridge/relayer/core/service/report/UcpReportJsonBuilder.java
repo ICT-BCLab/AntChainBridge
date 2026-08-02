@@ -234,8 +234,26 @@ public class UcpReportJsonBuilder {
         json.put("timestampUtc", Instant.ofEpochMilli(data.getTimestamp()).toString());
         json.put("ledgerData", parseOpaqueData(data.getLedgerData()));
         json.put("proof", parseOpaqueData(data.getProof()));
-        json.put("txHash", hex(data.getTxHash()));
+        json.put("txHash", encodeTxHashForReport(data.getTxHash()));
         return json;
+    }
+
+    /**
+     * The plugin API exposes the transaction hash as bytes, but plugins do not agree on what those bytes mean:
+     * chains such as Dioxide store the chain-native hash text as UTF-8, while chains such as Mychain store the
+     * decoded binary hash. The platform report contract is UTF-8 HEX, so first recover a chain-native text value
+     * and then hex-encode its UTF-8 bytes. This keeps Dioxide output stable and gives binary-hash chains the same
+     * wire representation without changing the UCP or plugin-internal hash representation.
+     */
+    private String encodeTxHashForReport(byte[] value) {
+        if (ObjectUtil.isNull(value)) {
+            return null;
+        }
+        String txHash = decodeUtf8(value);
+        if (ObjectUtil.isNull(txHash) || !isPrintable(txHash)) {
+            txHash = hex(value);
+        }
+        return hex(txHash.getBytes(StandardCharsets.UTF_8));
     }
 
     private JSONObject buildObjectIdentity(ObjectIdentity identity) {

@@ -176,6 +176,27 @@ public class UcpReportJsonBuilderTest {
     }
 
     @Test
+    public void testBuildNormalizesSourceTxHashAsUtf8Hex() {
+        String dioxideTxHash = "z4vcnp2r4wn6nyvx4gz851msx5d5yg78ber6qdvfkhxje5fhz770";
+        JSONObject dioxideProvableData = buildProvableData(dioxideTxHash.getBytes(StandardCharsets.UTF_8));
+        Assert.assertEquals(
+                HexUtil.encodeHexStr(dioxideTxHash.getBytes(StandardCharsets.UTF_8)),
+                dioxideProvableData.getString("txHash")
+        );
+
+        String mychainTxHash = "e0b6d9013195594002730aa7cdba82b2cb1aabd469b8554ea90086c9f6422d90";
+        JSONObject mychainProvableData = buildProvableData(HexUtil.decodeHex(mychainTxHash));
+        Assert.assertEquals(
+                HexUtil.encodeHexStr(mychainTxHash.getBytes(StandardCharsets.UTF_8)),
+                mychainProvableData.getString("txHash")
+        );
+        Assert.assertEquals(
+                mychainTxHash,
+                new String(HexUtil.decodeHex(mychainProvableData.getString("txHash")), StandardCharsets.UTF_8)
+        );
+    }
+
+    @Test
     public void testBuildAuthV2WithSdpV2AndV3() {
         assertAuthV2AndSdpVersion(2);
         assertAuthV2AndSdpVersion(3);
@@ -313,6 +334,23 @@ public class UcpReportJsonBuilderTest {
                 new byte[0],
                 new byte[]{0x03}
         );
+    }
+
+    private JSONObject buildProvableData(byte[] txHash) {
+        CrossChainMessage crossChainMessage = CrossChainMessage.createCrossChainMessage(
+                CrossChainMessage.CrossChainMessageType.DEVELOPER_DESIGN,
+                104L,
+                123456793L,
+                new byte[]{0x01},
+                new byte[]{0x02},
+                new byte[0],
+                new byte[0],
+                txHash
+        );
+        return new UcpReportJsonBuilder().build(buildContext(crossChainMessage))
+                .getJSONObject("ucp")
+                .getJSONObject("srcMessage")
+                .getJSONObject("provableData");
     }
 
     private UniformCrosschainPacketContext buildContext(CrossChainMessage crossChainMessage) {
