@@ -79,6 +79,9 @@ public class FISCOBCOSConfig {
     @JSONField
     private String accountFileFormat = "pem";
 
+    @JSONField
+    private String privateKey;
+
     // client
     @JSONField
     private String groupID;
