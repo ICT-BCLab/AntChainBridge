@@ -119,6 +119,62 @@ public class BlockchainManagerTest extends TestBase {
     }
 
     @Test
+    public void testUpdateBlockchainPreservesPropertiesOnPartialConfig() {
+
+        BlockchainMeta blockchainMeta = blockchainManager.getBlockchainMetaByDomain(antChainDotComDomain);
+        String amAddr = "AM_CONTRACT_TO_KEEP";
+        String sdpAddr = "SDP_CONTRACT_TO_KEEP";
+        String ptcAddr = "PTC_CONTRACT_TO_KEEP";
+        long initBlockHeight = 12345L;
+
+        blockchainMeta.getProperties().setAmClientContractAddress(amAddr);
+        blockchainMeta.getProperties().setSdpMsgContractAddress(sdpAddr);
+        blockchainMeta.getProperties().setPtcContractAddress(ptcAddr);
+        blockchainMeta.getProperties().setInitBlockHeight(initBlockHeight);
+        blockchainMeta.getProperties().setIsDomainRegistered(true);
+        Assert.assertTrue(blockchainRepository.updateBlockchainMeta(blockchainMeta));
+
+        Map<String, String> partialClientConfig = new HashMap<>();
+        partialClientConfig.put(Constants.HETEROGENEOUS_BBC_CONTEXT, JSON.toJSONString(blockchainProperties1.getBbcContext()));
+        blockchainManager.updateBlockchain(
+                antChainDotComProduct,
+                antChainDotComBlockchainId,
+                "",
+                blockchainMeta.getAlias(),
+                blockchainMeta.getDesc(),
+                partialClientConfig
+        );
+
+        BlockchainMeta updatedMeta = blockchainManager.getBlockchainMetaByDomain(antChainDotComDomain);
+        Assert.assertEquals(PS_ID, updatedMeta.getPluginServerId());
+        Assert.assertEquals(initBlockHeight, updatedMeta.getProperties().getInitBlockHeight().longValue());
+        Assert.assertEquals(amAddr, updatedMeta.getProperties().getAmClientContractAddress());
+        Assert.assertEquals(sdpAddr, updatedMeta.getProperties().getSdpMsgContractAddress());
+        Assert.assertEquals(ptcAddr, updatedMeta.getProperties().getPtcContractAddress());
+        Assert.assertTrue(updatedMeta.getProperties().getIsDomainRegistered());
+
+        String newPtcAddr = "PTC_CONTRACT_UPDATED";
+        partialClientConfig.clear();
+        partialClientConfig.put("ptc_contract_address", newPtcAddr);
+        blockchainManager.updateBlockchain(
+                antChainDotComProduct,
+                antChainDotComBlockchainId,
+                "",
+                blockchainMeta.getAlias(),
+                blockchainMeta.getDesc(),
+                partialClientConfig
+        );
+
+        updatedMeta = blockchainManager.getBlockchainMetaByDomain(antChainDotComDomain);
+        Assert.assertEquals(PS_ID, updatedMeta.getPluginServerId());
+        Assert.assertEquals(initBlockHeight, updatedMeta.getProperties().getInitBlockHeight().longValue());
+        Assert.assertEquals(amAddr, updatedMeta.getProperties().getAmClientContractAddress());
+        Assert.assertEquals(sdpAddr, updatedMeta.getProperties().getSdpMsgContractAddress());
+        Assert.assertEquals(newPtcAddr, updatedMeta.getProperties().getPtcContractAddress());
+        Assert.assertTrue(updatedMeta.getProperties().getIsDomainRegistered());
+    }
+
+    @Test
     public void testUpdateBlockchainProperty() {
 
         blockchainManager.updateBlockchainProperty(

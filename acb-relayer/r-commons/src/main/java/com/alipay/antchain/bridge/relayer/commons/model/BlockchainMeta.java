@@ -164,6 +164,9 @@ public class BlockchainMeta {
         if (StrUtil.isNotEmpty(properties.getSdpMsgContractAddress())) {
             this.properties.setSdpMsgContractAddress(properties.getSdpMsgContractAddress());
         }
+        if (StrUtil.isNotEmpty(properties.getPtcContractAddress())) {
+            this.properties.setPtcContractAddress(properties.getPtcContractAddress());
+        }
         if (ObjectUtil.isNotNull(properties.getAnchorRuntimeStatus())) {
             this.properties.setAnchorRuntimeStatus(properties.getAnchorRuntimeStatus());
         }

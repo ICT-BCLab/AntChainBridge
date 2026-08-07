@@ -198,7 +198,7 @@ public class BlockchainManager implements IBlockchainManager {
             blockchainMeta.setAlias(alias);
             blockchainMeta.setDesc(desc);
             blockchainMeta.updateProperties(blockchainProperties);
-            if (!updateBlockchainMeta(new BlockchainMeta(product, blockchainId, alias, desc, blockchainProperties))) {
+            if (!updateBlockchainMeta(blockchainMeta)) {
                 throw new RuntimeException(
                         StrUtil.format(
                                 "failed to update meta for blockchain {} - {} into DB",
