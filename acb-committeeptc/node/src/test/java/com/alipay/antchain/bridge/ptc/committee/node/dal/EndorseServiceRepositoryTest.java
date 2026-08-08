@@ -32,6 +32,7 @@ import com.alipay.antchain.bridge.commons.core.ptc.ValidatedConsensusStateV1;
 import com.alipay.antchain.bridge.commons.utils.crypto.HashAlgoEnum;
 import com.alipay.antchain.bridge.commons.utils.crypto.SignAlgoEnum;
 import com.alipay.antchain.bridge.ptc.committee.node.TestBase;
+import com.alipay.antchain.bridge.ptc.committee.node.commons.exception.DataAccessLayerException;
 import com.alipay.antchain.bridge.ptc.committee.node.commons.models.BtaWrapper;
 import com.alipay.antchain.bridge.ptc.committee.node.commons.models.TpBtaWrapper;
 import com.alipay.antchain.bridge.ptc.committee.node.commons.models.ValidatedConsensusStateWrapper;
@@ -45,8 +46,11 @@ import com.alipay.antchain.bridge.ptc.committee.types.tpbta.OptionalEndorsePolic
 import jakarta.annotation.Resource;
 import lombok.SneakyThrows;
 import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
 
+@ExtendWith(SpringExtension.class)
 public class EndorseServiceRepositoryTest extends TestBase {
 
     @Resource
@@ -74,6 +78,10 @@ public class EndorseServiceRepositoryTest extends TestBase {
         btaWrapper.setBta(bta);
         endorseServiceRepository.setBta(btaWrapper);
         endorseServiceRepository.setBta(btaWrapper);
+
+        var conflictingBta = BeanUtil.copyProperties(bta, BlockchainTrustAnchorV1.class);
+        conflictingBta.setSubjectIdentity("different".getBytes());
+        assertConflictingWrite(() -> endorseServiceRepository.setBta(new BtaWrapper(conflictingBta)));
 
         var btaWrapperFromDB = endorseServiceRepository.getBta(btaWrapper.getDomain());
         Assert.assertEquals(
@@ -126,7 +134,27 @@ public class EndorseServiceRepositoryTest extends TestBase {
         endorseServiceRepository.setTpBta(tpBtaWrapper);
         endorseServiceRepository.setTpBta(tpBtaWrapper);
 
+        var conflictingTpBta = ThirdPartyBlockchainTrustAnchorV1.decode(tpbta.encode());
+        conflictingTpBta.setEndorseProof("different".getBytes());
+        assertConflictingWrite(() -> endorseServiceRepository.setTpBta(new TpBtaWrapper(conflictingTpBta)));
+
+        var blockchainLevelTpBta = new ThirdPartyBlockchainTrustAnchorV1(
+                2,
+                BigInteger.ONE,
+                tpbta.getSignerPtcCredentialSubject(),
+                new CrossChainLane(crossChainLane.getSenderDomain()),
+                2,
+                HashAlgoEnum.KECCAK_256,
+                tpbta.getEndorseRoot(),
+                tpbta.getEndorseProof()
+        );
+        endorseServiceRepository.setTpBta(new TpBtaWrapper(blockchainLevelTpBta));
+
         Assert.assertNotNull(endorseServiceRepository.getMatchedTpBta(crossChainLane));
+        Assert.assertEquals(
+                1,
+                endorseServiceRepository.getMatchedTpBta(crossChainLane, -1, 1).getTpbta().getBtaSubjectVersion()
+        );
         Assert.assertTrue(endorseServiceRepository.hasTpBta(crossChainLane, 1));
         Assert.assertNotNull(endorseServiceRepository.getMatchedTpBta(crossChainLane));
     }
@@ -148,6 +176,12 @@ public class EndorseServiceRepositoryTest extends TestBase {
         endorseServiceRepository.setValidatedConsensusState(new ValidatedConsensusStateWrapper(vcs));
         endorseServiceRepository.setValidatedConsensusState(new ValidatedConsensusStateWrapper(vcs));
 
+        var conflictingVcs = BeanUtil.copyProperties(vcs, ValidatedConsensusStateV1.class);
+        conflictingVcs.setHash(RandomUtil.randomBytes(32));
+        assertConflictingWrite(
+                () -> endorseServiceRepository.setValidatedConsensusState(new ValidatedConsensusStateWrapper(conflictingVcs))
+        );
+
         Assert.assertTrue(endorseServiceRepository.hasValidatedConsensusState("test", BigInteger.valueOf(100L)));
         Assert.assertEquals(
                 cs.getHashHex(),
@@ -161,5 +195,14 @@ public class EndorseServiceRepositoryTest extends TestBase {
                 cs.getParentHashHex(),
                 endorseServiceRepository.getValidatedConsensusState("test", cs.getHashHex()).getParentHash()
         );
+    }
+
+    private static void assertConflictingWrite(Runnable write) {
+        try {
+            write.run();
+            Assert.fail("conflicting payload should be rejected");
+        } catch (DataAccessLayerException expected) {
+            Assert.assertTrue(expected.getMessage().contains("Conflicting"));
+        }
     }
 }

@@ -39,6 +39,7 @@ import com.alipay.antchain.bridge.commons.utils.crypto.SignAlgoEnum;
 import com.alipay.antchain.bridge.plugins.spi.ptc.IHeteroChainDataVerifierService;
 import com.alipay.antchain.bridge.plugins.spi.ptc.core.VerifyResult;
 import com.alipay.antchain.bridge.ptc.committee.node.TestBase;
+import com.alipay.antchain.bridge.ptc.committee.node.commons.exception.InvalidConsensusStateException;
 import com.alipay.antchain.bridge.ptc.committee.node.commons.models.BtaWrapper;
 import com.alipay.antchain.bridge.ptc.committee.node.commons.models.DomainSpaceCertWrapper;
 import com.alipay.antchain.bridge.ptc.committee.node.commons.models.TpBtaWrapper;
@@ -56,12 +57,15 @@ import com.alipay.antchain.bridge.ptc.committee.types.tpbta.OptionalEndorsePolic
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.VerifyBtaExtension;
 import jakarta.annotation.Resource;
 import org.junit.Assert;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import static org.mockito.Mockito.*;
 
+@ExtendWith(SpringExtension.class)
 public class EndorserServiceTest extends TestBase {
 
     private static final ThirdPartyBlockchainTrustAnchorV1 tpbta;
@@ -297,6 +301,17 @@ public class EndorserServiceTest extends TestBase {
                         vcs.getEncodedToSign()
                 )
         );
+    }
+
+    @Test
+    public void testCommitAnchorStateRejectsMismatchedLaneDomain() {
+        var mismatchedLane = new CrossChainLane(new CrossChainDomain("other-domain"));
+        try {
+            endorserService.commitAnchorState(mismatchedLane, anchorState);
+            Assert.fail("mismatched lane and anchor domains should be rejected");
+        } catch (InvalidConsensusStateException expected) {
+            Assert.assertTrue(expected.getMessage().contains("does not match"));
+        }
     }
 
     @Test

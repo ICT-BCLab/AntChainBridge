@@ -188,8 +188,15 @@ public class EndorserServiceImpl implements IEndorserService {
 
     @Override
     public ValidatedConsensusState commitAnchorState(CrossChainLane crossChainLane, ConsensusState anchorState) {
+        if (!ObjectUtil.equals(crossChainLane.getSenderDomain(), anchorState.getDomain())) {
+            throw new InvalidConsensusStateException(
+                    "cross-chain lane sender domain {} does not match anchor state domain {}",
+                    crossChainLane.getSenderDomain().getDomain(), anchorState.getDomain().getDomain()
+            );
+        }
+
         var bta = endorseServiceRepository.getBta(
-                anchorState.getDomain().getDomain(),
+                crossChainLane.getSenderDomain().getDomain(),
                 anchorState.getHeight(),
                 anchorState.getHash()
         );
