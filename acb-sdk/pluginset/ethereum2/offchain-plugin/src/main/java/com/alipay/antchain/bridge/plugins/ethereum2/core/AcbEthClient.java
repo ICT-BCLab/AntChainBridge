@@ -510,33 +510,12 @@ public class AcbEthClient {
     public EthConsensusStateData getEthConsensusStateData(BigInteger slot, String amContract) {
         var ethConsensusStateData = new EthConsensusStateData();
         ethConsensusStateData.setAmContractHex(amContract);
-        // last slot for this period
-        var currPeriod = currentSyncCommitteePeriod(slot);
-        var currPeriodEndSlot = currPeriod
-                .add(BigInteger.ONE)
-                .multiply(BigInteger.valueOf(config.getEth2ChainConfig().getSyncPeriodLength()))
-                .subtract(BigInteger.ONE);
-        if (currPeriodEndSlot.equals(slot)) {
-            // fetch the sync committee update
-            getBbcLogger().info("get light client update for next period: {}", currPeriod.add(BigInteger.ONE));
-            var lightClientUpdate = getLightClientUpdate(slot);
-            if (ObjectUtil.isNull(lightClientUpdate)) {
-                getBbcLogger().error("none update found for period: {}", currPeriod);
-                throw new RuntimeException(StrUtil.format("none update found for period: {}", currPeriod.toString()));
-            }
-            ethConsensusStateData.setLightClientUpdateWrapper(lightClientUpdate);
-        }
 
         getBbcLogger().info("has ccmsg on slot {} or already has no cache, will fetch the whole beacon block...", slot);
-        var signedBeaconBlock = getBeaconBlockBySlot(slot);
-        if (ObjectUtil.isNull(signedBeaconBlock)) {
+        var beaconBlock = getBeaconBlockBySlot(slot);
+        if (ObjectUtil.isNull(beaconBlock)) {
             return ethConsensusStateData;
         }
-        if (signedBeaconBlock.getBeaconBlock().isEmpty()) {
-            getBbcLogger().warn("slot {} has no beacon block, could be empty", slot);
-            return ethConsensusStateData;
-        }
-        var beaconBlock = signedBeaconBlock.getBeaconBlock().get();
         if (beaconBlock.getBody().getOptionalExecutionPayloadHeader().isEmpty()) {
             throw new RuntimeException("no execution payload found in beacon block as slot " + slot);
         }
@@ -552,7 +531,54 @@ public class AcbEthClient {
                 )
         );
 
+        populateLightClientUpdateIfRequired(ethConsensusStateData, slot, null);
+
         return ethConsensusStateData;
+    }
+
+    public void populateLightClientUpdateIfRequired(
+            EthConsensusStateData ethConsensusStateData,
+            BigInteger stateSlot,
+            BigInteger signatureSlot
+    ) {
+        var syncPeriodLength = BigInteger.valueOf(config.getEth2ChainConfig().getSyncPeriodLength());
+        var statePeriod = stateSlot.divide(syncPeriodLength);
+        var signaturePeriod = ObjectUtil.isNull(signatureSlot) ? statePeriod : signatureSlot.divide(syncPeriodLength);
+        if (signaturePeriod.compareTo(statePeriod.add(BigInteger.ONE)) > 0) {
+            throw new RuntimeException(StrUtil.format(
+                    "signature slot {} is more than one sync committee period ahead of state slot {}",
+                    signatureSlot, stateSlot
+            ));
+        }
+        if (!requiresLightClientUpdate(stateSlot, signatureSlot, syncPeriodLength.longValue())) {
+            return;
+        }
+        if (ObjectUtil.isNotNull(ethConsensusStateData.getLightClientUpdateWrapper())) {
+            return;
+        }
+
+        getBbcLogger().info("get light client update for next period: {}", statePeriod.add(BigInteger.ONE));
+        var lightClientUpdate = getLightClientUpdate(stateSlot);
+        if (ObjectUtil.isNull(lightClientUpdate)) {
+            getBbcLogger().error("none update found for period: {}", statePeriod);
+            throw new RuntimeException(StrUtil.format("none update found for period: {}", statePeriod.toString()));
+        }
+        ethConsensusStateData.setLightClientUpdateWrapper(lightClientUpdate);
+    }
+
+    public static boolean requiresLightClientUpdate(
+            BigInteger stateSlot,
+            BigInteger signatureSlot,
+            long syncPeriodLength
+    ) {
+        var periodLength = BigInteger.valueOf(syncPeriodLength);
+        var statePeriod = stateSlot.divide(periodLength);
+        var periodEndSlot = statePeriod.add(BigInteger.ONE).multiply(periodLength).subtract(BigInteger.ONE);
+        if (periodEndSlot.equals(stateSlot)) {
+            return true;
+        }
+        return ObjectUtil.isNotNull(signatureSlot)
+                && signatureSlot.divide(periodLength).compareTo(statePeriod) > 0;
     }
 
     public boolean hasTpBtaOnPtcHub(String ptcHubAddress, CrossChainLane tpbtaLane, int tpBtaVersion) {

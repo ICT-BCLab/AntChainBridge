@@ -21,6 +21,7 @@ import org.hyperledger.besu.datatypes.Address;
 import org.web3j.tx.Contract;
 import org.web3j.utils.Numeric;
 import tech.pegasys.teku.infrastructure.unsigned.UInt64;
+import tech.pegasys.teku.spec.datastructures.state.SyncCommittee;
 
 @HeteroChainDataVerifierService(pluginId = "plugin-ethereum2", products = "ethereum2")
 public class EthereumHcdvsService extends AbstractHCDVSService {
@@ -53,7 +54,7 @@ public class EthereumHcdvsService extends AbstractHCDVSService {
                 ethSubjectIdentity.getCurrentSyncCommittee().getPubkeys().size()
         );
         try {
-            ethConsensusStateData.validate(ethSubjectIdentity.getCurrentSyncCommittee(), ethEndorsements, ethSubjectIdentity.getEth2ChainConfig());
+            verifyAndUpdateSyncCommittee(ethSubjectIdentity, ethConsensusStateData, ethEndorsements);
         } catch (InvalidConsensusDataException e) {
             getHCDVSLogger().error("failed to verify eth consensus state data (slot: {}, hash: {}) for domain {}",
                     anchorState.getHeight().toString(), anchorState.getHashHex(), bta.getDomain().toString(), e);
@@ -62,15 +63,6 @@ public class EthereumHcdvsService extends AbstractHCDVSService {
 
         getHCDVSLogger().info("successful to verify anchor consensus state ⚓️ (slot: {}, hash: {}) for domain {} now!",
                 anchorState.getHeight().toString(), anchorState.getHashHex(), bta.getDomain().toString());
-        if (ethConsensusStateData.getLightClientUpdateWrapper() != null) {
-            ethSubjectIdentity.setNextSyncCommittee(ethConsensusStateData.getLightClientUpdateWrapper().getNextSyncCommittee());
-        }
-        if (ethConsensusStateData.isLastSlotForCurrentPeriod(ethSubjectIdentity.getEth2ChainConfig().getSyncPeriodLength())
-                && ObjectUtil.isNotNull(ethSubjectIdentity.getNextSyncCommittee())) {
-            getHCDVSLogger().info("light client update inside last-slot anchor consensus state, switch current sync committee");
-            ethSubjectIdentity.setCurrentSyncCommittee(ethSubjectIdentity.getNextSyncCommittee());
-            ethSubjectIdentity.setNextSyncCommittee(null);
-        }
         anchorState.setConsensusNodeInfo(ethSubjectIdentity.toJson().getBytes());
         return VerifyResult.success();
     }
@@ -129,54 +121,17 @@ public class EthereumHcdvsService extends AbstractHCDVSService {
                     ethSubjectIdentity.getCurrentSyncCommittee().getPubkeys().size()
             );
             var syncPeriodLength = ethSubjectIdentity.getEth2ChainConfig().getSyncPeriodLength();
-            var currPeriod = ethConsensusStateData.getCurrSyncPeriod(syncPeriodLength);
-            var signatureSlot = ethEndorsements.getSignatureSlotOrDefault(currSlot.increment());
-            var signaturePeriod = signatureSlot.dividedBy(syncPeriodLength);
-            var shouldRotateCommittee = ethConsensusStateData.isLastSlotForCurrentPeriod(syncPeriodLength);
-
-            if (shouldRotateCommittee) {
-                if (ethConsensusStateData.getLightClientUpdateWrapper() == null) {
-                    getHCDVSLogger().error("❌ has none light client update for the last slot {} for current period {}",
-                            ethConsensusStateData.getBeaconBlockHeader().getSlot().toString(),
-                            currPeriod
-                    );
-                    return VerifyResult.fail("none light client update at last slot in period");
+            if (ObjectUtil.isNull(ethSubjectIdentity.getCurrentSyncCommitteePeriod())) {
+                var parentPeriod = parentConsensusData.getCurrSyncPeriod(syncPeriodLength).bigIntegerValue();
+                if (parentConsensusData.isLastSlotForCurrentPeriod(syncPeriodLength)
+                        && ObjectUtil.isNull(ethSubjectIdentity.getNextSyncCommittee())) {
+                    parentPeriod = parentPeriod.add(BigInteger.ONE);
                 }
-                try {
-                    ethConsensusStateData.validateLightClientUpdate(
-                            ethSubjectIdentity.getCurrentSyncCommittee(),
-                            ethSubjectIdentity.getEth2ChainConfig()
-                    );
-                } catch (InvalidConsensusDataException e) {
-                    getHCDVSLogger().error("❌ failed to verify light client update at last slot {}",
-                            stateToVerify.getHeight().toString(), e);
-                    return VerifyResult.fail("failed to verify light client update: {}", e.getMessage());
-                }
-                ethSubjectIdentity.setNextSyncCommittee(ethConsensusStateData.getLightClientUpdateWrapper().getNextSyncCommittee());
-            }
-
-            var committeeForBlockVerification = ethSubjectIdentity.getCurrentSyncCommittee();
-            if (signaturePeriod.equals(currPeriod)) {
-                committeeForBlockVerification = ethSubjectIdentity.getCurrentSyncCommittee();
-            } else if (signaturePeriod.equals(currPeriod.increment())) {
-                if (ObjectUtil.isNull(ethSubjectIdentity.getNextSyncCommittee())) {
-                    getHCDVSLogger().error("❌ missing next sync committee for slot {}, while endorsements come from signature slot {}",
-                            stateToVerify.getHeight().toString(), signatureSlot.toString());
-                    return VerifyResult.fail("missing next sync committee for endorsements");
-                }
-                committeeForBlockVerification = ethSubjectIdentity.getNextSyncCommittee();
-            } else {
-                getHCDVSLogger().error("❌ unexpected endorsements signature slot {} for state slot {}",
-                        signatureSlot.toString(), stateToVerify.getHeight().toString());
-                return VerifyResult.fail("unexpected endorsements signature slot");
+                ethSubjectIdentity.setCurrentSyncCommitteePeriod(parentPeriod);
             }
 
             try {
-                ethConsensusStateData.validateBlock(
-                        committeeForBlockVerification,
-                        ethEndorsements,
-                        ethSubjectIdentity.getEth2ChainConfig()
-                );
+                verifyAndUpdateSyncCommittee(ethSubjectIdentity, ethConsensusStateData, ethEndorsements);
             } catch (InvalidConsensusDataException e) {
                 getHCDVSLogger().error("❌ failed to verify eth consensus state data (slot: {}, hash: {})",
                         stateToVerify.getHeight().toString(), stateToVerify.getHashHex(), e);
@@ -184,20 +139,116 @@ public class EthereumHcdvsService extends AbstractHCDVSService {
             }
         }
 
-        if (ethConsensusStateData.isLastSlotForCurrentPeriod(ethSubjectIdentity.getEth2ChainConfig().getSyncPeriodLength())) {
-            getHCDVSLogger().info("🗳️ last slot {} for current period {}, update the sync committee",
-                    ethConsensusStateData.getBeaconBlockHeader().getSlot().toString(),
-                    ethConsensusStateData.getCurrSyncPeriod(ethSubjectIdentity.getEth2ChainConfig().getSyncPeriodLength())
-            );
-            ethSubjectIdentity.setCurrentSyncCommittee(ethSubjectIdentity.getNextSyncCommittee());
-            ethSubjectIdentity.setNextSyncCommittee(null);
-        }
-
         stateToVerify.setConsensusNodeInfo(ethSubjectIdentity.toJson().getBytes());
 
         getHCDVSLogger().info("🌈 successful to verify consensus state (slot: {}, root: {}) now!",
                 stateToVerify.getHeight().toString(), stateToVerify.getHashHex());
         return VerifyResult.success();
+    }
+
+    void verifyAndUpdateSyncCommittee(
+            EthSubjectIdentity subjectIdentity,
+            EthConsensusStateData consensusStateData,
+            EthConsensusEndorsements endorsements
+    ) {
+        var syncPeriodLength = subjectIdentity.getEth2ChainConfig().getSyncPeriodLength();
+        var headerPeriod = consensusStateData.getCurrSyncPeriod(syncPeriodLength).bigIntegerValue();
+        var signatureSlot = endorsements.getSignatureSlotOrDefault(
+                consensusStateData.getBeaconBlockHeader().getSlot().increment()
+        );
+
+        advanceCurrentSyncCommitteeToPeriod(subjectIdentity, headerPeriod);
+        validateAndStoreNextSyncCommittee(subjectIdentity, consensusStateData);
+        consensusStateData.validateBlock(
+                getCommitteeForSignaturePeriod(
+                        subjectIdentity,
+                        signatureSlot.dividedBy(syncPeriodLength).bigIntegerValue()
+                ),
+                endorsements,
+                subjectIdentity.getEth2ChainConfig()
+        );
+        rotateCommitteeAfterPeriodTail(subjectIdentity, consensusStateData);
+    }
+
+    void advanceCurrentSyncCommitteeToPeriod(EthSubjectIdentity subjectIdentity, BigInteger targetPeriod) {
+        if (ObjectUtil.isNull(subjectIdentity.getCurrentSyncCommitteePeriod())) {
+            subjectIdentity.setCurrentSyncCommitteePeriod(targetPeriod);
+            return;
+        }
+        if (subjectIdentity.getCurrentSyncCommitteePeriod().equals(targetPeriod)) {
+            return;
+        }
+        if (!subjectIdentity.getCurrentSyncCommitteePeriod().add(BigInteger.ONE).equals(targetPeriod)) {
+            throw new InvalidConsensusDataException("unexpected sync committee period transition");
+        }
+        if (ObjectUtil.isNull(subjectIdentity.getNextSyncCommittee())) {
+            throw new InvalidConsensusDataException("missing next sync committee for period transition");
+        }
+
+        subjectIdentity.setCurrentSyncCommittee(subjectIdentity.getNextSyncCommittee());
+        subjectIdentity.setNextSyncCommittee(null);
+        subjectIdentity.setCurrentSyncCommitteePeriod(targetPeriod);
+    }
+
+    private void validateAndStoreNextSyncCommittee(
+            EthSubjectIdentity subjectIdentity,
+            EthConsensusStateData consensusStateData
+    ) {
+        if (ObjectUtil.isNull(consensusStateData.getLightClientUpdateWrapper())) {
+            return;
+        }
+
+        consensusStateData.validateLightClientUpdate(
+                subjectIdentity.getCurrentSyncCommittee(),
+                subjectIdentity.getEth2ChainConfig()
+        );
+        var authenticatedNext = consensusStateData.getLightClientUpdateWrapper().getNextSyncCommittee();
+        if (ObjectUtil.isNotNull(subjectIdentity.getNextSyncCommittee())
+                && !subjectIdentity.getNextSyncCommittee().hashTreeRoot().equals(authenticatedNext.hashTreeRoot())) {
+            throw new InvalidConsensusDataException("conflicting next sync committee");
+        }
+        subjectIdentity.setNextSyncCommittee(authenticatedNext);
+    }
+
+    private SyncCommittee getCommitteeForSignaturePeriod(
+            EthSubjectIdentity subjectIdentity,
+            BigInteger signaturePeriod
+    ) {
+        var currentPeriod = subjectIdentity.getCurrentSyncCommitteePeriod();
+        if (signaturePeriod.equals(currentPeriod)) {
+            return subjectIdentity.getCurrentSyncCommittee();
+        }
+        if (signaturePeriod.equals(currentPeriod.add(BigInteger.ONE))) {
+            if (ObjectUtil.isNull(subjectIdentity.getNextSyncCommittee())) {
+                throw new InvalidConsensusDataException("missing next sync committee for endorsements");
+            }
+            return subjectIdentity.getNextSyncCommittee();
+        }
+        throw new InvalidConsensusDataException("unexpected endorsements signature period");
+    }
+
+    private void rotateCommitteeAfterPeriodTail(
+            EthSubjectIdentity subjectIdentity,
+            EthConsensusStateData consensusStateData
+    ) {
+        if (!consensusStateData.isLastSlotForCurrentPeriod(
+                subjectIdentity.getEth2ChainConfig().getSyncPeriodLength()
+        )) {
+            return;
+        }
+        if (ObjectUtil.isNull(subjectIdentity.getNextSyncCommittee())) {
+            throw new InvalidConsensusDataException("missing next sync committee at period tail");
+        }
+
+        getHCDVSLogger().info("🗳️ last slot {} for current period {}, update the sync committee",
+                consensusStateData.getBeaconBlockHeader().getSlot().toString(),
+                subjectIdentity.getCurrentSyncCommitteePeriod()
+        );
+        subjectIdentity.setCurrentSyncCommittee(subjectIdentity.getNextSyncCommittee());
+        subjectIdentity.setNextSyncCommittee(null);
+        subjectIdentity.setCurrentSyncCommitteePeriod(
+                subjectIdentity.getCurrentSyncCommitteePeriod().add(BigInteger.ONE)
+        );
     }
 
     @Override

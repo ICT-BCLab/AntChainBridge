@@ -444,6 +444,11 @@ public class EthereumBBCService extends AbstractBBCService {
                 beaconBlockWithSyncAggregate.getBody().getOptionalSyncAggregate().get(),
                 beaconBlockWithSyncAggregate.getSlot()
         );
+        this.acbEthClient.populateLightClientUpdateIfRequired(
+                ethConsensusData,
+                slot,
+                beaconBlockWithSyncAggregate.getSlot().bigIntegerValue()
+        );
 
         return new ConsensusState(
                 slot,

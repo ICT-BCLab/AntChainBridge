@@ -1,5 +1,6 @@
 package com.alipay.antchain.bridge.plugins.ethereum2.core;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -135,7 +136,7 @@ public class EthConsensusStateData {
             var signatureSlot = endorsements.getSignatureSlotOrDefault(this.beaconBlockHeader.getSlot().increment());
             var signingRoot = new SigningData(
                     this.beaconBlockHeader.getRoot(),
-                    Bytes32.wrap(eth2ChainConfig.getForkBySlot(signatureSlot.bigIntegerValue()).getDomain())
+                    Bytes32.wrap(eth2ChainConfig.getForkBySlot(getSyncCommitteeForkSlot(signatureSlot)).getDomain())
             ).hashTreeRoot();
 
             if (!BLSSignatureVerifier.SIMPLE.verify(
@@ -224,7 +225,7 @@ public class EthConsensusStateData {
         // verify sync committee signature
         var signingRoot = new SigningData(
                 attestedHeader.hashTreeRoot(),
-                Bytes32.wrap(eth2ChainConfig.getForkBySlot(lightClientUpdate.getSignatureSlot().bigIntegerValue()).getDomain())
+                Bytes32.wrap(eth2ChainConfig.getForkBySlot(getSyncCommitteeForkSlot(lightClientUpdate.getSignatureSlot())).getDomain())
         ).hashTreeRoot();
         if (!BLSSignatureVerifier.SIMPLE.verify(
                 contributionPubkeys,
@@ -233,5 +234,11 @@ public class EthConsensusStateData {
         )) {
             throw new InvalidConsensusDataException("sync committee signature is invalid");
         }
+    }
+
+    static BigInteger getSyncCommitteeForkSlot(UInt64 signatureSlot) {
+        return signatureSlot.bigIntegerValue()
+                .max(BigInteger.ONE)
+                .subtract(BigInteger.ONE);
     }
 }

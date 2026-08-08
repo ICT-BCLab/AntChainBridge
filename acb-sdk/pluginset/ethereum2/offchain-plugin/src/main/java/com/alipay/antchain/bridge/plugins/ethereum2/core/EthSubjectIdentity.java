@@ -2,6 +2,7 @@ package com.alipay.antchain.bridge.plugins.ethereum2.core;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
+import java.math.BigInteger;
 
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson.JSON;
@@ -79,6 +80,9 @@ public class EthSubjectIdentity {
 
     @JSONField(name = "next_sync_committee", deserializeUsing = SyncCommitteeDeserializer.class, serializeUsing = SyncCommitteeSerializer.class)
     private SyncCommittee nextSyncCommittee;
+
+    @JSONField(name = "current_sync_committee_period")
+    private BigInteger currentSyncCommitteePeriod;
 
     @JSONField(name = "eth2_chain_config", deserializeUsing = Eth2ChainConfigDeserializer.class)
     private Eth2ChainConfig eth2ChainConfig;
