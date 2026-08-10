@@ -739,7 +739,7 @@ public class EthereumBBCServiceTest {
             period = currSlot.divide(BigInteger.valueOf(syncPeriodLength));
             log.info("found period {}", period);
 
-            currSlot = period.multiply(BigInteger.valueOf(syncPeriodLength));
+            currSlot = period.add(BigInteger.ONE).multiply(BigInteger.valueOf(syncPeriodLength)).subtract(BigInteger.ONE);
             cs = ethereumBBCService.readConsensusState(currSlot);
 
             currBlock = ethereumBBCService.getAcbEthClient().getBeaconBlockBySlot(currSlot);
@@ -756,6 +756,7 @@ public class EthereumBBCServiceTest {
             Assert.assertNotNull(stateData.getBeaconBlockHeader());
             Assert.assertNotNull(stateData.getExecutionPayloadBranches());
             Assert.assertEquals(period, stateData.getCurrSyncPeriod(syncPeriodLength).bigIntegerValue());
+            Assert.assertTrue(stateData.isLastSlotForCurrentPeriod(syncPeriodLength));
 
             endorsements = EthConsensusEndorsements.fromJson(new String(cs.getEndorsements()), specConfig.getSyncCommitteeSize());
             Assert.assertNotNull(endorsements.getSyncAggregate());

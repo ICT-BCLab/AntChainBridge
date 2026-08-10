@@ -15,15 +15,26 @@ import com.alipay.antchain.bridge.commons.core.base.*;
 import com.alipay.antchain.bridge.commons.core.bta.BlockchainTrustAnchorFactory;
 import com.alipay.antchain.bridge.commons.core.bta.IBlockchainTrustAnchor;
 import com.alipay.antchain.bridge.commons.utils.crypto.SignAlgoEnum;
+import com.alipay.antchain.bridge.plugins.ethereum2.core.AcbEthClient;
+import com.alipay.antchain.bridge.plugins.ethereum2.core.EthConsensusEndorsements;
+import com.alipay.antchain.bridge.plugins.ethereum2.core.EthConsensusStateData;
 import com.alipay.antchain.bridge.plugins.ethereum2.core.EthSubjectIdentity;
 import com.alipay.antchain.bridge.plugins.ethereum2.tools.EthBbcTools;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Test;
+import org.mockito.InOrder;
 import org.slf4j.Logger;
 import org.web3j.utils.Numeric;
 
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.spy;
 
 @Slf4j
 public class EthereumHcdvsTest {
@@ -145,6 +156,140 @@ public class EthereumHcdvsTest {
         var result = ETHEREUM_HCDVS_SERVICE.verifyCrossChainMessage(MSG1, CS_WHERE_MSG1);
         assertNotNull(result);
         assertTrue(result.isSuccess());
+    }
+
+    @Test
+    public void testPeriodTailBoundary() {
+        var chainConfig = BTA_SUBJECT_IDENTITY.getEth2ChainConfig();
+        var parentStateData = EthConsensusStateData.fromJson(
+                new String(PARENT_CS_WHERE_PERIOD_END.getStateData()),
+                chainConfig.getCurrentSchemaDefinitions(PARENT_CS_WHERE_PERIOD_END.getHeight()),
+                chainConfig.getSpecConfig()
+        );
+        var currStateData = EthConsensusStateData.fromJson(
+                new String(CS_WHERE_PERIOD_END.getStateData()),
+                chainConfig.getCurrentSchemaDefinitions(CS_WHERE_PERIOD_END.getHeight()),
+                chainConfig.getSpecConfig()
+        );
+
+        assertTrue(parentStateData.isLastSlotForCurrentPeriod(chainConfig.getSyncPeriodLength()));
+        assertFalse(currStateData.isLastSlotForCurrentPeriod(chainConfig.getSyncPeriodLength()));
+    }
+
+    @Test
+    public void testSignatureAtForkActivationUsesPreviousSlotDomain() {
+        var subjectIdentity = EthSubjectIdentity.fromJson(BTA_SUBJECT_IDENTITY.toJson());
+        var chainConfig = subjectIdentity.getEth2ChainConfig();
+        var tailStateData = EthConsensusStateData.fromJson(
+                new String(PARENT_CS_WHERE_PERIOD_END.getStateData()),
+                chainConfig.getCurrentSchemaDefinitions(PARENT_CS_WHERE_PERIOD_END.getHeight()),
+                chainConfig.getSpecConfig()
+        );
+        var endorsements = EthConsensusEndorsements.fromJson(
+                new String(PARENT_CS_WHERE_PERIOD_END.getEndorsements()),
+                subjectIdentity.getCurrentSyncCommittee().getPubkeys().size()
+        );
+        var signatureSlot = endorsements.getSignatureSlotOrDefault(
+                tailStateData.getBeaconBlockHeader().getSlot().increment()
+        );
+        var epochLength = BigInteger.valueOf(chainConfig.getEpochLength());
+        assertEquals(BigInteger.ZERO, signatureSlot.bigIntegerValue().mod(epochLength));
+
+        chainConfig.addFork(
+                "TEST_ACTIVATION",
+                signatureSlot.bigIntegerValue().divide(epochLength),
+                new byte[]{0x66, 0x66, 0x66, 0x66}
+        );
+        assertFalse(Arrays.equals(
+                chainConfig.getForkBySlot(signatureSlot.bigIntegerValue()).getDomain(),
+                chainConfig.getForkBySlot(signatureSlot.bigIntegerValue().subtract(BigInteger.ONE)).getDomain()
+        ));
+
+        tailStateData.validateBlock(
+                subjectIdentity.getCurrentSyncCommittee(),
+                endorsements,
+                chainConfig
+        );
+    }
+
+    @Test
+    public void testMissedPeriodTailCarriesAndPromotesNextCommittee() {
+        var subjectIdentity = EthSubjectIdentity.fromJson(BTA_SUBJECT_IDENTITY.toJson());
+        var chainConfig = subjectIdentity.getEth2ChainConfig();
+        var tailStateData = EthConsensusStateData.fromJson(
+                new String(PARENT_CS_WHERE_PERIOD_END.getStateData()),
+                chainConfig.getCurrentSchemaDefinitions(PARENT_CS_WHERE_PERIOD_END.getHeight()),
+                chainConfig.getSpecConfig()
+        );
+        var postBoundaryStateData = EthConsensusStateData.fromJson(
+                new String(CS_WHERE_PERIOD_END.getStateData()),
+                chainConfig.getCurrentSchemaDefinitions(CS_WHERE_PERIOD_END.getHeight()),
+                chainConfig.getSpecConfig()
+        );
+        var periodLength = BigInteger.valueOf(chainConfig.getSyncPeriodLength());
+        var tailSlot = tailStateData.getBeaconBlockHeader().getSlot().bigIntegerValue();
+        var currentPeriod = tailSlot.divide(periodLength);
+        var authenticatedNext = postBoundaryStateData.getLightClientUpdateWrapper().getNextSyncCommittee();
+
+        assertTrue(AcbEthClient.requiresLightClientUpdate(
+                tailSlot.subtract(BigInteger.ONE),
+                tailSlot.add(BigInteger.ONE),
+                chainConfig.getSyncPeriodLength()
+        ));
+
+        subjectIdentity.setCurrentSyncCommitteePeriod(currentPeriod);
+        subjectIdentity.setNextSyncCommittee(authenticatedNext);
+        ETHEREUM_HCDVS_SERVICE.advanceCurrentSyncCommitteeToPeriod(
+                subjectIdentity,
+                currentPeriod.add(BigInteger.ONE)
+        );
+
+        assertEquals(authenticatedNext.hashTreeRoot(), subjectIdentity.getCurrentSyncCommittee().hashTreeRoot());
+        assertEquals(currentPeriod.add(BigInteger.ONE), subjectIdentity.getCurrentSyncCommitteePeriod());
+        assertNull(subjectIdentity.getNextSyncCommittee());
+    }
+
+    @Test
+    public void testAnchorAtPeriodTailAuthenticatesNextCommitteeBeforeBlock() {
+        var subjectIdentity = EthSubjectIdentity.fromJson(BTA_SUBJECT_IDENTITY.toJson());
+        var chainConfig = subjectIdentity.getEth2ChainConfig();
+        var tailStateData = EthConsensusStateData.fromJson(
+                new String(PARENT_CS_WHERE_PERIOD_END.getStateData()),
+                chainConfig.getCurrentSchemaDefinitions(PARENT_CS_WHERE_PERIOD_END.getHeight()),
+                chainConfig.getSpecConfig()
+        );
+        var postBoundaryStateData = EthConsensusStateData.fromJson(
+                new String(CS_WHERE_PERIOD_END.getStateData()),
+                chainConfig.getCurrentSchemaDefinitions(CS_WHERE_PERIOD_END.getHeight()),
+                chainConfig.getSpecConfig()
+        );
+        var endorsements = EthConsensusEndorsements.fromJson(
+                new String(PARENT_CS_WHERE_PERIOD_END.getEndorsements()),
+                subjectIdentity.getCurrentSyncCommittee().getPubkeys().size()
+        );
+        var currentCommittee = subjectIdentity.getCurrentSyncCommittee();
+        var authenticatedNext = postBoundaryStateData.getLightClientUpdateWrapper().getNextSyncCommittee();
+        var stateDataSpy = spy(tailStateData);
+        stateDataSpy.setLightClientUpdateWrapper(postBoundaryStateData.getLightClientUpdateWrapper());
+        doNothing().when(stateDataSpy).validateLightClientUpdate(any(), any());
+        doNothing().when(stateDataSpy).validateBlock(any(), any(), any());
+
+        ETHEREUM_HCDVS_SERVICE.verifyAndUpdateSyncCommittee(subjectIdentity, stateDataSpy, endorsements);
+
+        InOrder validationOrder = inOrder(stateDataSpy);
+        validationOrder.verify(stateDataSpy).validateLightClientUpdate(
+                currentCommittee,
+                chainConfig
+        );
+        validationOrder.verify(stateDataSpy).validateBlock(authenticatedNext, endorsements, chainConfig);
+
+        var tailPeriod = tailStateData.getCurrSyncPeriod(chainConfig.getSyncPeriodLength()).bigIntegerValue();
+        assertEquals(tailPeriod.add(BigInteger.ONE), subjectIdentity.getCurrentSyncCommitteePeriod());
+        assertEquals(
+                authenticatedNext.hashTreeRoot(),
+                subjectIdentity.getCurrentSyncCommittee().hashTreeRoot()
+        );
+        assertNull(subjectIdentity.getNextSyncCommittee());
     }
 
     @Test

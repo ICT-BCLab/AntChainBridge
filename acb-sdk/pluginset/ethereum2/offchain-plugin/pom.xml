@@ -233,6 +233,9 @@
                         <includes>
                             <include>**/*.sol</include>
                         </includes>
+                        <excludes>
+                            <exclude>lib/ptc/CommitteePtcVerifier.sol</exclude>
+                        </excludes>
                     </soliditySourceFiles>
                     <contract>
                         <includes>

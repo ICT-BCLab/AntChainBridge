@@ -2,6 +2,7 @@ package com.alipay.antchain.bridge.plugins.ethereum2.core;
 
 import java.io.IOException;
 import java.lang.reflect.Type;
+import java.math.BigInteger;
 
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson.JSON;
@@ -33,6 +34,10 @@ public class EthSubjectIdentity {
         var subjectId = JSON.parseObject(json, EthSubjectIdentity.class);
         if (subjectId.getCurrentSyncCommittee().getPubkeys().size() != subjectId.getEth2ChainConfig().getSyncCommitteeSize()) {
             throw new RuntimeException("sync committee size not match with chain config");
+        }
+        if (subjectId.getNextSyncCommittee() != null
+                && subjectId.getNextSyncCommittee().getPubkeys().size() != subjectId.getEth2ChainConfig().getSyncCommitteeSize()) {
+            throw new RuntimeException("next sync committee size not match with chain config");
         }
         return subjectId;
     }
@@ -73,8 +78,19 @@ public class EthSubjectIdentity {
     @JSONField(name = "current_sync_committee", deserializeUsing = SyncCommitteeDeserializer.class, serializeUsing = SyncCommitteeSerializer.class)
     private SyncCommittee currentSyncCommittee;
 
+    @JSONField(name = "next_sync_committee", deserializeUsing = SyncCommitteeDeserializer.class, serializeUsing = SyncCommitteeSerializer.class)
+    private SyncCommittee nextSyncCommittee;
+
+    @JSONField(name = "current_sync_committee_period")
+    private BigInteger currentSyncCommitteePeriod;
+
     @JSONField(name = "eth2_chain_config", deserializeUsing = Eth2ChainConfigDeserializer.class)
     private Eth2ChainConfig eth2ChainConfig;
+
+    public EthSubjectIdentity(SyncCommittee currentSyncCommittee, Eth2ChainConfig eth2ChainConfig) {
+        this.currentSyncCommittee = currentSyncCommittee;
+        this.eth2ChainConfig = eth2ChainConfig;
+    }
 
     public String toJson() {
         return JSON.toJSONString(this);
