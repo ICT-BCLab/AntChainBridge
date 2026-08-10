@@ -192,8 +192,18 @@ public class EthConsensusStateData {
             Eth2ChainConfig eth2ChainConfig
     ) {
         var attestedHeader = lightClientUpdate.getAttestedHeader();
-        var sigPeriod = lightClientUpdate.getSignatureSlot().dividedBy(eth2ChainConfig.getSyncPeriodLength());
-        var attestedHeaderPeriod = attestedHeader.getBeacon().getSlot().dividedBy(eth2ChainConfig.getSyncPeriodLength());
+        var finalizedHeader = lightClientUpdate.getFinalizedHeader();
+        var signatureSlot = lightClientUpdate.getSignatureSlot();
+        var attestedSlot = attestedHeader.getBeacon().getSlot();
+        var finalizedSlot = finalizedHeader.getBeacon().getSlot();
+        if (signatureSlot.compareTo(attestedSlot) <= 0) {
+            throw new InvalidConsensusDataException("signature slot must be greater than attested header slot");
+        }
+        if (attestedSlot.compareTo(finalizedSlot) < 0) {
+            throw new InvalidConsensusDataException("attested header slot must not be less than finalized header slot");
+        }
+        var sigPeriod = signatureSlot.dividedBy(eth2ChainConfig.getSyncPeriodLength());
+        var attestedHeaderPeriod = attestedSlot.dividedBy(eth2ChainConfig.getSyncPeriodLength());
         if (!sigPeriod.equals(attestedHeaderPeriod)) {
             throw new InvalidConsensusDataException("sig slot period is not equal to attested header period");
         }
@@ -201,9 +211,21 @@ public class EthConsensusStateData {
         if (!sigPeriod.equals(currPeriod)) {
             throw new InvalidConsensusDataException("sig slot period is not equal to current committee period");
         }
+        var finalizedHeaderPeriod = finalizedSlot.dividedBy(eth2ChainConfig.getSyncPeriodLength());
+        if (!finalizedHeaderPeriod.equals(attestedHeaderPeriod)) {
+            throw new InvalidConsensusDataException("finalized header period is not equal to attested header period");
+        }
 
         var nextSyncCommittee = lightClientUpdate.getNextSyncCommittee();
         var syncAggregate = lightClientUpdate.getSyncAggregate();
+        if (currentSyncCommittee.getPubkeys().size() != syncAggregate.getSyncCommitteeBits().size()) {
+            throw new InvalidConsensusDataException("sync aggregate bits' size is not equal to current sync committee size");
+        }
+        if (syncAggregate.getSyncCommitteeBits().stream().filter(AbstractSszPrimitive::get).count()
+                < eth2ChainConfig.getSyncCommitteeSuperMajority()) {
+            throw new InvalidConsensusDataException("sync committee signature is not enough");
+        }
+
         List<BLSPublicKey> contributionPubkeys = new ArrayList<>();
         for (int i = 0; i < currentSyncCommittee.getPubkeys().size(); i++) {
             if (syncAggregate.getSyncCommitteeBits().getBit(i)) {
@@ -212,6 +234,9 @@ public class EthConsensusStateData {
         }
 
         var nextSyncCommitteeBranch = lightClientUpdate.getNextSyncCommitteeBranch();
+        if (nextSyncCommitteeBranch.size() != eth2ChainConfig.getSyncCommitteeBranchLength()) {
+            throw new InvalidConsensusDataException("next sync committee branch length is invalid");
+        }
         if (!new Predicates(null).isValidMerkleBranch(
                 nextSyncCommittee.hashTreeRoot(),
                 nextSyncCommitteeBranch,
@@ -219,13 +244,27 @@ public class EthConsensusStateData {
                 Eth2ConstantParams.STATE_INDEX_NEXT_SYNC_COMMITTEE,
                 attestedHeader.getBeacon().getStateRoot()
         )) {
-            throw new InvalidConsensusDataException("next sync committee branches is invalid");
+            throw new InvalidConsensusDataException("next sync committee branch is invalid");
+        }
+
+        var finalityBranch = lightClientUpdate.getFinalityBranch();
+        if (finalityBranch.size() != eth2ChainConfig.getFinalityBranchLength()) {
+            throw new InvalidConsensusDataException("finality branch length is invalid");
+        }
+        if (!new Predicates(null).isValidMerkleBranch(
+                finalizedHeader.getBeacon().hashTreeRoot(),
+                finalityBranch,
+                finalityBranch.size(),
+                Eth2ConstantParams.STATE_INDEX_FINAL_BLOCK,
+                attestedHeader.getBeacon().getStateRoot()
+        )) {
+            throw new InvalidConsensusDataException("finalized header merkle proof is invalid");
         }
 
         // verify sync committee signature
         var signingRoot = new SigningData(
                 attestedHeader.hashTreeRoot(),
-                Bytes32.wrap(eth2ChainConfig.getForkBySlot(getSyncCommitteeForkSlot(lightClientUpdate.getSignatureSlot())).getDomain())
+                Bytes32.wrap(eth2ChainConfig.getForkBySlot(getSyncCommitteeForkSlot(signatureSlot)).getDomain())
         ).hashTreeRoot();
         if (!BLSSignatureVerifier.SIMPLE.verify(
                 contributionPubkeys,

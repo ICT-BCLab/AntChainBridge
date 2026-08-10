@@ -25,6 +25,14 @@ public record LightClientUpdateWrapper(LightClientUpdate lightClientUpdate) {
         return (SszBytes32Vector) lightClientUpdate.get(2);
     }
 
+    public LightClientHeader getFinalizedHeader() {
+        return (LightClientHeader) lightClientUpdate.get(3);
+    }
+
+    public SszBytes32Vector getFinalityBranch() {
+        return (SszBytes32Vector) lightClientUpdate.get(4);
+    }
+
     public SyncAggregate getSyncAggregate() {
         return (SyncAggregate) lightClientUpdate.get(5);
     }
