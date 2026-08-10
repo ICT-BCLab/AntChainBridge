@@ -29,6 +29,8 @@ public interface IEndorseServiceRepository {
 
     TpBtaWrapper getMatchedTpBta(CrossChainLane lane, int tpbtaVersion);
 
+    TpBtaWrapper getMatchedTpBta(CrossChainLane lane, int tpbtaVersion, int btaSubjectVersion);
+
     TpBtaWrapper getExactTpBta(CrossChainLane lane);
 
     TpBtaWrapper getExactTpBta(CrossChainLane lane, int tpbtaVersion);
@@ -40,6 +42,8 @@ public interface IEndorseServiceRepository {
     BtaWrapper getBta(String domain);
 
     BtaWrapper getBta(String domain, int subjectVersion);
+
+    BtaWrapper getBta(String domain, BigInteger initHeight, byte[] initBlockHash);
 
     void setBta(BtaWrapper btaWrapper);
 

@@ -138,15 +138,26 @@ public class EndorserServiceImpl implements IEndorserService {
             throw new InvalidBtaException("tpbta intersection check failed");
         }
 
+        var committeeEndorseRoot = verifyBtaExtension.getCommitteeEndorseRoot().encode();
+        var currentPtcAnchorVersion = systemConfigRepository.queryCurrentPtcAnchorVersion();
         var latestTpBta = endorseServiceRepository.getExactTpBta(verifyBtaExtension.getCrossChainLane());
+        var tpbtaVersion = ObjectUtil.isNull(latestTpBta) ? 1 : latestTpBta.getTpbta().getTpbtaVersion() + 1;
+        if (
+                ObjectUtil.isNotNull(latestTpBta)
+                        && latestTpBta.getTpbta().getBtaSubjectVersion() == bta.getSubjectVersion()
+                        && ObjectUtil.equals(latestTpBta.getTpbta().getPtcVerifyAnchorVersion(), currentPtcAnchorVersion)
+                        && ArrayUtil.equals(latestTpBta.getTpbta().getEndorseRoot(), committeeEndorseRoot)
+        ) {
+            tpbtaVersion = latestTpBta.getTpbta().getTpbtaVersion();
+        }
         var tpbta = new ThirdPartyBlockchainTrustAnchorV1(
-                ObjectUtil.isNull(latestTpBta) ? 1 : latestTpBta.getTpbta().getTpbtaVersion() + 1,
-                systemConfigRepository.queryCurrentPtcAnchorVersion(),
+                tpbtaVersion,
+                currentPtcAnchorVersion,
                 (PTCCredentialSubject) ptcCrossChainCert.getCredentialSubjectInstance(),
                 verifyBtaExtension.getCrossChainLane(),
                 bta.getSubjectVersion(),
                 ucpHashAlgo,
-                verifyBtaExtension.getCommitteeEndorseRoot().encode(),
+                committeeEndorseRoot,
                 new byte[]{}
         );
         tpbta.setEndorseProof(
@@ -177,13 +188,27 @@ public class EndorserServiceImpl implements IEndorserService {
 
     @Override
     public ValidatedConsensusState commitAnchorState(CrossChainLane crossChainLane, ConsensusState anchorState) {
-        var tpbta = endorseServiceRepository.getMatchedTpBta(crossChainLane);
-        if (ObjectUtil.isNull(tpbta)) {
-            throw new InvalidConsensusStateException("tpbta not found for {}", crossChainLane.getLaneKey());
+        if (!ObjectUtil.equals(crossChainLane.getSenderDomain(), anchorState.getDomain())) {
+            throw new InvalidConsensusStateException(
+                    "cross-chain lane sender domain {} does not match anchor state domain {}",
+                    crossChainLane.getSenderDomain().getDomain(), anchorState.getDomain().getDomain()
+            );
         }
-        var bta = endorseServiceRepository.getBta(crossChainLane.getSenderDomain().getDomain(), tpbta.getTpbta().getBtaSubjectVersion());
+
+        var bta = endorseServiceRepository.getBta(
+                crossChainLane.getSenderDomain().getDomain(),
+                anchorState.getHeight(),
+                anchorState.getHash()
+        );
         if (ObjectUtil.isNull(bta)) {
-            throw new InvalidConsensusStateException("bta not found for {}", crossChainLane.getSenderDomain().getDomain());
+            throw new InvalidConsensusStateException("bta not found for domain {}, height {} and hash {}",
+                    anchorState.getDomain().getDomain(), anchorState.getHeight().toString(), anchorState.getHashHex());
+        }
+
+        var tpbta = endorseServiceRepository.getMatchedTpBta(crossChainLane, -1, bta.getSubjectVersion());
+        if (ObjectUtil.isNull(tpbta)) {
+            throw new InvalidConsensusStateException("tpbta not found for {} and bta subject version {}",
+                    crossChainLane.getLaneKey(), bta.getSubjectVersion());
         }
 
         var hcdvs = hcdvsPluginService.getHCDVSService(bta.getProduct());

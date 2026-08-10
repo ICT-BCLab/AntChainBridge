@@ -21,6 +21,7 @@ import java.util.Comparator;
 import java.util.List;
 
 import cn.hutool.core.collection.ListUtil;
+import cn.hutool.core.util.ArrayUtil;
 import cn.hutool.core.util.ObjectUtil;
 import com.alipay.antchain.bridge.commons.core.base.CrossChainLane;
 import com.alipay.antchain.bridge.ptc.committee.node.commons.exception.DataAccessLayerException;
@@ -87,6 +88,24 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
     }
 
     @Override
+    public TpBtaWrapper getMatchedTpBta(CrossChainLane lane, int tpbtaVersion, int btaSubjectVersion) {
+        try {
+            var entityList = searchTpBta(lane, tpbtaVersion, btaSubjectVersion);
+            if (ObjectUtil.isEmpty(entityList)) {
+                return null;
+            }
+            return ConvertUtil.convertFrom(
+                    entityList.stream().max(Comparator.comparingInt(TpBtaEntity::getTpbtaVersion)).get()
+            );
+        } catch (Exception e) {
+            throw new DataAccessLayerException(
+                    e, "Failed to get tpbta for lane {}, version {} and bta subject version {}",
+                    lane.getLaneKey(), tpbtaVersion, btaSubjectVersion
+            );
+        }
+    }
+
+    @Override
     public TpBtaWrapper getExactTpBta(CrossChainLane lane) {
         return getExactTpBta(lane, -1);
     }
@@ -117,14 +136,23 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
 
     @Override
     public void setTpBta(TpBtaWrapper tpBtaWrapper) {
+        var lane = tpBtaWrapper.getCrossChainLane();
+        var tpbtaVersion = tpBtaWrapper.getTpbta().getTpbtaVersion();
+        var existing = getExactTpBta(lane, tpbtaVersion);
+        if (ObjectUtil.isNotNull(existing)) {
+            assertSameTpBta(existing, tpBtaWrapper);
+            return;
+        }
         try {
-            if (hasTpBta(tpBtaWrapper.getCrossChainLane(), tpBtaWrapper.getTpbta().getTpbtaVersion())) {
-                throw new RuntimeException("tpBta already exists");
-            }
             tpBtaMapper.insert((TpBtaEntity) ConvertUtil.convertFrom(tpBtaWrapper));
         } catch (Exception e) {
+            existing = getExactTpBta(lane, tpbtaVersion);
+            if (ObjectUtil.isNotNull(existing)) {
+                assertSameTpBta(existing, tpBtaWrapper);
+                return;
+            }
             throw new DataAccessLayerException(
-                    e, "Failed to save tpbta for lane {}", tpBtaWrapper.getCrossChainLane().getLaneKey()
+                    e, "Failed to save tpbta for lane {}", lane.getLaneKey()
             );
         }
     }
@@ -187,13 +215,45 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
     }
 
     @Override
-    public void setBta(BtaWrapper btaWrapper) {
+    public BtaWrapper getBta(String domain, BigInteger initHeight, byte[] initBlockHash) {
         try {
-            if (hasBta(btaWrapper.getDomain(), btaWrapper.getBtaVersion())) {
-                throw new RuntimeException("bta already exists");
+            var entityList = btaMapper.selectList(
+                    new LambdaQueryWrapper<BtaEntity>()
+                            .eq(BtaEntity::getDomain, domain)
+            );
+            if (ObjectUtil.isEmpty(entityList)) {
+                return null;
             }
+            return entityList.stream()
+                    .map(ConvertUtil::convertFrom)
+                    .map(BtaWrapper.class::cast)
+                    .filter(wrapper -> wrapper.getBta().getInitHeight().equals(initHeight))
+                    .filter(wrapper -> ArrayUtil.equals(wrapper.getBta().getInitBlockHash(), initBlockHash))
+                    .max(Comparator.comparingInt(BtaWrapper::getSubjectVersion))
+                    .orElse(null);
+        } catch (Exception e) {
+            throw new DataAccessLayerException(
+                    e, "Failed to get bta for domain {}, init height {} and init block hash {}",
+                    domain, initHeight, initBlockHash
+            );
+        }
+    }
+
+    @Override
+    public void setBta(BtaWrapper btaWrapper) {
+        var existing = getBta(btaWrapper.getDomain(), btaWrapper.getSubjectVersion());
+        if (ObjectUtil.isNotNull(existing)) {
+            assertSameBta(existing, btaWrapper);
+            return;
+        }
+        try {
             btaMapper.insert((BtaEntity) ConvertUtil.convertFrom(btaWrapper));
         } catch (Exception e) {
+            existing = getBta(btaWrapper.getDomain(), btaWrapper.getSubjectVersion());
+            if (ObjectUtil.isNotNull(existing)) {
+                assertSameBta(existing, btaWrapper);
+                return;
+            }
             throw new DataAccessLayerException(
                     e, "Failed to save bta for domain {} and subject version {}", btaWrapper.getDomain(), btaWrapper.getSubjectVersion()
             );
@@ -270,12 +330,25 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
 
     @Override
     public void setValidatedConsensusState(ValidatedConsensusStateWrapper validatedConsensusStateWrapper) {
+        var existing = getValidatedConsensusState(
+                validatedConsensusStateWrapper.getDomain(),
+                validatedConsensusStateWrapper.getHeight()
+        );
+        if (ObjectUtil.isNotNull(existing)) {
+            assertSameValidatedConsensusState(existing, validatedConsensusStateWrapper);
+            return;
+        }
         try {
-            if (hasValidatedConsensusState(validatedConsensusStateWrapper.getDomain(), validatedConsensusStateWrapper.getHeight())) {
-                throw new RuntimeException("validated consensus state already exists");
-            }
             validatedConsensusStatesMapper.insert((ValidatedConsensusStatesEntity) ConvertUtil.convertFrom(validatedConsensusStateWrapper));
         } catch (Exception e) {
+            existing = getValidatedConsensusState(
+                    validatedConsensusStateWrapper.getDomain(),
+                    validatedConsensusStateWrapper.getHeight()
+            );
+            if (ObjectUtil.isNotNull(existing)) {
+                assertSameValidatedConsensusState(existing, validatedConsensusStateWrapper);
+                return;
+            }
             throw new DataAccessLayerException(
                     e, "Failed to save validated consensus state for domain {} and height {}",
                     validatedConsensusStateWrapper.getDomain(),
@@ -300,12 +373,17 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
     }
 
     private List<TpBtaEntity> searchTpBta(CrossChainLane lane, int tpbtaVersion) {
+        return searchTpBta(lane, tpbtaVersion, null);
+    }
+
+    private List<TpBtaEntity> searchTpBta(CrossChainLane lane, int tpbtaVersion, Integer btaSubjectVersion) {
         // search the blockchain level first
         var wrapper = new LambdaQueryWrapper<TpBtaEntity>()
                 .eq(TpBtaEntity::getSenderDomain, lane.getSenderDomain().getDomain())
                 .eq(TpBtaEntity::getReceiverDomain, "")
                 .eq(TpBtaEntity::getSenderId, "")
-                .eq(TpBtaEntity::getReceiverId, "");
+                .eq(TpBtaEntity::getReceiverId, "")
+                .eq(ObjectUtil.isNotNull(btaSubjectVersion), TpBtaEntity::getBtaSubjectVersion, btaSubjectVersion);
         var entityList = tpBtaMapper.selectList(
                 tpbtaVersion == -1 ? wrapper : wrapper.eq(TpBtaEntity::getTpbtaVersion, tpbtaVersion)
         );
@@ -321,7 +399,8 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
                 .eq(TpBtaEntity::getSenderDomain, lane.getSenderDomain().getDomain())
                 .eq(TpBtaEntity::getReceiverDomain, lane.getReceiverDomain().getDomain())
                 .eq(TpBtaEntity::getSenderId, "")
-                .eq(TpBtaEntity::getReceiverId, "");
+                .eq(TpBtaEntity::getReceiverId, "")
+                .eq(ObjectUtil.isNotNull(btaSubjectVersion), TpBtaEntity::getBtaSubjectVersion, btaSubjectVersion);
         entityList = tpBtaMapper.selectList(
                 tpbtaVersion == -1 ? wrapper : wrapper.eq(TpBtaEntity::getTpbtaVersion, tpbtaVersion)
         );
@@ -338,7 +417,8 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
                 .eq(TpBtaEntity::getSenderDomain, lane.getSenderDomain().getDomain())
                 .eq(TpBtaEntity::getSenderId, lane.getSenderId().toHex())
                 .eq(TpBtaEntity::getReceiverDomain, lane.getReceiverDomain().getDomain())
-                .eq(TpBtaEntity::getReceiverId, lane.getReceiverId().toHex());
+                .eq(TpBtaEntity::getReceiverId, lane.getReceiverId().toHex())
+                .eq(ObjectUtil.isNotNull(btaSubjectVersion), TpBtaEntity::getBtaSubjectVersion, btaSubjectVersion);
         entityList = tpBtaMapper.selectList(
                 tpbtaVersion == -1 ? wrapper : wrapper.eq(TpBtaEntity::getTpbtaVersion, tpbtaVersion)
         );
@@ -347,5 +427,38 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
         }
 
         return ListUtil.empty();
+    }
+
+    private void assertSameTpBta(TpBtaWrapper existing, TpBtaWrapper incoming) {
+        if (!ArrayUtil.equals(existing.getTpbta().encode(), incoming.getTpbta().encode())) {
+            throw new DataAccessLayerException(
+                    "Conflicting tpbta for lane {} and version {}",
+                    incoming.getCrossChainLane().getLaneKey(), incoming.getTpbta().getTpbtaVersion()
+            );
+        }
+    }
+
+    private void assertSameBta(BtaWrapper existing, BtaWrapper incoming) {
+        if (!ArrayUtil.equals(existing.getBta().encode(), incoming.getBta().encode())) {
+            throw new DataAccessLayerException(
+                    "Conflicting bta for domain {} and subject version {}",
+                    incoming.getDomain(), incoming.getSubjectVersion()
+            );
+        }
+    }
+
+    private void assertSameValidatedConsensusState(
+            ValidatedConsensusStateWrapper existing,
+            ValidatedConsensusStateWrapper incoming
+    ) {
+        if (!ArrayUtil.equals(
+                existing.getValidatedConsensusState().encode(),
+                incoming.getValidatedConsensusState().encode()
+        )) {
+            throw new DataAccessLayerException(
+                    "Conflicting validated consensus state for domain {} and height {}",
+                    incoming.getDomain(), incoming.getHeight()
+            );
+        }
     }
 }
