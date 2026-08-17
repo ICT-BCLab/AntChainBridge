@@ -7,7 +7,6 @@ import cn.hutool.core.util.StrUtil;
 import com.alipay.antchain.bridge.commons.bbc.AbstractBBCContext;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.AuthMessageContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.ContractStatusEnum;
-import com.alipay.antchain.bridge.commons.bbc.syscontract.MonitorContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.PTCContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.SDPContract;
 import com.alipay.antchain.bridge.plugins.mychain.contract.*;
@@ -33,8 +32,6 @@ public class Mychain010BBCContext extends AbstractBBCContext {
     private SDPContractClientWASM sdpContractClientWASM;
     private SDPContractClientTeeWASM sdpContractClientTeeWASM;
     private PtcContractEvm ptcContractEvm;
-    private MonitorContractClientEVM monitorContractClientEVM;
-    private MonitorVerifierContractEVM monitorVerifierContractEVM;
 
     private final Logger logger;
 
@@ -54,7 +51,6 @@ public class Mychain010BBCContext extends AbstractBBCContext {
         this.setSdpContract(context.getSdpContract());
         this.setPtcContract(context.getPtcContract());
         this.setAuthMessageContract(context.getAuthMessageContract());
-        this.setMonitorContract(context.getMonitorContract());
         this.setConfForBlockchainClient(context.getConfForBlockchainClient());
         this.setReliable(context.isReliable());
         this.logger = logger;
@@ -69,8 +65,6 @@ public class Mychain010BBCContext extends AbstractBBCContext {
             this.setSdpContractClientWASM(((Mychain010BBCContext) context).getSdpContractClientWASM());
 
             this.setPtcContractEvm(((Mychain010BBCContext) context).getPtcContractEvm());
-            this.setMonitorContractClientEVM(((Mychain010BBCContext) context).getMonitorContractClientEVM());
-            this.setMonitorVerifierContractEVM(((Mychain010BBCContext) context).getMonitorVerifierContractEVM());
 
             this.setAmContractClientTeeWASM(((Mychain010BBCContext) context).getAmContractClientTeeWASM());
             this.setSdpContractClientTeeWASM(((Mychain010BBCContext) context).getSdpContractClientTeeWASM());
@@ -87,43 +81,10 @@ public class Mychain010BBCContext extends AbstractBBCContext {
             initAmContract(mychain010Client);
             initSdpContract(mychain010Client);
             initPtcContract(mychain010Client);
-            initMonitorContract(mychain010Client);
 
             this.nonceBefore = mychain010Client.queryNonceBefore();
         } catch (Exception e) {
             throw new RuntimeException("init mychain_0.10 context with raw config exception, ", e);
-        }
-    }
-
-    @SneakyThrows
-    private void initMonitorContract(Mychain010Client mychain010Client) {
-        Mychain010Config config = ObjectUtil.isNotEmpty(this.getConfForBlockchainClient()) ?
-                Mychain010Config.fromJsonString(new String(this.getConfForBlockchainClient())) :
-                null;
-
-        if (ObjectUtil.isEmpty(monitorContractClientEVM)) {
-            monitorContractClientEVM = new MonitorContractClientEVM(mychain010Client, logger);
-        }
-        if (ObjectUtil.isNotEmpty(this.getMonitorContract())
-                && StrUtil.isNotEmpty(this.getMonitorContract().getContractAddress())) {
-            monitorContractClientEVM.setContractAddress(this.getMonitorContract().getContractAddress());
-            monitorContractClientEVM.setStatus(this.getMonitorContract().getStatus());
-        } else if (ObjectUtil.isNotEmpty(config) && StrUtil.isNotEmpty(config.getMonitorContractName())) {
-            MonitorContract configuredMonitorContract = new MonitorContract();
-            configuredMonitorContract.setContractAddress(config.getMonitorContractName());
-            configuredMonitorContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
-            this.setMonitorContract(configuredMonitorContract);
-
-            monitorContractClientEVM.setContractAddress(configuredMonitorContract.getContractAddress());
-            monitorContractClientEVM.setStatus(configuredMonitorContract.getStatus());
-        }
-
-        if (ObjectUtil.isEmpty(monitorVerifierContractEVM)) {
-            monitorVerifierContractEVM = new MonitorVerifierContractEVM(mychain010Client, logger);
-        }
-        if (ObjectUtil.isNotEmpty(config) && StrUtil.isNotEmpty(config.getMonitorVerifierContractName())) {
-            monitorVerifierContractEVM.setContractAddress(config.getMonitorVerifierContractName());
-            monitorVerifierContractEVM.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
         }
     }
 
@@ -251,9 +212,7 @@ public class Mychain010BBCContext extends AbstractBBCContext {
         if (StrUtil.isEmpty(ptcContractEvm.getContractAddress())
                 && StrUtil.isNotEmpty(contractAddressInfo.getEvmContractAddress())) {
             ptcContractEvm.setContractAddress(contractAddressInfo.getEvmContractAddress());
-            ptcContractEvm.setStatus(ObjectUtil.isNotEmpty(this.getPtcContract())
-                    ? this.getPtcContract().getStatus()
-                    : ContractStatusEnum.CONTRACT_DEPLOYED);
+            ptcContractEvm.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
         }
     }
 

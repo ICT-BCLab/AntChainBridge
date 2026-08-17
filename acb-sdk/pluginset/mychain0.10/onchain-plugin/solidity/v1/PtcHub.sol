@@ -4,7 +4,6 @@ pragma experimental ABIEncoderV2;
 
 import "./interfaces/IPtcHub.sol";
 import "./interfaces/IPtcVerifier.sol";
-import "./interfaces/IMonitorVerifier.sol";
 import "./lib/ptc/PtcLib.sol";
 import "./@openzeppelin/contracts/access/Ownable.sol";
 
@@ -43,8 +42,6 @@ contract PtcHub is IPtcHub, Ownable {
 
     PTCTypeEnum[] public ptcTypeSupported;
 
-    identity public monitorVerifierAddr;
-
     constructor(bytes memory rawRootBcdnsCert) {
         _initBcdns(rawRootBcdnsCert);
     }
@@ -63,15 +60,6 @@ contract PtcHub is IPtcHub, Ownable {
         ownerOidToBcdnsDomainSpaceMap[k] = ROOT_DOMAIN_SPACE_ALIAS;
 
         emit NewBcdnsCert(k);
-    }
-
-    function setMonitorVerifier(identity newMonitorVerifierAddr) external onlyOwner {
-        require(newMonitorVerifierAddr != identity(0), "PtcHub: invalid monitor verifier");
-        monitorVerifierAddr = newMonitorVerifierAddr;
-    }
-
-    function getMonitorVerifier() external view returns (identity) {
-        return monitorVerifierAddr;
     }
 
     function updatePTCTrustRoot(bytes calldata rawPtcTrustRoot)
@@ -195,9 +183,6 @@ contract PtcHub is IPtcHub, Ownable {
         }
         s.mapByVersion[newTpBta.tpbtaVersion] = rawTpBta;
         emit SaveTpBta(k, newTpBta.tpbtaVersion);
-        if (monitorVerifierAddr != identity(0)) {
-            IMonitorVerifier(monitorVerifierAddr).updateMonitorNodeEndorseInfo(newTpBta.endorseRoot);
-        }
     }
 
     function getTpBta(bytes calldata tpbtaLane, uint32 tpBtaVersion) external override view returns (bytes memory) {

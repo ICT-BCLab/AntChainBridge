@@ -43,13 +43,6 @@
             <version>${org.bouncycastle.version}</version>
         </dependency>
         <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty-tcnative-boringssl-static</artifactId>
-            <version>2.0.61.Final</version>
-            <classifier>${os.detected.classifier}</classifier>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
             <groupId>com.alipay.antchain.bridge</groupId>
             <artifactId>antchain-bridge-plugin-lib</artifactId>
             <version>${antchain-bridge.sdk.version}</version>
