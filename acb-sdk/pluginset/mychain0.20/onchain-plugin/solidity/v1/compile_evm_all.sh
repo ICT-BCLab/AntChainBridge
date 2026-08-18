@@ -37,6 +37,18 @@ SOL_FILES=(
 
 cleanup
 
+SOLCJS_VERSION="$("${SOLCJS}" --version 2>&1)"
+if [[ "${SOLCJS_VERSION}" != *"0.8.14"* || "${SOLCJS_VERSION}" != *".mod."* ]]; then
+  echo "solcjs must be the Mychain 0.8.14 compiler, got: ${SOLCJS_VERSION}" >&2
+  exit 1
+fi
+
+SOLC_VERSION="$("${SOLC}" --version 2>&1)"
+if [[ "${SOLC_VERSION}" != *"0.8.14"* || "${SOLC_VERSION}" != *"for antfin"* ]]; then
+  echo "solc must be the Mychain 0.8.14 binary compiler, got: ${SOLC_VERSION}" >&2
+  exit 1
+fi
+
 "${SOLCJS}" --bin "${SOL_FILES[@]}"
 
 copy_bin() {
@@ -55,13 +67,9 @@ copy_bin CommitteePtcVerifier_sol_CommitteePtcVerifier.bin
 copy_bin Monitor_sol_Monitor.bin
 copy_bin MonitorVerifier_sol_MonitorVerifier.bin
 
-if command -v "${SOLC}" >/dev/null 2>&1; then
-  "${SOLC}" --bin-runtime --overwrite "${SOL_FILES[@]}" -o .
-  for runtime_file in AuthMsg.bin-runtime SDPMsg.bin-runtime PtcHub.bin-runtime CommitteePtcVerifier.bin-runtime Monitor.bin-runtime MonitorVerifier.bin-runtime; do
-    if [[ -f "${runtime_file}" ]]; then
-      cp "${runtime_file}" "${CONTRACT_PATH}/${runtime_file}"
-    fi
-  done
-fi
+"${SOLC}" --bin-runtime --overwrite "${SOL_FILES[@]}" -o .
+for runtime_file in AuthMsg.bin-runtime SDPMsg.bin-runtime PtcHub.bin-runtime CommitteePtcVerifier.bin-runtime Monitor.bin-runtime MonitorVerifier.bin-runtime; do
+  copy_bin "${runtime_file}"
+done
 
 echo "MyChain EVM contract binaries generated under ${CONTRACT_PATH}"

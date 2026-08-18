@@ -18,8 +18,6 @@ contract SDPMsg is ISDPMessage, Ownable {
 
     identity public amAddress;
 
-    identity public monitorAddress;
-
     bytes32 public localDomainHash;
 
     mapping(bytes32 => uint32) sendSeq;
@@ -39,6 +37,10 @@ contract SDPMsg is ISDPMessage, Ownable {
 
     // only relayer can call `recvOffChainException`
     mapping(identity => bool) public relayerAuthMap;
+
+    // Keep new regulatory state after every legacy SDP storage field so an
+    // update-contract migration does not shift existing sequences or state.
+    identity public monitorAddress;
 
     modifier onlyAM() {
         require(

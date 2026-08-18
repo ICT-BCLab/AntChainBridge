@@ -1105,6 +1105,17 @@ public class Mychain020BBCService extends AbstractBBCService {
                 context.getMonitorContractClientEVM().resetDeployment();
             }
 
+            if (ObjectUtil.isNotNull(context.getPtcContractEvm())
+                    && StrUtil.isNotEmpty(context.getPtcContractEvm().getContractAddress())
+                    && !context.getPtcContractEvm().ensureMonitorVerifierSupport()) {
+                throw new RuntimeException("upgrade legacy ptc hub for monitor support failed");
+            }
+            if (ObjectUtil.isNotNull(context.getSdpContractClientEVM())
+                    && StrUtil.isNotEmpty(context.getSdpContractClientEVM().getContractAddress())
+                    && !context.getSdpContractClientEVM().ensureMonitorSupport()) {
+                throw new RuntimeException("upgrade legacy sdp for monitor support failed");
+            }
+
             if (!context.getMonitorVerifierContractEVM().deployContract()) {
                 throw new RuntimeException("deploy monitor verifier with evm contract failed");
             }

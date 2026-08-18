@@ -5,7 +5,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.alipay.antchain.bridge.commons.bbc.syscontract.ContractStatusEnum;
 import com.alipay.antchain.bridge.plugins.mychain020.sdk.Mychain020Client;
 import com.alipay.mychain.sdk.common.VMTypeEnum;
 import com.alipay.mychain.sdk.domain.transaction.TransactionReceipt;
@@ -14,58 +13,46 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.slf4j.Logger;
 
-public class PtcContractEvmTest {
+public class SDPContractClientEVMTest {
 
     @Test
-    public void shouldRestoreReadyStatusForPredeployedContract() {
-        PtcContractEvm contract = new PtcContractEvm(
-                mock(Mychain020Client.class),
-                mock(Logger.class));
-        contract.setContractAddress("PTC_HUB_EVM_CONTRACT_predeployed");
-        contract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
-
-        Assert.assertTrue(contract.deployContract("unused-for-predeployed-contract"));
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, contract.getStatus());
-    }
-
-    @Test
-    public void shouldUpgradeLegacyPtcHubAndVerifyMonitorSupport() {
+    public void shouldUpgradeLegacySdpAndVerifyMonitorSupport() {
         Mychain020Client client = mock(Mychain020Client.class);
         TransactionReceipt legacyReceipt = mock(TransactionReceipt.class);
         TransactionReceipt upgradedReceipt = mock(TransactionReceipt.class);
         when(legacyReceipt.getResult()).thenReturn(10201L);
         when(upgradedReceipt.getResult()).thenReturn((long) ErrorCode.SUCCESS.getErrorCode());
         when(upgradedReceipt.getOutput()).thenReturn(new byte[32]);
-        when(client.localCallContract(eq("legacy_ptc_hub"), org.mockito.ArgumentMatchers.any()))
+        when(client.localCallContract(eq("legacy_sdp"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(legacyReceipt, upgradedReceipt);
         when(client.upgradeContract(
-                "/contract/v1/solidity/PtcHub.bin-runtime",
-                "legacy_ptc_hub",
+                "/contract/v1/solidity/SDPMsg.bin-runtime",
+                "legacy_sdp",
                 VMTypeEnum.EVM)).thenReturn(true);
 
-        PtcContractEvm contract = new PtcContractEvm(client, mock(Logger.class));
-        contract.setContractAddress("legacy_ptc_hub");
+        SDPContractClientEVM contract = new SDPContractClientEVM(client, mock(Logger.class));
+        contract.setContractAddress("legacy_sdp");
 
-        Assert.assertTrue(contract.ensureMonitorVerifierSupport());
+        Assert.assertTrue(contract.ensureMonitorSupport());
         verify(client).upgradeContract(
-                "/contract/v1/solidity/PtcHub.bin-runtime",
-                "legacy_ptc_hub",
+                "/contract/v1/solidity/SDPMsg.bin-runtime",
+                "legacy_sdp",
                 VMTypeEnum.EVM);
     }
 
     @Test
-    public void shouldNotUpgradePtcHubThatAlreadySupportsMonitor() {
+    public void shouldNotUpgradeSdpThatAlreadySupportsMonitor() {
         Mychain020Client client = mock(Mychain020Client.class);
         TransactionReceipt receipt = mock(TransactionReceipt.class);
         when(receipt.getResult()).thenReturn((long) ErrorCode.SUCCESS.getErrorCode());
         when(receipt.getOutput()).thenReturn(new byte[32]);
-        when(client.localCallContract(eq("current_ptc_hub"), org.mockito.ArgumentMatchers.any()))
+        when(client.localCallContract(eq("current_sdp"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(receipt);
 
-        PtcContractEvm contract = new PtcContractEvm(client, mock(Logger.class));
-        contract.setContractAddress("current_ptc_hub");
+        SDPContractClientEVM contract = new SDPContractClientEVM(client, mock(Logger.class));
+        contract.setContractAddress("current_sdp");
 
-        Assert.assertTrue(contract.ensureMonitorVerifierSupport());
+        Assert.assertTrue(contract.ensureMonitorSupport());
         verify(client, org.mockito.Mockito.never()).upgradeContract(
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString(),
@@ -77,14 +64,14 @@ public class PtcContractEvmTest {
         Mychain020Client client = mock(Mychain020Client.class);
         TransactionReceipt receipt = mock(TransactionReceipt.class);
         when(receipt.getResult()).thenReturn(99L);
-        when(client.localCallContract(eq("unreachable_ptc_hub"), org.mockito.ArgumentMatchers.any()))
+        when(client.localCallContract(eq("unreachable_sdp"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(receipt);
 
-        PtcContractEvm contract = new PtcContractEvm(client, mock(Logger.class));
-        contract.setContractAddress("unreachable_ptc_hub");
+        SDPContractClientEVM contract = new SDPContractClientEVM(client, mock(Logger.class));
+        contract.setContractAddress("unreachable_sdp");
 
         try {
-            contract.ensureMonitorVerifierSupport();
+            contract.ensureMonitorSupport();
         } finally {
             verify(client, org.mockito.Mockito.never()).upgradeContract(
                     org.mockito.ArgumentMatchers.anyString(),
@@ -94,8 +81,8 @@ public class PtcContractEvmTest {
     }
 
     @Test
-    public void shouldPackageMonitorEnabledPtcRuntime() {
-        Assert.assertNotNull(PtcContractEvm.class.getResourceAsStream(
-                "/contract/v1/solidity/PtcHub.bin-runtime"));
+    public void shouldPackageMonitorEnabledSdpRuntime() {
+        Assert.assertNotNull(SDPContractClientEVM.class.getResourceAsStream(
+                "/contract/v1/solidity/SDPMsg.bin-runtime"));
     }
 }

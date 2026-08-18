@@ -11,13 +11,18 @@
 ## Mychain020 BBC监管系统合约（solidity）
 本目录是在`mychain0.10`基础系统合约之上增加 Monitor 和 MonitorVerifier 的监管版合约库，适配同一 Mychain 0.10 链环境。
 
-合约编译依赖`0.4.24`版本的[`solc`编译器](https://antdigital.com/docs/11/101793#h2--solc-5:~:text=%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E3%80%82-,%E4%BA%8C%E8%BF%9B%E5%88%B6%C2%A0solc%C2%A0%E7%BC%96%E8%AF%91%E5%B7%A5%E5%85%B7,-solc%2Djs%C2%A0%E7%BC%96%E8%AF%91)
+合约编译依赖`0.8.14`版本的 Mychain [`solc`编译器](https://antdigital.com/docs/11/101793#h2--solc-5:~:text=%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E%E3%80%82-,%E4%BA%8C%E8%BF%9B%E5%88%B6%C2%A0solc%C2%A0%E7%BC%96%E8%AF%91%E5%B7%A5%E5%85%B7,-solc%2Djs%C2%A0%E7%BC%96%E8%AF%91)
 和[`solc-js`编译器](https://antdigital.com/docs/11/101793#h2--solc-js1:~:text=%E8%BF%9B%E8%A1%8C%E7%AE%80%E8%A6%81%E8%AF%B4%E6%98%8E%E3%80%82-,%E4%B8%8B%E8%BD%BD%C2%A0solc%2Djs,-%E5%8D%95%E5%87%BB%E6%AD%A4%E5%A4%84)
 
 执行`onchain-plugin/solidity/v1`目录下的`compile_evm_all.sh`脚本可以编译 v1 EVM 合约，
 并将编译生成的`*.bin`（用于合约部署）和`*_runtime.bin`（用于合约升级）
 自动更新到`offchain-plugin/src/main/resources/contract/v1/solidity`目录。监管合约新增后，
 该脚本也会生成并拷贝`Monitor_sol_Monitor.bin`和`MonitorVerifier_sol_MonitorVerifier.bin`。
+脚本会校验两个编译器都是 Mychain 0.8.14 版本；社区 Solidity 编译器或缺少运行时代码
+编译器时会直接失败，避免生成
+无法升级历史系统合约的插件包。监管版 PTC Hub 和 SDP 都只在旧版存储布局末尾追加监管
+字段，因此插件会在初始化监管合约前原位升级旧合约，并保留其合约身份、信任数据、域名、
+消息序号及已验证区块状态。
 
 ## Mychain BBC系统合约（c++）
 
