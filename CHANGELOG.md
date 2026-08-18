@@ -1,5 +1,11 @@
 # 本分支新增功能总结
 
+## 2026.08.18 FISCO-BCOS 2监管插件拆分
+- 保留原有`fiscobcos2`插件不变，新增产品名为`fiscobcos3`、插件ID为`plugin-fiscobcos3`的监管版FISCO-BCOS 2插件，使普通版与监管版可在同一PluginServer中独立加载。
+- 为`fiscobcos3`增加Monitor和MonitorVerifier监管合约、监管合约部署与上下文恢复、监管指令转发、跨链消息监管校验及HCDVS共识状态验证能力。
+- 隔离`fiscobcos2`与`fiscobcos3`使用的WeDPR原生库加载路径，解决两个FISCO插件在PF4J不同类加载器中同时启动时的原生库冲突。
+- 补充FISCO监管流程、共识状态校验和双插件启动测试；本地验证AM、SDP、Monitor及MonitorVerifier合约部署成功，Relayer能够正常监听区块。
+
 ## 2026.07.24 Mychain0.10插件适配跨链监管功能
 - 为Mychain 0.10 EVM插件新增Monitor和MonitorVerifier监管合约，支持监管开关、发送方/接收方黑名单、监管指令验签与执行，并在SDPv1转发时保留原始发送方身份。
 - 打通PTC Hub、MonitorVerifier、Monitor和SDP之间的合约配置及TPBTA监管节点背书同步，实现BBC监管合约部署、监管配置和监管指令转发接口。

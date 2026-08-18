@@ -1,0 +1,12 @@
+{
+  "certPath": "/path/to/sdk",
+  "caCert": "/path/to/sdk/ca.crt",
+  "sslCert": "/path/to/sdk/sdk.crt",
+  "sslKey": "/path/to/sdk/sdk.key",
+  "connectPeer": "127.0.0.1:20200",
+  "groupID": "1",
+  "useSMCrypto": "false",
+  "monitorCommitteeId": "default",
+  "monitorNodeId": "monitor-node",
+  "monitorNodeAddress": "0x0000000000000000000000000000000000000000"
+}
