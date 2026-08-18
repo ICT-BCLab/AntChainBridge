@@ -30,7 +30,6 @@ public class SDPContractClientEVM extends SDPContract implements AbstractSDPCont
     private static final String SDP_EVM_CONTRACT_PREFIX = "SDP_EVM_CONTRACT_";
 
     private static final String SET_AM_CONTRACT_AND_DOMAIN_SIGN = "SetAmContractAndDomain(identity,string)";
-    private static final String SET_MONITOR_CONTRACT_SIGN = "setMonitorContract(identity)";
     private static final String RECV_OFF_CHAIN_EXCEPTION_SIGN = "recvOffChainException(bytes32,bytes)";
     private static final String UPDATE_VERIFIED_INFO_SIGN = "updateVerifiedInfo(string,bytes32,uint64,uint64)";
     private static final String QUERY_VALIDATED_BLOCK_STATE_BY_DOMAIN_SIGN = "queryValidatedBlockStateByDomain(string)";
@@ -47,20 +46,6 @@ public class SDPContractClientEVM extends SDPContract implements AbstractSDPCont
     public SDPContractClientEVM(Mychain010Client mychain010Client, Logger logger) {
         this.mychain010Client = mychain010Client;
         this.logger = logger;
-    }
-
-    public void setMonitorContract(String monitorContractName) {
-        EVMParameter parameters = new EVMParameter(SET_MONITOR_CONTRACT_SIGN);
-        parameters.addIdentity(Utils.getIdentityByName(
-                monitorContractName,
-                mychain010Client.getConfig().getMychainHashType()));
-
-        if (!mychain010Client.callContract(this.getContractAddress(), parameters, true).isSuccess()) {
-            throw new RuntimeException(StrUtil.format(
-                    "failed to set monitor contract {} into sdp {}",
-                    monitorContractName,
-                    this.getContractAddress()));
-        }
     }
 
     @Override

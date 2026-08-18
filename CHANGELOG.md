@@ -1,7 +1,10 @@
 # 本分支新增功能总结
 
-## 2026.07.24 Mychain0.10插件适配跨链监管功能
-- 为Mychain 0.10 EVM插件新增Monitor和MonitorVerifier监管合约，支持监管开关、发送方/接收方黑名单、监管指令验签与执行，并在SDPv1转发时保留原始发送方身份。
+## 2026.08.17 Mychain基础版与监管版插件拆分
+- 保持`mychain0.10`基础插件不变，将带监管能力的实现独立为`mychain0.20`，使用`mychain2`产品类型、`plugin-mychain2`插件标识和`mychain020-bbc`构建产物，支持两套插件按需独立部署。
+
+## 2026.07.24 Mychain0.20插件适配跨链监管功能
+- 基于Mychain 0.10链新增独立的Mychain0.20监管插件，并增加Monitor和MonitorVerifier监管合约，支持监管开关、发送方/接收方黑名单、监管指令验签与执行，在SDPv1转发时保留原始发送方身份。
 - 打通PTC Hub、MonitorVerifier、Monitor和SDP之间的合约配置及TPBTA监管节点背书同步，实现BBC监管合约部署、监管配置和监管指令转发接口。
 - 增加监管合约上下文恢复和旧版Monitor合约自动升级逻辑，修复插件重启后PTC合约状态恢复、AM重复设置协议以及空WASM合约地址进入共识状态的问题。
 - 补充Mychain监管合约编译脚本、部署字节码和单元测试。

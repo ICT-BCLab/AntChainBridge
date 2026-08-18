@@ -9,10 +9,10 @@ import cn.hutool.core.collection.ListUtil;
 import cn.hutool.core.util.HexUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
+import com.alibaba.fastjson.JSON;
 import com.alipay.antchain.bridge.commons.bbc.AbstractBBCContext;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.AuthMessageContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.ContractStatusEnum;
-import com.alipay.antchain.bridge.commons.bbc.syscontract.MonitorContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.PTCContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.SDPContract;
 import com.alipay.antchain.bridge.commons.core.base.*;
@@ -61,9 +61,8 @@ public class Mychain010BBCService extends AbstractBBCService {
     @Override
     public void startup(AbstractBBCContext bbcContext) {
 
-        getBBCLogger().info("[Mychain010BBCService] start up mychain0.10 bbc service, context type: {}, has configuration: {}",
-                ObjectUtil.isNull(bbcContext) ? "null" : bbcContext.getClass().getSimpleName(),
-                !ObjectUtil.isNull(bbcContext) && bbcContext.getConfForBlockchainClient() != null);
+        getBBCLogger().info("[Mychain010BBCService] start up mychain0.10 bbc service, context: {}",
+                JSON.toJSONString(bbcContext));
 
         if (ObjectUtil.isNull(bbcContext)) {
             throw new RuntimeException("[Mychain010BBCService] null bbc context");
@@ -315,8 +314,6 @@ public class Mychain010BBCService extends AbstractBBCService {
                 mychain010Client.getPrimary());
 
         try {
-            upgradeMonitorContractIfRequired();
-
             // 1. 判断 am 合约是否 ready，已 ready 不需要重复set am
             if (context.isAMReady(mychain010Client.isTeeChain())) {
                 getBBCLogger().info("[Mychain010BBCService] am contract is ready (protocol: {}) for {}, do not need to set protocol",
@@ -346,20 +343,6 @@ public class Mychain010BBCService extends AbstractBBCService {
                             mychain010Client.getPrimary()),
                     e);
         }
-    }
-
-    private void upgradeMonitorContractIfRequired() {
-        if (mychain010Client.isTeeChain()
-                || ObjectUtil.isNull(context.getMonitorContractClientEVM())
-                || StrUtil.isEmpty(context.getMonitorContractClientEVM().getContractAddress())
-                || context.getMonitorContractClientEVM().isImplementationVersionSupported()) {
-            return;
-        }
-
-        getBBCLogger().info(
-                "[Mychain010BBCService] legacy monitor contract detected during BBC setup for {}, start automatic upgrade",
-                mychain010Client.getPrimary());
-        setupMonitorContract();
     }
 
     /**
@@ -1085,172 +1068,12 @@ public class Mychain010BBCService extends AbstractBBCService {
     }
 
     @Override
-    public void setupMonitorContract() {
-        getBBCLogger().info("[Mychain010BBCService] set up monitor contract for {}", mychain010Client.getPrimary());
-
-        if (ObjectUtil.isNull(this.context)) {
-            throw new RuntimeException("[Mychain010BBCService] empty bbc context");
-        }
-        if (mychain010Client.isTeeChain()) {
-            throw new UnsupportedOperationException("mychain monitor contract only supports EVM contracts now");
-        }
-
-        try {
-            if (StrUtil.isNotEmpty(context.getMonitorContractClientEVM().getContractAddress())
-                    && !context.getMonitorContractClientEVM().isImplementationVersionSupported()) {
-                getBBCLogger().info(
-                        "[Mychain010BBCService] upgrade monitor contract for {} from legacy implementation {}",
-                        mychain010Client.getPrimary(),
-                        context.getMonitorContractClientEVM().getContractAddress());
-                context.getMonitorContractClientEVM().resetDeployment();
-            }
-
-            if (!context.getMonitorVerifierContractEVM().deployContract()) {
-                throw new RuntimeException("deploy monitor verifier with evm contract failed");
-            }
-            if (!context.getMonitorContractClientEVM().deployContract()) {
-                throw new RuntimeException("deploy monitor with evm contract failed");
-            }
-
-            context.getMonitorContractClientEVM().setMonitorVerifier(
-                    context.getMonitorVerifierContractEVM().getContractAddress());
-
-            if (ObjectUtil.isNotNull(context.getPtcContractEvm())
-                    && StrUtil.isNotEmpty(context.getPtcContractEvm().getContractAddress())) {
-                context.getMonitorVerifierContractEVM().setPtcHubAddress(
-                        context.getPtcContractEvm().getContractAddress());
-                context.getPtcContractEvm().setMonitorVerifier(
-                        context.getMonitorVerifierContractEVM().getContractAddress());
-            }
-
-            if (ObjectUtil.isNotEmpty(context.getSdpContractClientEVM())
-                    && StrUtil.isNotEmpty(context.getSdpContractClientEVM().getContractAddress())) {
-                context.getMonitorContractClientEVM().setProtocol(
-                        context.getSdpContractClientEVM().getContractAddress());
-                context.getSdpContractClientEVM().setMonitorContract(
-                        context.getMonitorContractClientEVM().getContractAddress());
-            }
-
-            MonitorContract monitorContract = new MonitorContract();
-            monitorContract.setContractAddress(context.getMonitorContractClientEVM().getContractAddress());
-            monitorContract.setStatus(context.getMonitorContractClientEVM().getStatus());
-            context.setMonitorContract(monitorContract);
-
-            getBBCLogger().info(
-                    "[Mychain010BBCService] monitor contract deployed for {}, monitor: {}, verifier: {}",
-                    mychain010Client.getPrimary(),
-                    context.getMonitorContractClientEVM().getContractAddress(),
-                    context.getMonitorVerifierContractEVM().getContractAddress());
-        } catch (Exception e) {
-            getBBCLogger().error("[Mychain010BBCService] setup monitor contract for {} failed",
-                    mychain010Client.getPrimary(), e);
-            throw new RuntimeException(
-                    StrUtil.format("[Mychain010BBCService] setup monitor contract for {} failed",
-                            mychain010Client.getPrimary()),
-                    e);
-        }
-    }
-
-    @Override
-    public void setProtocolInMonitor(String contractAddress) {
-        getBBCLogger().info("[Mychain010BBCService] set protocol in monitor for {}", mychain010Client.getPrimary());
-
-        if (mychain010Client.isTeeChain()) {
-            throw new UnsupportedOperationException("mychain monitor contract only supports EVM contracts now");
-        }
-        if (ObjectUtil.isNull(context.getMonitorContractClientEVM())
-                || StrUtil.isEmpty(context.getMonitorContractClientEVM().getContractAddress())) {
-            throw new RuntimeException("monitor contract is not deployed");
-        }
-
-        String sdpContractName = StrUtil.isNotEmpty(contractAddress) ?
-                contractAddress :
-                context.getSdpContractClientEVM().getContractAddress();
-        context.getMonitorContractClientEVM().setProtocol(sdpContractName);
-    }
-
-    @Override
-    public void setMonitorContract(String monitorContractName) {
-        getBBCLogger().info("[Mychain010BBCService] set monitor contract in sdp for {}", mychain010Client.getPrimary());
-
-        if (mychain010Client.isTeeChain()) {
-            throw new UnsupportedOperationException("mychain monitor contract only supports EVM contracts now");
-        }
-        if (ObjectUtil.isNull(context.getSdpContractClientEVM())
-                || StrUtil.isEmpty(context.getSdpContractClientEVM().getContractAddress())) {
-            throw new RuntimeException("sdp contract is not deployed");
-        }
-
-        String monitorName = StrUtil.isNotEmpty(monitorContractName) ?
-                monitorContractName :
-                context.getMonitorContractClientEVM().getContractAddress();
-        context.getSdpContractClientEVM().setMonitorContract(monitorName);
-    }
-
-    @Override
-    public void setMonitorControl(int monitorType) {
-        getBBCLogger().info("[Mychain010BBCService] set monitor control {} for {}",
-                monitorType, mychain010Client.getPrimary());
-
-        if (ObjectUtil.isNull(context.getMonitorContractClientEVM())
-                || StrUtil.isEmpty(context.getMonitorContractClientEVM().getContractAddress())) {
-            throw new RuntimeException("monitor contract is not deployed");
-        }
-        context.getMonitorContractClientEVM().setMonitorControl(monitorType);
-    }
-
-    @Override
-    public void setPtcHubInMonitorVerifier(String contractAddress) {
-        getBBCLogger().info("[Mychain010BBCService] set ptc hub in monitor verifier for {}", mychain010Client.getPrimary());
-
-        if (ObjectUtil.isNull(context.getMonitorVerifierContractEVM())
-                || StrUtil.isEmpty(context.getMonitorVerifierContractEVM().getContractAddress())) {
-            throw new RuntimeException("monitor verifier contract is not deployed");
-        }
-
-        String ptcHubContractName = StrUtil.isNotEmpty(contractAddress) ?
-                contractAddress :
-                context.getPtcContractEvm().getContractAddress();
-        context.getMonitorVerifierContractEVM().setPtcHubAddress(ptcHubContractName);
-    }
-
-    @Override
-    public CrossChainMessageReceipt relayMonitorOrder(String committeeId,
-                                                      String signAlgo,
-                                                      byte[] rawProof,
-                                                      byte[] rawMonitorOrder) {
-        getBBCLogger().info("[Mychain010BBCService] relay monitor order for {}, committee: {}",
-                mychain010Client.getPrimary(), committeeId);
-
-        if (ObjectUtil.isNull(context.getMonitorContractClientEVM())
-                || StrUtil.isEmpty(context.getMonitorContractClientEVM().getContractAddress())) {
-            throw new RuntimeException("monitor contract is not deployed");
-        }
-
-        SendResponseResult response = context.getMonitorContractClientEVM()
-                .relayMonitorOrder(committeeId, signAlgo, rawProof, rawMonitorOrder);
-        return buildCrossChainMessageReceipt(response);
-    }
-
-    private CrossChainMessageReceipt buildCrossChainMessageReceipt(SendResponseResult response) {
-        CrossChainMessageReceipt crossChainMessageReceipt = new CrossChainMessageReceipt();
-        crossChainMessageReceipt.setTxhash(response.getTxId());
-        crossChainMessageReceipt.setSuccessful(response.isSuccess());
-        crossChainMessageReceipt.setConfirmed(response.isConfirmed());
-        crossChainMessageReceipt.setErrorMsg(response.getErrorMessage());
-        crossChainMessageReceipt.setTxTimestamp(response.getTxTimestamp());
-        crossChainMessageReceipt.setRawTx(response.getRawTx());
-        return crossChainMessageReceipt;
-    }
-
-    @Override
     public void setPtcContract(String ptcContractAddress) {
         getBBCLogger().info("[Mychain010BBCService] call am contract to set ptc hub for {}", mychain010Client.getPrimary());
 
         try {
             // 1. 判断 am 合约是否 ready，已 ready 不需要重复set am
             if (context.isAMReady(mychain010Client.isTeeChain())) {
-                markPtcContractReady();
                 getBBCLogger().info("[Mychain010BBCService] am contract is ready that no need to set ptc hub");
                 return;
             }
@@ -1270,7 +1093,6 @@ public class Mychain010BBCService extends AbstractBBCService {
             if (context.isAMReady(mychain010Client.isTeeChain())) {
                 context.getAuthMessageContract().setStatus(ContractStatusEnum.CONTRACT_READY);
             }
-            markPtcContractReady();
 
             getBBCLogger().info("[Mychain010BBCService] call am to set ptc hub {} success, AM status is {} for {}",
                     context.getPtcContractEvm().getContractAddress(),
@@ -1290,11 +1112,6 @@ public class Mychain010BBCService extends AbstractBBCService {
                     ), e
             );
         }
-    }
-
-    private void markPtcContractReady() {
-        context.getPtcContractEvm().setStatus(ContractStatusEnum.CONTRACT_READY);
-        context.getPtcContract().setStatus(ContractStatusEnum.CONTRACT_READY);
     }
 
     @Override
@@ -1525,4 +1342,30 @@ public class Mychain010BBCService extends AbstractBBCService {
                     e);
         }
     }
+
+    @Override
+    public void setMonitorContract(String contractAddress) {
+
+    }
+
+    @Override
+    public void setProtocolInMonitor(String contractAddress) {
+
+    }
+
+    @Override
+    public void setMonitorControl(int monitorType) {
+
+    }
+
+    @Override
+    public void setPtcHubInMonitorVerifier(String contractAddress) {
+
+    }
+
+    @Override
+    public CrossChainMessageReceipt relayMonitorOrder(String committeeId, String signAlgo, byte[] rawProof, byte[] rawMonitorOrder) {
+        return null;
+    }
+    
 }
