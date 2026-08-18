@@ -24,6 +24,7 @@ import com.alipay.antchain.bridge.commons.core.rcc.ReliableCrossChainMessage;
 import com.alipay.antchain.bridge.plugins.lib.BBCService;
 import com.alipay.antchain.bridge.plugins.mychain020.contract.AMContractClientEVM;
 import com.alipay.antchain.bridge.plugins.mychain020.contract.AMContractClientWASM;
+import com.alipay.antchain.bridge.plugins.mychain020.model.ContractAddressInfo;
 import com.alipay.antchain.bridge.plugins.mychain020.sdk.Mychain020Client;
 import com.alipay.antchain.bridge.plugins.mychain020.utils.ContractUtils;
 import com.alipay.antchain.bridge.plugins.mychain020.utils.MychainUtils;
@@ -31,6 +32,7 @@ import com.alipay.antchain.bridge.plugins.spi.bbc.AbstractBBCService;
 import com.alipay.mychain.sdk.api.utils.Utils;
 import com.alipay.mychain.sdk.common.VMTypeEnum;
 import com.alipay.mychain.sdk.domain.block.Block;
+import com.alipay.mychain.sdk.domain.account.Identity;
 import com.alipay.mychain.sdk.domain.spv.BlockHeaderInfo;
 import com.alipay.mychain.sdk.domain.transaction.LogEntry;
 import com.alipay.mychain.sdk.domain.transaction.Transaction;
@@ -1174,9 +1176,10 @@ public class Mychain020BBCService extends AbstractBBCService {
             throw new RuntimeException("monitor contract is not deployed");
         }
 
-        String sdpContractName = StrUtil.isNotEmpty(contractAddress) ?
-                contractAddress :
-                context.getSdpContractClientEVM().getContractAddress();
+        String sdpContractName = resolveEvmContractName(
+                contractAddress,
+                context.getSdpContractClientEVM().getContractAddress(),
+                "sdp");
         context.getMonitorContractClientEVM().setProtocol(sdpContractName);
     }
 
@@ -1214,15 +1217,54 @@ public class Mychain020BBCService extends AbstractBBCService {
     public void setPtcHubInMonitorVerifier(String contractAddress) {
         getBBCLogger().info("[Mychain020BBCService] set ptc hub in monitor verifier for {}", mychain020Client.getPrimary());
 
-        if (ObjectUtil.isNull(context.getMonitorVerifierContractEVM())
-                || StrUtil.isEmpty(context.getMonitorVerifierContractEVM().getContractAddress())) {
+        if (ObjectUtil.isNull(context.getMonitorVerifierContractEVM())) {
             throw new RuntimeException("monitor verifier contract is not deployed");
         }
 
-        String ptcHubContractName = StrUtil.isNotEmpty(contractAddress) ?
-                contractAddress :
-                context.getPtcContractEvm().getContractAddress();
-        context.getMonitorVerifierContractEVM().setPtcHubAddress(ptcHubContractName);
+        String ptcHubContractName = resolveEvmContractName(
+                contractAddress,
+                context.getPtcContractEvm().getContractAddress(),
+                "ptc hub");
+        if (StrUtil.isNotEmpty(context.getMonitorVerifierContractEVM().getContractAddress())) {
+            context.getMonitorVerifierContractEVM().setPtcHubAddress(ptcHubContractName);
+            return;
+        }
+        if (ObjectUtil.isNull(context.getMonitorContractClientEVM())
+                || StrUtil.isEmpty(context.getMonitorContractClientEVM().getContractAddress())) {
+            throw new RuntimeException("monitor verifier contract is not deployed");
+        }
+
+        Identity verifierIdentity = context.getMonitorContractClientEVM().getMonitorVerifierIdentity();
+        context.getMonitorVerifierContractEVM().setPtcHubAddress(ptcHubContractName, verifierIdentity);
+    }
+
+    /**
+     * Common relayer contexts persist Mychain multi-VM addresses as JSON. The
+     * EVM monitor contracts must hash the contained EVM contract name, not the
+     * serialized wrapper itself.
+     */
+    private String resolveEvmContractName(String suppliedAddress,
+                                          String fallbackAddress,
+                                          String contractType) {
+        String address = StrUtil.isNotEmpty(suppliedAddress) ? suppliedAddress : fallbackAddress;
+        if (StrUtil.isEmpty(address)) {
+            throw new RuntimeException(StrUtil.format("{} contract is not deployed", contractType));
+        }
+        if (!address.trim().startsWith("{")) {
+            return address;
+        }
+
+        try {
+            String evmContractName = ContractAddressInfo.decode(address).getEvmContractAddress();
+            if (StrUtil.isEmpty(evmContractName)) {
+                throw new RuntimeException(StrUtil.format(
+                        "{} address does not contain an EVM contract", contractType));
+            }
+            return evmContractName;
+        } catch (RuntimeException exception) {
+            throw new RuntimeException(StrUtil.format(
+                    "invalid serialized {} contract address", contractType), exception);
+        }
     }
 
     @Override

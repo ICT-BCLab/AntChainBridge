@@ -133,12 +133,32 @@ public class Mychain020Client {
 
     // ==================================================== 合约相关接口
     public SendResponseResult callContract(String contractName, Parameters parameters, boolean sync) {
+        return callContract(
+                Utils.getIdentityByName(contractName, config.getMychainHashType()),
+                contractName,
+                parameters,
+                sync);
+    }
+
+    /**
+     * Calls a contract whose Mychain identity was recovered from another
+     * on-chain system contract. This is required for legacy contexts which did
+     * not persist the randomly generated monitor-verifier contract name.
+     */
+    public SendResponseResult callContract(Identity contractIdentity, Parameters parameters, boolean sync) {
+        return callContract(contractIdentity, contractIdentity.hexStrValue(), parameters, sync);
+    }
+
+    private SendResponseResult callContract(Identity contractIdentity,
+                                            String contractLabel,
+                                            Parameters parameters,
+                                            boolean sync) {
         String account = config.getMychainAnchorAccount();
 
         VMTypeEnum vmType = MychainUtils.getSupportedParameterType(parameters);
         logger.info("call {} contractName {}.{}",
                 vmType,
-                contractName,
+                contractLabel,
                 vmType == VMTypeEnum.EVM ?
                         ((EVMParameter) parameters).getMethodSignature() :
                         ((WASMParameter) parameters).getMethodSignature());
@@ -146,7 +166,7 @@ public class Mychain020Client {
         try {
             CallContractRequest request = new CallContractRequest(
                     Utils.getIdentityByName(account, config.getMychainHashType()),
-                    Utils.getIdentityByName(contractName, config.getMychainHashType()),
+                    contractIdentity,
                     parameters,
                     BigInteger.ZERO,
                     vmType

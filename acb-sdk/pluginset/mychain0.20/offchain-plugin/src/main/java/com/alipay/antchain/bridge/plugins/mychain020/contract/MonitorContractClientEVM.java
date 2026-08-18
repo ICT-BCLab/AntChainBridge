@@ -11,6 +11,8 @@ import com.alipay.antchain.bridge.plugins.mychain020.exceptions.CallContractExce
 import com.alipay.antchain.bridge.plugins.mychain020.sdk.Mychain020Client;
 import com.alipay.mychain.sdk.api.utils.Utils;
 import com.alipay.mychain.sdk.common.VMTypeEnum;
+import com.alipay.mychain.sdk.crypto.hash.Hash;
+import com.alipay.mychain.sdk.domain.account.Identity;
 import com.alipay.mychain.sdk.domain.transaction.TransactionReceipt;
 import com.alipay.mychain.sdk.errorcode.ErrorCode;
 import com.alipay.mychain.sdk.vm.EVMOutput;
@@ -28,6 +30,7 @@ public class MonitorContractClientEVM {
 
     private static final String MONITOR_EVM_CONTRACT_PREFIX = "MONITOR_EVM_CONTRACT_";
     private static final String GET_IMPLEMENTATION_VERSION_SIGN = "getImplementationVersion()";
+    private static final String GET_MONITOR_VERIFIER_SIGN = "getMonitorVerifier()";
     private static final String SET_SDP_ADDRESS_SIGN = "setSdpAddress(identity)";
     private static final String SET_MONITOR_VERIFIER_ADDRESS_SIGN = "setMonitorVerifierAddress(identity)";
     private static final String SET_MONITOR_CONTROL_SIGN = "setMonitorControl(uint32)";
@@ -42,6 +45,22 @@ public class MonitorContractClientEVM {
     public MonitorContractClientEVM(Mychain020Client mychain020Client, Logger logger) {
         this.mychain020Client = mychain020Client;
         this.logger = logger;
+    }
+
+    public String getContractAddress() {
+        return contractAddress;
+    }
+
+    public void setContractAddress(String contractAddress) {
+        this.contractAddress = contractAddress;
+    }
+
+    public ContractStatusEnum getStatus() {
+        return status;
+    }
+
+    public void setStatus(ContractStatusEnum status) {
+        this.status = status;
     }
 
     public boolean deployContract() {
@@ -87,6 +106,22 @@ public class MonitorContractClientEVM {
                     this.contractAddress);
             return false;
         }
+    }
+
+    public Identity getMonitorVerifierIdentity() {
+        TransactionReceipt receipt = mychain020Client.localCallContract(
+                this.contractAddress,
+                new EVMParameter(GET_MONITOR_VERIFIER_SIGN));
+        if (ObjectUtil.isEmpty(receipt)
+                || receipt.getResult() != ErrorCode.SUCCESS.getErrorCode()
+                || ObjectUtil.isEmpty(receipt.getOutput())
+                || receipt.getOutput().length != 32) {
+            throw new CallContractException(
+                    this.contractAddress,
+                    "",
+                    "monitor verifier identity is unavailable");
+        }
+        return new Identity(new Hash(receipt.getOutput()));
     }
 
     public void resetDeployment() {

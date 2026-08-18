@@ -9,6 +9,7 @@ import com.alipay.antchain.bridge.plugins.mychain020.exceptions.CallContractExce
 import com.alipay.antchain.bridge.plugins.mychain020.sdk.Mychain020Client;
 import com.alipay.mychain.sdk.api.utils.Utils;
 import com.alipay.mychain.sdk.common.VMTypeEnum;
+import com.alipay.mychain.sdk.domain.account.Identity;
 import com.alipay.mychain.sdk.vm.EVMParameter;
 import lombok.Getter;
 import lombok.Setter;
@@ -30,6 +31,22 @@ public class MonitorVerifierContractEVM {
     public MonitorVerifierContractEVM(Mychain020Client mychain020Client, Logger logger) {
         this.mychain020Client = mychain020Client;
         this.logger = logger;
+    }
+
+    public String getContractAddress() {
+        return contractAddress;
+    }
+
+    public void setContractAddress(String contractAddress) {
+        this.contractAddress = contractAddress;
+    }
+
+    public ContractStatusEnum getStatus() {
+        return status;
+    }
+
+    public void setStatus(ContractStatusEnum status) {
+        this.status = status;
     }
 
     public boolean deployContract() {
@@ -54,10 +71,16 @@ public class MonitorVerifierContractEVM {
     }
 
     public void setPtcHubAddress(String ptcHubContractName) {
+        setPtcHubAddress(ptcHubContractName, null);
+    }
+
+    public void setPtcHubAddress(String ptcHubContractName, Identity verifierContractIdentity) {
         EVMParameter parameters = new EVMParameter(SET_PTC_HUB_ADDRESS_SIGN);
         parameters.addIdentity(Utils.getIdentityByName(ptcHubContractName, mychain020Client.getConfig().getMychainHashType()));
 
-        SendResponseResult result = mychain020Client.callContract(this.contractAddress, parameters, true);
+        SendResponseResult result = verifierContractIdentity == null
+                ? mychain020Client.callContract(this.contractAddress, parameters, true)
+                : mychain020Client.callContract(verifierContractIdentity, parameters, true);
         if (!result.isSuccess()) {
             throw new CallContractException(this.contractAddress, result.getTxId(), result.getErrorMessage());
         }

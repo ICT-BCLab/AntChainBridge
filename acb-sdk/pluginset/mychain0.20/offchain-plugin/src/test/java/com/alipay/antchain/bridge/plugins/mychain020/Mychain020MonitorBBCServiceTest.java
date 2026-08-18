@@ -12,6 +12,7 @@ import com.alipay.antchain.bridge.plugins.mychain020.contract.PtcContractEvm;
 import com.alipay.antchain.bridge.plugins.mychain020.contract.SDPContractClientEVM;
 import com.alipay.antchain.bridge.plugins.mychain020.contract.AMContractClientEVM;
 import com.alipay.antchain.bridge.plugins.mychain020.sdk.Mychain020Client;
+import com.alipay.mychain.sdk.domain.account.Identity;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
@@ -226,6 +227,16 @@ public class Mychain020MonitorBBCServiceTest {
     }
 
     @Test
+    public void setProtocolInMonitorShouldExtractEvmAddressFromPersistedContext() {
+        when(monitorContractClientEVM.getContractAddress()).thenReturn(MONITOR_CONTRACT);
+
+        service.setProtocolInMonitor(
+                "{\"evm\":\"sdp_evm_contract\",\"wasm\":\"sdp_wasm_contract\"}");
+
+        verify(monitorContractClientEVM).setProtocol("sdp_evm_contract");
+    }
+
+    @Test
     public void setProtocolInMonitorShouldUseContextSdpAddressByDefault() {
         when(monitorContractClientEVM.getContractAddress()).thenReturn(MONITOR_CONTRACT);
         when(sdpContractClientEVM.getContractAddress()).thenReturn(SDP_CONTRACT);
@@ -294,6 +305,16 @@ public class Mychain020MonitorBBCServiceTest {
     }
 
     @Test
+    public void setPtcHubInMonitorVerifierShouldExtractEvmAddressFromPersistedContext() {
+        when(monitorVerifierContractEVM.getContractAddress()).thenReturn(MONITOR_VERIFIER_CONTRACT);
+
+        service.setPtcHubInMonitorVerifier(
+                "{\"evm\":\"ptc_evm_contract\",\"wasm\":\"\"}");
+
+        verify(monitorVerifierContractEVM).setPtcHubAddress("ptc_evm_contract");
+    }
+
+    @Test
     public void setPtcHubInMonitorVerifierShouldUseContextPtcHubAddressByDefault() {
         when(monitorVerifierContractEVM.getContractAddress()).thenReturn(MONITOR_VERIFIER_CONTRACT);
         when(ptcContractEvm.getContractAddress()).thenReturn(PTC_HUB_CONTRACT);
@@ -301,6 +322,18 @@ public class Mychain020MonitorBBCServiceTest {
         service.setPtcHubInMonitorVerifier("");
 
         verify(monitorVerifierContractEVM).setPtcHubAddress(PTC_HUB_CONTRACT);
+    }
+
+    @Test
+    public void setPtcHubInMonitorVerifierShouldRecoverVerifierIdentityAfterRestart() {
+        Identity verifierIdentity = mock(Identity.class);
+        when(monitorVerifierContractEVM.getContractAddress()).thenReturn("");
+        when(monitorContractClientEVM.getContractAddress()).thenReturn(MONITOR_CONTRACT);
+        when(monitorContractClientEVM.getMonitorVerifierIdentity()).thenReturn(verifierIdentity);
+
+        service.setPtcHubInMonitorVerifier(PTC_HUB_CONTRACT);
+
+        verify(monitorVerifierContractEVM).setPtcHubAddress(PTC_HUB_CONTRACT, verifierIdentity);
     }
 
     @Test(expected = RuntimeException.class)
