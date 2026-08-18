@@ -76,6 +76,8 @@ public class DioxideClient {
 
     private static final String RECV_MESSAGE_IN_PROTOCOL = "recvMessageInProtocol:name";
 
+    private static final String INVOCATION_SUCCESS = "IVKRET_SUCCESS";
+
     public DioxideClient(DioxideConfig config, Logger bbcLogger) {
         this.bbcLogger = bbcLogger;
         this.config = config;
@@ -203,39 +205,17 @@ public class DioxideClient {
         List<String> eventTargetTxHashes = new ArrayList<>();
         for (String tx2Hash : tx2Hashes) {
             JSONObject tx2 = getTransactionJonObjectByHash(tx2Hash);
-            if (tx2 == null) {
-                eventStructurePending = true;
-                continue;
+            RelayEventInspection relayEventInspection = inspectRelayEvents(tx2, tx2Hash);
+            if (relayEventInspection.state() == RelayEventState.FAILED) {
+                return buildCrossChainMessageReceipt(
+                        dioxideTransaction,
+                        true,
+                        false,
+                        relayEventInspection.errorMessage()
+                );
             }
-            JSONArray eventRelays = tx2.getJSONArray("Relays");
-            if (CollUtil.isEmpty(eventRelays)) {
-                eventStructurePending = true;
-                continue;
-            }
-            List<DioxideTransaction> currentEventTxs = eventRelays.toJavaList(DioxideTransaction.class);
-            if (CollUtil.isEmpty(currentEventTxs)) {
-                eventStructurePending = true;
-                continue;
-            }
-            int eventTargetTxCountBefore = eventTargetTxHashes.size();
-            for (DioxideTransaction eventTx : currentEventTxs) {
-                // Items in tx2.Relays are embedded invocation records, not standalone transactions.
-                if (eventTx == null || eventTx.getInvocation() == null
-                        || CollUtil.isEmpty(eventTx.getInvocation().getRelays())) {
-                    continue;
-                }
-                for (String eventTargetTxReference : eventTx.getInvocation().getRelays()) {
-                    String eventTargetTxHash = normalizeRelayTxHash(eventTargetTxReference);
-                    if (StrUtil.isEmpty(eventTargetTxHash)) {
-                        eventStructurePending = true;
-                    } else {
-                        eventTargetTxHashes.add(eventTargetTxHash);
-                    }
-                }
-            }
-            if (eventTargetTxHashes.size() == eventTargetTxCountBefore) {
-                eventStructurePending = true;
-            }
+            eventStructurePending |= relayEventInspection.state() == RelayEventState.PENDING;
+            eventTargetTxHashes.addAll(relayEventInspection.eventTargetTxHashes());
         }
 
         TxFinalityResult pendingEventFinality = eventStructurePending
@@ -1069,6 +1049,73 @@ public class DioxideClient {
         return separatorIndex >= 0 ? relayTxReference.substring(0, separatorIndex) : relayTxReference;
     }
 
+    static RelayEventInspection inspectRelayEvents(JSONObject relayGroup, String relayGroupTxHash) {
+        if (relayGroup == null) {
+            return new RelayEventInspection(RelayEventState.PENDING, List.of(), "");
+        }
+
+        DioxideTransaction relayGroupTransaction = relayGroup.toJavaObject(DioxideTransaction.class);
+        boolean relayGroupFinalized = isTxFinalized(relayGroupTransaction);
+        JSONArray eventRelays = relayGroup.getJSONArray("Relays");
+        if (CollUtil.isEmpty(eventRelays)) {
+            return relayGroupFinalized
+                    ? failedRelayEventInspection(relayGroupTxHash, "contains no embedded relay invocations")
+                    : new RelayEventInspection(RelayEventState.PENDING, List.of(), "");
+        }
+
+        List<DioxideTransaction> embeddedInvocations = eventRelays.toJavaList(DioxideTransaction.class);
+        if (CollUtil.isEmpty(embeddedInvocations)) {
+            return relayGroupFinalized
+                    ? failedRelayEventInspection(relayGroupTxHash, "contains no decodable embedded relay invocations")
+                    : new RelayEventInspection(RelayEventState.PENDING, List.of(), "");
+        }
+
+        List<String> eventTargetTxHashes = new ArrayList<>();
+        for (DioxideTransaction embeddedInvocation : embeddedInvocations) {
+            if (embeddedInvocation == null || embeddedInvocation.getInvocation() == null) {
+                continue;
+            }
+            String invocationStatus = embeddedInvocation.getInvocation().getStatus();
+            if (StrUtil.isNotEmpty(invocationStatus) && !StrUtil.equals(invocationStatus, INVOCATION_SUCCESS)) {
+                return failedRelayEventInspection(
+                        relayGroupTxHash,
+                        String.format(
+                                "embedded invocation %s failed with status %s",
+                                StrUtil.emptyToDefault(embeddedInvocation.getFunction(), "unknown"),
+                                invocationStatus
+                        )
+                );
+            }
+            if (CollUtil.isEmpty(embeddedInvocation.getInvocation().getRelays())) {
+                continue;
+            }
+            embeddedInvocation.getInvocation().getRelays().stream()
+                    .map(DioxideClient::normalizeRelayTxHash)
+                    .filter(StrUtil::isNotEmpty)
+                    .forEach(eventTargetTxHashes::add);
+        }
+
+        List<String> distinctTargetTxHashes = eventTargetTxHashes.stream().distinct().toList();
+        if (CollUtil.isNotEmpty(distinctTargetTxHashes)) {
+            return new RelayEventInspection(RelayEventState.READY, distinctTargetTxHashes, "");
+        }
+        return relayGroupFinalized
+                ? failedRelayEventInspection(relayGroupTxHash, "produced no protocol event transaction")
+                : new RelayEventInspection(RelayEventState.PENDING, List.of(), "");
+    }
+
+    private static RelayEventInspection failedRelayEventInspection(String relayGroupTxHash, String reason) {
+        return new RelayEventInspection(
+                RelayEventState.FAILED,
+                List.of(),
+                String.format(
+                        "relay transaction %s %s",
+                        StrUtil.emptyToDefault(relayGroupTxHash, "unknown"),
+                        reason
+                )
+        );
+    }
+
     enum TxFinalityState {
         PENDING,
         FINALIZED,
@@ -1076,6 +1123,19 @@ public class DioxideClient {
     }
 
     record TxFinalityResult(TxFinalityState state, String txHash, String confirmState) {
+    }
+
+    enum RelayEventState {
+        PENDING,
+        READY,
+        FAILED
+    }
+
+    record RelayEventInspection(
+            RelayEventState state,
+            List<String> eventTargetTxHashes,
+            String errorMessage
+    ) {
     }
 
     @SneakyThrows
