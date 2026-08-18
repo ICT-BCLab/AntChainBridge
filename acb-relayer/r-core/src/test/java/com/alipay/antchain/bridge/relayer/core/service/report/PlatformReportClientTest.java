@@ -9,6 +9,7 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.alipay.antchain.bridge.commons.core.base.SendResponseResult;
 import com.alipay.antchain.bridge.relayer.commons.model.SDPMsgWrapper;
+import com.alipay.antchain.bridge.relayer.commons.model.UniformCrosschainPacketContext;
 import org.junit.Assert;
 import org.junit.Test;
 import org.springframework.http.HttpEntity;
@@ -18,6 +19,18 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 
 public class PlatformReportClientTest {
+
+    @Test
+    public void testDisabledReportingDoesNotBuildUcpPayload() throws Exception {
+        PlatformReportClient client = new PlatformReportClient();
+        CountingUcpReportJsonBuilder builder = new CountingUcpReportJsonBuilder();
+        setField(client, "enabled", false);
+        setField(client, "ucpReportJsonBuilder", builder);
+
+        client.reportUcp(new UniformCrosschainPacketContext());
+
+        Assert.assertEquals(0, builder.buildCount);
+    }
 
     @Test
     public void testUcpIdIsFirstBodyFieldForInterfacesTwoToFour() throws Exception {
@@ -81,6 +94,17 @@ public class PlatformReportClientTest {
         private CapturedRequest(String path, String body) {
             this.path = path;
             this.body = body;
+        }
+    }
+
+    private static class CountingUcpReportJsonBuilder extends UcpReportJsonBuilder {
+
+        private int buildCount;
+
+        @Override
+        public JSONObject build(UniformCrosschainPacketContext context) {
+            buildCount++;
+            return new JSONObject(true);
         }
     }
 

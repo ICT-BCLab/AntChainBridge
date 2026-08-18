@@ -46,11 +46,6 @@ public class AsyncReceiveHandler {
     private PlatformReportClient platformReportClient;
 
     public void receiveUniformCrosschainPackets(List<UniformCrosschainPacketContext> ucpContexts) {
-
-        ucpContexts.stream()
-                .filter(context -> !context.isFromNetwork())
-                .forEach(platformReportClient::reportUcp);
-
         int rowsNum = crossChainMessageRepository.putUniformCrosschainPackets(ucpContexts);
         if (ucpContexts.size() != rowsNum) {
             throw new RuntimeException(
@@ -61,6 +56,12 @@ public class AsyncReceiveHandler {
             );
         }
         log.info("put PENDING UCPs [ {} ] to pool success", ucpContexts.stream().map(UniformCrosschainPacketContext::getUcpId).reduce((s, s2) -> s + ", " + s2).orElse(""));
+
+        // External reporting must never precede the Relayer's own durable UCP record.
+        // PlatformReportClient contains all network/build failures, so the core receive path stays valid.
+        ucpContexts.stream()
+                .filter(context -> !context.isFromNetwork())
+                .forEach(platformReportClient::reportUcp);
     }
 
     public void receiveAuthMessages(List<AuthMsgWrapper> authMsgWrappers) {

@@ -17,10 +17,8 @@
 package com.alipay.antchain.bridge.plugins.mychain.model;
 
 import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-import cn.hutool.core.util.StrUtil;
+import cn.hutool.core.collection.CollectionUtil;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.annotation.JSONField;
 import lombok.AllArgsConstructor;
@@ -49,8 +47,6 @@ public class ContractAddressInfo {
     }
 
     public Set<String> toSet() {
-        return Stream.of(evmContractAddress, wasmContractAddress)
-                .filter(StrUtil::isNotBlank)
-                .collect(Collectors.toSet());
+        return CollectionUtil.newHashSet(evmContractAddress, wasmContractAddress);
     }
 }
