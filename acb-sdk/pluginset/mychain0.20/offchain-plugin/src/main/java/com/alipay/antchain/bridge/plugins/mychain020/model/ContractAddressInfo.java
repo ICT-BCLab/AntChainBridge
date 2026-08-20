@@ -38,6 +38,18 @@ public class ContractAddressInfo {
         return JSON.parseObject(json, ContractAddressInfo.class);
     }
 
+    public static String resolveEvmContractAddress(String contractAddress) {
+        if (StrUtil.isBlank(contractAddress) || contractAddress.trim().charAt(0) != '{') {
+            return contractAddress;
+        }
+
+        String evmContractAddress = decode(contractAddress).getEvmContractAddress();
+        if (StrUtil.isBlank(evmContractAddress)) {
+            throw new IllegalArgumentException("missing evm contract address: " + contractAddress);
+        }
+        return evmContractAddress;
+    }
+
     @JSONField(name = "evm")
     private String evmContractAddress;
 

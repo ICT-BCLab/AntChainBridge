@@ -1,6 +1,7 @@
 package com.alipay.antchain.bridge.plugins.mychain020;
 
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Set;
 
@@ -1149,6 +1150,13 @@ public class Mychain020BBCService extends AbstractBBCService {
             monitorContract.setStatus(context.getMonitorContractClientEVM().getStatus());
             context.setMonitorContract(monitorContract);
 
+            mychain020Client.getConfig().setMonitorContractName(
+                    context.getMonitorContractClientEVM().getContractAddress());
+            mychain020Client.getConfig().setMonitorVerifierContractName(
+                    context.getMonitorVerifierContractEVM().getContractAddress());
+            context.setConfForBlockchainClient(
+                    mychain020Client.getConfig().toJsonString().getBytes(StandardCharsets.UTF_8));
+
             getBBCLogger().info(
                     "[Mychain020BBCService] monitor contract deployed for {}, monitor: {}, verifier: {}",
                     mychain020Client.getPrimary(),
@@ -1195,9 +1203,10 @@ public class Mychain020BBCService extends AbstractBBCService {
             throw new RuntimeException("sdp contract is not deployed");
         }
 
-        String monitorName = StrUtil.isNotEmpty(monitorContractName) ?
-                monitorContractName :
-                context.getMonitorContractClientEVM().getContractAddress();
+        String monitorName = resolveEvmContractName(
+                monitorContractName,
+                context.getMonitorContractClientEVM().getContractAddress(),
+                "monitor");
         context.getSdpContractClientEVM().setMonitorContract(monitorName);
     }
 
