@@ -11,11 +11,15 @@ import com.alipay.antchain.bridge.plugins.mychain020.contract.MonitorVerifierCon
 import com.alipay.antchain.bridge.plugins.mychain020.contract.PtcContractEvm;
 import com.alipay.antchain.bridge.plugins.mychain020.contract.SDPContractClientEVM;
 import com.alipay.antchain.bridge.plugins.mychain020.contract.AMContractClientEVM;
+import com.alipay.antchain.bridge.plugins.mychain020.model.ContractAddressInfo;
 import com.alipay.antchain.bridge.plugins.mychain020.sdk.Mychain020Client;
+import com.alipay.antchain.bridge.plugins.mychain020.sdk.Mychain020Config;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.slf4j.LoggerFactory;
+
+import java.nio.charset.StandardCharsets;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -35,6 +39,7 @@ public class Mychain020MonitorBBCServiceTest {
     private Mychain020BBCService service;
     private Mychain020BBCContext context;
     private Mychain020Client mychain020Client;
+    private Mychain020Config mychain020Config;
     private MonitorContractClientEVM monitorContractClientEVM;
     private MonitorVerifierContractEVM monitorVerifierContractEVM;
     private SDPContractClientEVM sdpContractClientEVM;
@@ -47,6 +52,7 @@ public class Mychain020MonitorBBCServiceTest {
         context = new Mychain020BBCContext(new DefaultBBCContext(), LoggerFactory.getLogger(getClass()));
 
         mychain020Client = mock(Mychain020Client.class);
+        mychain020Config = new Mychain020Config();
         monitorContractClientEVM = mock(MonitorContractClientEVM.class);
         monitorVerifierContractEVM = mock(MonitorVerifierContractEVM.class);
         sdpContractClientEVM = mock(SDPContractClientEVM.class);
@@ -55,6 +61,7 @@ public class Mychain020MonitorBBCServiceTest {
 
         when(mychain020Client.getPrimary()).thenReturn("mychain-monitor-test");
         when(mychain020Client.isTeeChain()).thenReturn(false);
+        when(mychain020Client.getConfig()).thenReturn(mychain020Config);
 
         context.setMonitorContractClientEVM(monitorContractClientEVM);
         context.setMonitorVerifierContractEVM(monitorVerifierContractEVM);
@@ -72,7 +79,7 @@ public class Mychain020MonitorBBCServiceTest {
     }
 
     @Test
-    public void setupMonitorContractShouldDeployAndWireContracts() {
+    public void setupMonitorContractShouldDeployAndWireContracts() throws Exception {
         when(monitorVerifierContractEVM.deployContract()).thenReturn(true);
         when(monitorContractClientEVM.deployContract()).thenReturn(true);
         when(monitorVerifierContractEVM.getContractAddress()).thenReturn(MONITOR_VERIFIER_CONTRACT);
@@ -90,6 +97,13 @@ public class Mychain020MonitorBBCServiceTest {
         Assert.assertNotNull(context.getMonitorContract());
         Assert.assertEquals(MONITOR_CONTRACT, context.getMonitorContract().getContractAddress());
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, context.getMonitorContract().getStatus());
+        Assert.assertEquals(MONITOR_CONTRACT, mychain020Config.getMonitorContractName());
+        Assert.assertEquals(MONITOR_VERIFIER_CONTRACT, mychain020Config.getMonitorVerifierContractName());
+
+        Mychain020Config persistedConfig = Mychain020Config.fromJsonString(
+                new String(context.getConfForBlockchainClient(), StandardCharsets.UTF_8));
+        Assert.assertEquals(MONITOR_CONTRACT, persistedConfig.getMonitorContractName());
+        Assert.assertEquals(MONITOR_VERIFIER_CONTRACT, persistedConfig.getMonitorVerifierContractName());
     }
 
     @Test
@@ -194,6 +208,15 @@ public class Mychain020MonitorBBCServiceTest {
     }
 
     @Test
+    public void setProtocolInMonitorShouldDecodeFormattedEvmAddress() {
+        when(monitorContractClientEVM.getContractAddress()).thenReturn(MONITOR_CONTRACT);
+
+        service.setProtocolInMonitor(new ContractAddressInfo(SDP_CONTRACT, "sdp_wasm_contract").toJson());
+
+        verify(monitorContractClientEVM).setProtocol(SDP_CONTRACT);
+    }
+
+    @Test
     public void setProtocolInMonitorShouldUseContextSdpAddressByDefault() {
         when(monitorContractClientEVM.getContractAddress()).thenReturn(MONITOR_CONTRACT);
         when(sdpContractClientEVM.getContractAddress()).thenReturn(SDP_CONTRACT);
@@ -217,6 +240,15 @@ public class Mychain020MonitorBBCServiceTest {
         service.setMonitorContract("custom_monitor_contract");
 
         verify(sdpContractClientEVM).setMonitorContract("custom_monitor_contract");
+    }
+
+    @Test
+    public void setMonitorContractShouldDecodeFormattedEvmAddress() {
+        when(sdpContractClientEVM.getContractAddress()).thenReturn(SDP_CONTRACT);
+
+        service.setMonitorContract(new ContractAddressInfo(MONITOR_CONTRACT, null).toJson());
+
+        verify(sdpContractClientEVM).setMonitorContract(MONITOR_CONTRACT);
     }
 
     @Test
@@ -259,6 +291,15 @@ public class Mychain020MonitorBBCServiceTest {
         service.setPtcHubInMonitorVerifier("custom_ptc_hub_contract");
 
         verify(monitorVerifierContractEVM).setPtcHubAddress("custom_ptc_hub_contract");
+    }
+
+    @Test
+    public void setPtcHubInMonitorVerifierShouldDecodeFormattedEvmAddress() {
+        when(monitorVerifierContractEVM.getContractAddress()).thenReturn(MONITOR_VERIFIER_CONTRACT);
+
+        service.setPtcHubInMonitorVerifier(new ContractAddressInfo(PTC_HUB_CONTRACT, "").toJson());
+
+        verify(monitorVerifierContractEVM).setPtcHubAddress(PTC_HUB_CONTRACT);
     }
 
     @Test
