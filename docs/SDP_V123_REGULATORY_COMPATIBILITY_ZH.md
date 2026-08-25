@@ -142,3 +142,18 @@ curl -k 'https://47.94.7.98:18443/api/data/message/{ucpId}'
 - Dioxide 当前只支持原生 SDP V1，本次不通过改写版本字段伪造 V2/V3。
 - Mychain Maven 单测在没有私有 GitHub Packages 凭据时会因 Mychain SDK `401` 无法解析；发布时仍需使用生产插件依赖完成 Java 编译，并使用官方 MySolidity `0.8.14` 生成部署/runtime 字节码。
 - 历史失败队列与本次新发验收交易分开统计，不应用存量失败掩盖或否定新路径的结果。
+
+## 9. 2026-08-26 生产复验
+
+- Ethereum、FISCO BCOS 与 Mychain 的 Monitor/SDP/PTC 绑定均为 `DEPLOY_FINISHED`；三条链的
+  普通和监管 V1/V2/V3 已分别完成双向实链验证，目标业务合约读取到的 payload 与源消息一致。
+- Dioxide 明确保持原生 SDP V1。Dioxide/Dioxide2 插件启用 `State` 终态识别后，新发
+  Ethereum `eth04` → Dioxide `diox04` 监管消息生成 UCP
+  `148af653290e9d1b2e6d57632f9a1bf18607232350728e30976f395496cfe73d`，目标交易
+  `42csksb2dk7em6qz5mayhpagqpcdr9h7rzy7kkj67gntmedcd5mg`。
+- 该消息为 SDP V1，PTC 四节点签名权重 100%，监管为 `APPROVED/TARGET_EXECUTED`，四项完整性
+  全部为 `true`；目标入口交易和 relay group 均为 `DUS_ARCHIVED/TXN_ARCHIVED`，两级 Invocation
+  均为 `IVKRET_SUCCESS`。
+- 从 relay group 的业务 body 解出的正文为
+  `eth-to-diox-statefix-regulated-1787692602-sdp-v1`，与源交易发送值逐字节一致，证明目标侧收到的
+  是 Monitor 解封后的业务内容。
