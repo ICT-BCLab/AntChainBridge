@@ -16,6 +16,8 @@
 
 package com.alipay.antchain.bridge.relayer.core.service.confirm;
 
+import java.util.concurrent.CompletableFuture;
+
 import com.alipay.antchain.bridge.commons.core.base.CrossChainMessageReceipt;
 import com.alipay.antchain.bridge.relayer.commons.model.SDPMsgCommitResult;
 import com.alipay.antchain.bridge.relayer.commons.model.SDPMsgWrapper;
@@ -23,6 +25,14 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class AMConfirmServiceTest {
+
+    @Test
+    public void failedReceiptShouldRemainPendingWithoutAbortingTheBatch() {
+        CompletableFuture<ConfirmResult> failed = new CompletableFuture<>();
+        failed.completeExceptionally(new RuntimeException("native transaction temporarily unavailable"));
+
+        Assert.assertNull(AMConfirmService.resolveConfirmResult(failed, "dioxide2", "diox04.id"));
+    }
 
     @Test
     public void buildCommitResultShouldKeepPendingRowIdentityForNativeHash() {
