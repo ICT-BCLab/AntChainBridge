@@ -155,7 +155,7 @@ library MonitorLib {
         uint256 offset = rawMessage.length;
         require(offset >= 68, "MonitorLib: malformed monitor message");
 
-        monitorMessage.monitorType = BytesToTypes.bytesToUint32(offset, rawMessage);
+        monitorMessage.monitorType = _readUint32AtEnd(rawMessage, offset);
         require(
             monitorMessage.monitorType == MONITOR_CLOSE
                 || monitorMessage.monitorType == MONITOR_OPEN
@@ -164,15 +164,58 @@ library MonitorLib {
         );
         offset -= SizeOf.sizeOfInt(32);
 
-        bytes memory monitor_msg = BytesToTypes.bytesToVarBytes(offset, rawMessage);
-        uint256 monitorMsgSize = SizeOf.sizeOfBytes(monitor_msg);
-        require(offset >= monitorMsgSize, "MonitorLib: malformed monitor metadata");
-        offset -= monitorMsgSize;
-
-        bytes memory message = BytesToTypes.bytesToVarBytes(offset, rawMessage);
-        require(offset == SizeOf.sizeOfBytes(message), "MonitorLib: trailing monitor message data");
+        bytes memory monitor_msg;
+        bytes memory message;
+        (monitor_msg, offset) = _decodeReversePaddedBytes(rawMessage, offset);
+        (message, offset) = _decodeReversePaddedBytes(rawMessage, offset);
+        require(offset == 0, "MonitorLib: trailing monitor message data");
 
         monitorMessage.monitorMsg = string(monitor_msg);
         monitorMessage.message = message;
+    }
+
+    /**
+     * Decode the legacy ACB EVM variable-bytes representation explicitly.
+     * Payload words are stored in reverse order and followed by a 32-byte
+     * length slot. Avoid the assembly decoder here because contracts compiled
+     * by MySolidity and standard solc disagree on non-word-aligned memory
+     * copies, which can otherwise turn a successful relay into truncated data.
+     */
+    function _decodeReversePaddedBytes(bytes memory rawMessage, uint256 endOffset)
+        private
+        pure
+        returns (bytes memory value, uint256 nextOffset)
+    {
+        require(endOffset >= 32, "MonitorLib: malformed variable bytes");
+        uint256 length = uint256(_readUint32AtEnd(rawMessage, endOffset));
+        uint256 wordCount = (length + 31) / 32;
+        uint256 paddedLength = wordCount * 32;
+        require(endOffset >= 32 + paddedLength, "MonitorLib: variable bytes out of bounds");
+
+        nextOffset = endOffset - 32 - paddedLength;
+        value = new bytes(length);
+        for (uint256 logicalWord = 0; logicalWord < wordCount; logicalWord++) {
+            uint256 sourceOffset = nextOffset + (wordCount - 1 - logicalWord) * 32;
+            uint256 targetOffset = logicalWord * 32;
+            uint256 copyLength = length - targetOffset;
+            if (copyLength > 32) {
+                copyLength = 32;
+            }
+            for (uint256 i = 0; i < copyLength; i++) {
+                value[targetOffset + i] = rawMessage[sourceOffset + i];
+            }
+        }
+    }
+
+    function _readUint32AtEnd(bytes memory rawMessage, uint256 endOffset)
+        private
+        pure
+        returns (uint32)
+    {
+        require(endOffset >= 4 && endOffset <= rawMessage.length, "MonitorLib: uint32 out of bounds");
+        return (uint32(uint8(rawMessage[endOffset - 4])) << 24)
+            | (uint32(uint8(rawMessage[endOffset - 3])) << 16)
+            | (uint32(uint8(rawMessage[endOffset - 2])) << 8)
+            | uint32(uint8(rawMessage[endOffset - 1]));
     }
 }

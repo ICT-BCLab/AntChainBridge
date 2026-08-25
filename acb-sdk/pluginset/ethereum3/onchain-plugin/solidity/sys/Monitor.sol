@@ -15,7 +15,8 @@ import "./@openzeppelin/contracts/proxy/utils/Initializable.sol";
 contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
     // Version 4 fixes monitor-control handling: CLOSE/OPEN/ROLLBACK are stored
     // as the protocol enum instead of treating every non-zero value as OPEN.
-    uint32 public constant IMPLEMENTATION_VERSION = 4;
+    // Version 5 preserves non-word-aligned payloads emitted by MySolidity chains.
+    uint32 public constant IMPLEMENTATION_VERSION = 5;
 
     using MonitorLib for MonitorOrder;
     using MonitorLib for MonitorMessage;

@@ -58,7 +58,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.blockbody.common.BlockBodyFi
 
 public class AcbEthClient {
 
-    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(4L);
+    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(5L);
 
     private static final BigInteger SDP_MONITOR_ROUTING_VERSION = BigInteger.valueOf(3L);
 
