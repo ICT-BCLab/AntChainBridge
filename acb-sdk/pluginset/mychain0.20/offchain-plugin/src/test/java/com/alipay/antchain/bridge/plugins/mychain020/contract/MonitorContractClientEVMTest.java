@@ -33,10 +33,10 @@ public class MonitorContractClientEVMTest {
     }
 
     @Test
-    public void implementationVersionFiveShouldBeSupported() {
+    public void implementationVersionSixShouldBeSupported() {
         TransactionReceipt receipt = mock(TransactionReceipt.class);
         byte[] encodedVersion = new byte[32];
-        encodedVersion[31] = 5;
+        encodedVersion[31] = 6;
 
         when(receipt.getResult()).thenReturn(0L);
         when(receipt.getOutput()).thenReturn(encodedVersion);
@@ -60,7 +60,7 @@ public class MonitorContractClientEVMTest {
 
         TransactionReceipt upgradedReceipt = mock(TransactionReceipt.class);
         byte[] encodedVersion = new byte[32];
-        encodedVersion[31] = 5;
+        encodedVersion[31] = 6;
         when(upgradedReceipt.getResult()).thenReturn(0L);
         when(upgradedReceipt.getOutput()).thenReturn(encodedVersion);
 

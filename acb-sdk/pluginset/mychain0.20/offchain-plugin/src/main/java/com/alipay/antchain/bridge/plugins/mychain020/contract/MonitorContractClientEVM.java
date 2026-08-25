@@ -26,7 +26,7 @@ import org.slf4j.Logger;
 @Setter
 public class MonitorContractClientEVM {
 
-    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 5;
+    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 6;
 
     private static final String MONITOR_EVM_CONTRACT_PREFIX = "MONITOR_EVM_CONTRACT_";
     private static final String MONITOR_EVM_RUNTIME_PATH = "/contract/v1/solidity/Monitor.bin-runtime";
@@ -115,7 +115,9 @@ public class MonitorContractClientEVM {
      * receive-side entry points and does not change the existing storage
      * layout. Monitor V5 additionally routes SDP V2/V3 request and ACK paths
      * through the same monitor envelope used by V1, and exposes matching
-     * receive-side entry points for all three SDP versions.
+     * receive-side entry points for all three SDP versions. Monitor V6 replaces
+     * the compiler-sensitive assembly decoder so non-word-aligned business
+     * payloads are preserved byte-for-byte on Mychain.
      */
     public boolean ensureImplementationSupported() {
         if (isImplementationVersionSupported()) {

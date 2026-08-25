@@ -7,12 +7,11 @@ import "./interfaces/IContractUsingSDP.sol";
 import "./interfaces/IContractWithAcks.sol";
 import "./interfaces/IMonitorVerifier.sol";
 import "./lib/utils/Ownable.sol";
-import "./lib/utils/BytesToTypes.sol";
 import "./lib/utils/SizeOf.sol";
 import "./lib/utils/TypesToBytes.sol";
 
 contract Monitor is Ownable {
-    uint32 public constant IMPLEMENTATION_VERSION = 5;
+    uint32 public constant IMPLEMENTATION_VERSION = 6;
     uint32 public constant MONITOR_CLOSE = 1;
     uint32 public constant MONITOR_OPEN = 2;
     uint32 public constant MONITOR_ROLLBACK = 3;
@@ -308,20 +307,63 @@ contract Monitor is Ownable {
         uint256 offset = rawMessage.length;
         require(offset >= 68, "Monitor: malformed monitor message");
 
-        monitorType = BytesToTypes.bytesToUint32(offset, rawMessage);
+        monitorType = _readUint32AtEnd(rawMessage, offset);
         require(
             monitorType == MONITOR_CLOSE || monitorType == MONITOR_OPEN || monitorType == MONITOR_ROLLBACK,
             "Monitor: invalid monitor type"
         );
         offset -= SizeOf.sizeOfUint(32);
 
-        bytes memory monitorMsg = BytesToTypes.bytesToVarBytes(offset, rawMessage);
-        uint256 monitorMsgSize = SizeOf.sizeOfBytes(monitorMsg);
-        require(offset >= monitorMsgSize, "Monitor: malformed monitor metadata");
-        offset -= monitorMsgSize;
+        bytes memory monitorMsg;
+        (monitorMsg, offset) = _decodeReversePaddedBytes(rawMessage, offset);
+        (message, offset) = _decodeReversePaddedBytes(rawMessage, offset);
+        require(offset == 0, "Monitor: trailing monitor message data");
+    }
 
-        message = BytesToTypes.bytesToVarBytes(offset, rawMessage);
-        require(offset == SizeOf.sizeOfBytes(message), "Monitor: trailing monitor message data");
+    /**
+     * Monitor envelopes use the legacy ACB EVM codec: a 32-byte length word
+     * follows reverse-ordered 32-byte payload chunks. The assembly helper used
+     * by the original Mychain runtime copied non-word-aligned payloads over the
+     * bytes length slot, so a 36-byte body arrived as its last four bytes plus
+     * zero padding. Decode explicitly by byte to preserve the exact business
+     * payload across Ethereum/FISCO/Mychain compilers.
+     */
+    function _decodeReversePaddedBytes(bytes memory rawMessage, uint256 endOffset)
+        internal
+        pure
+        returns (bytes memory value, uint256 nextOffset)
+    {
+        require(endOffset >= 32, "Monitor: malformed variable bytes");
+        uint256 length = uint256(_readUint32AtEnd(rawMessage, endOffset));
+        uint256 wordCount = (length + 31) / 32;
+        uint256 paddedLength = wordCount * 32;
+        require(endOffset >= 32 + paddedLength, "Monitor: variable bytes out of bounds");
+
+        nextOffset = endOffset - 32 - paddedLength;
+        value = new bytes(length);
+        for (uint256 logicalWord = 0; logicalWord < wordCount; logicalWord++) {
+            uint256 sourceOffset = nextOffset + (wordCount - 1 - logicalWord) * 32;
+            uint256 targetOffset = logicalWord * 32;
+            uint256 copyLength = length - targetOffset;
+            if (copyLength > 32) {
+                copyLength = 32;
+            }
+            for (uint256 i = 0; i < copyLength; i++) {
+                value[targetOffset + i] = rawMessage[sourceOffset + i];
+            }
+        }
+    }
+
+    function _readUint32AtEnd(bytes memory rawMessage, uint256 endOffset)
+        internal
+        pure
+        returns (uint32)
+    {
+        require(endOffset >= 4 && endOffset <= rawMessage.length, "Monitor: uint32 out of bounds");
+        return (uint32(uint8(rawMessage[endOffset - 4])) << 24)
+            | (uint32(uint8(rawMessage[endOffset - 3])) << 16)
+            | (uint32(uint8(rawMessage[endOffset - 2])) << 8)
+            | uint32(uint8(rawMessage[endOffset - 1]));
     }
 
     function preMonitoring(identity receiverID) external view returns (bool) {
