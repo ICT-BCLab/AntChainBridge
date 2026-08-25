@@ -157,10 +157,10 @@ public class AMConfirmService {
             return future.get();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error(
-                    "interrupted while querying cross-chain receipt for ( product: {}, bid: {} )",
-                    product,
-                    blockchainId,
+            // Interruption is a worker-lifecycle signal rather than a
+            // transaction-local failure. Preserve it and abort this pass.
+            throw new RuntimeException(
+                    String.format("interrupted while querying cross-chain receipt for ( product: %s, bid: %s )", product, blockchainId),
                     e
             );
         } catch (ExecutionException e) {

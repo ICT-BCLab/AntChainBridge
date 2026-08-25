@@ -35,6 +35,21 @@ public class AMConfirmServiceTest {
     }
 
     @Test
+    public void interruptedReceiptShouldAbortAndPreserveInterruptFlag() {
+        CompletableFuture<ConfirmResult> pending = new CompletableFuture<>();
+        Thread.currentThread().interrupt();
+        try {
+            AMConfirmService.resolveConfirmResult(pending, "dioxide2", "diox04.id");
+            Assert.fail("expected the interrupted confirmation pass to abort");
+        } catch (RuntimeException expected) {
+            Assert.assertTrue(Thread.currentThread().isInterrupted());
+            Assert.assertTrue(expected.getCause() instanceof InterruptedException);
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
     public void buildCommitResultShouldKeepPendingRowIdentityForNativeHash() {
         SDPMsgWrapper message = new SDPMsgWrapper();
         message.setId(2700L);
