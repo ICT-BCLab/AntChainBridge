@@ -28,6 +28,12 @@ public class DioxideClientFinalityTest {
         Assert.assertTrue(DioxideClient.isTxFinalized(transactionWithState(
                 DioxideTypes.TxnConfirmState.TXN_ARCHIVED.name()
         )));
+        Assert.assertTrue(DioxideClient.isTxFinalized(transactionWithBlockState(
+                DioxideTypes.BlockState.DUS_FINALIZED.name()
+        )));
+        Assert.assertTrue(DioxideClient.isTxFinalized(transactionWithBlockState(
+                DioxideTypes.BlockState.DUS_ARCHIVED.name()
+        )));
     }
 
     @Test
@@ -45,6 +51,12 @@ public class DioxideClientFinalityTest {
         )));
         Assert.assertTrue(DioxideClient.isTxTerminalFailed(transactionWithState(
                 DioxideTypes.TxnConfirmState.TXN_EXPIRED.name()
+        )));
+        Assert.assertTrue(DioxideClient.isTxTerminalFailed(transactionWithBlockState(
+                DioxideTypes.BlockState.DUS_ARCHIVED_UNCLE.name()
+        )));
+        Assert.assertFalse(DioxideClient.isTxTerminalFailed(transactionWithBlockState(
+                DioxideTypes.BlockState.DUS_ARCHIVED.name()
         )));
     }
 
@@ -183,6 +195,10 @@ public class DioxideClientFinalityTest {
                 .confirmState(state)
                 .invocation(DioxideTransaction.Invocation.builder().relays(relays).build())
                 .build();
+    }
+
+    private DioxideTransaction transactionWithBlockState(String state) {
+        return DioxideTransaction.builder().state(state).build();
     }
 
     private DioxideClient.TxFinalityResult evaluate(

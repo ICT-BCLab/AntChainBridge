@@ -945,21 +945,25 @@ public class DioxideClient {
     }
 
     public boolean isTxConfirmed(DioxideTransaction tx) {
-        if (tx == null || tx.getConfirmState() == null) {
+        if (tx == null) {
             return false;
         }
-        return DioxideTypes.TXN_CONFIRMED_STATUS.contains(tx.getConfirmState());
+        return (tx.getConfirmState() != null
+                && DioxideTypes.TXN_CONFIRMED_STATUS.contains(tx.getConfirmState()))
+                || isDurablyCommitted(tx);
     }
 
     public static boolean isTxFinalized(DioxideTransaction tx) {
-        if (tx == null || tx.getConfirmState() == null) {
+        if (tx == null) {
             return false;
         }
-        return DioxideTypes.TXN_FINALIZED_STATUS.contains(tx.getConfirmState());
+        return (tx.getConfirmState() != null
+                && DioxideTypes.TXN_FINALIZED_STATUS.contains(tx.getConfirmState()))
+                || isDurablyCommitted(tx);
     }
 
     static boolean isTxTerminalFailed(DioxideTransaction tx) {
-        if (tx == null || tx.getConfirmState() == null) {
+        if (tx == null) {
             return false;
         }
         return StrUtil.equalsAny(
@@ -967,6 +971,19 @@ public class DioxideClient {
                 DioxideTypes.TxnConfirmState.TXN_RELAY_INVALIDED.name(),
                 DioxideTypes.TxnConfirmState.TXN_ABORTED.name(),
                 DioxideTypes.TxnConfirmState.TXN_EXPIRED.name()
+        ) || StrUtil.equalsAny(
+                tx.getState(),
+                DioxideTypes.BlockState.DUS_INVALID.name(),
+                DioxideTypes.BlockState.DUS_FORKED.name(),
+                DioxideTypes.BlockState.DUS_ARCHIVED_UNCLE.name()
+        );
+    }
+
+    private static boolean isDurablyCommitted(DioxideTransaction tx) {
+        return StrUtil.equalsAny(
+                tx.getState(),
+                DioxideTypes.BlockState.DUS_FINALIZED.name(),
+                DioxideTypes.BlockState.DUS_ARCHIVED.name()
         );
     }
 

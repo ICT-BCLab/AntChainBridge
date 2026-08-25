@@ -61,6 +61,14 @@ public class DioxideTransaction {
     @JSONField(name = "ConfirmState")
     private String confirmState;
 
+    /**
+     * Dioxide nodes may expose the durable transaction state without a
+     * ConfirmState (notably for the final relay transactions). Keep both
+     * fields so finality can be derived from the node's actual response.
+     */
+    @JSONField(name = "State")
+    private String state;
+
 
     @Data
     @NoArgsConstructor
