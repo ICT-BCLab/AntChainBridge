@@ -83,6 +83,19 @@ Verifier 虽然地址双向绑定正确，但没有历史 TPBTA 的监管节点�
 提交。这个判断不降低 Ethereum、FISCO、Mychain 之间的可信校验，它们的目标链 Context 都包含
 已配置 PTC Hub。
 
+### 4.7 Dioxide 归档终态只出现在 `State`
+
+Dioxide 的入口交易和 relay group 通常同时返回 `ConfirmState`，但最终调用 SDP/业务合约的 relay
+交易可能只返回 `State=DUS_FINALIZED` 或 `State=DUS_ARCHIVED`，没有 `ConfirmState`。旧插件只按
+`ConfirmState` 判断最终性，因此链上已经归档且业务执行成功的交易仍被解释为 `unknown/pending`，
+Relayer 无法把 `sdp_msg_pool` 收敛为成功，也无法补报监管执行结果。
+
+Dioxide 与 Dioxide2 插件现在同时读取两套节点状态：`TXN_FINALIZED/TXN_ARCHIVED` 与
+`DUS_FINALIZED/DUS_ARCHIVED` 均表示可靠终态；`DUS_INVALID/DUS_FORKED/DUS_ARCHIVED_UNCLE`
+表示终态失败。`transaction not found` 仍保留为未确认错误，不会因为另一笔成功交易或增加重试
+次数而被伪造成成功。Relayer 的批量确认也按单条消息隔离原生回执异常，避免一条坏记录阻塞同批
+其它已确认交易。
+
 ## 5. 部署与升级顺序
 
 1. 备份当前插件 JAR、Relayer 链配置与合约地址。
@@ -94,6 +107,9 @@ Verifier 虽然地址双向绑定正确，但没有历史 TPBTA 的监管节点�
 
 对 Dioxide 还应确认 `get-blockchain-contracts` 的 `ptc_contract` 为 `empty`。这是当前 V0/V1
 原生路径的能力声明，不应通过伪地址强行开启 PTC Hub 接口。
+
+同时应抽样读取最终 relay 交易：若没有 `ConfirmState`，必须确认其 `State` 已到
+`DUS_FINALIZED` 或 `DUS_ARCHIVED`；不能仅观察入口 tx0 的归档状态。
 
 不要只以“目标交易 success”作为验收标准；必须读取目标业务合约的事件或状态，确认 payload 没有 Monitor 外层且逐字节一致。
 
