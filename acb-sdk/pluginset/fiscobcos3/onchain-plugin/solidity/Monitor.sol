@@ -23,7 +23,7 @@ import "./lib/utils/TypesToBytes.sol";
  */
 contract Monitor is Ownable {
 
-    uint32 constant IMPLEMENTATION_VERSION = 2;
+    uint32 constant IMPLEMENTATION_VERSION = 3;
     uint32 constant MONITOR_CLOSE    = 1;
     uint32 constant MONITOR_OPEN     = 2;
     uint32 constant MONITOR_ROLLBACK = 3;
@@ -172,20 +172,59 @@ contract Monitor is Ownable {
         uint256 offset = rawMessage.length;
         require(offset >= 68, "Monitor: malformed monitor message");
 
-        monitorType = BytesToTypes.bytesToUint32(offset, rawMessage);
+        monitorType = _readUint32AtEnd(rawMessage, offset);
         require(
             monitorType == MONITOR_CLOSE || monitorType == MONITOR_OPEN || monitorType == MONITOR_ROLLBACK,
             "Monitor: invalid monitor type"
         );
         offset -= SizeOf.sizeOfUint(32);
 
-        bytes memory monitorMsg = BytesToTypes.bytesToVarBytes(offset, rawMessage);
-        uint256 monitorMsgSize = SizeOf.sizeOfBytes(monitorMsg);
-        require(offset >= monitorMsgSize, "Monitor: malformed monitor metadata");
-        offset -= monitorMsgSize;
+        bytes memory monitorMsg;
+        (monitorMsg, offset) = _decodeReversePaddedBytes(rawMessage, offset);
+        (message, offset) = _decodeReversePaddedBytes(rawMessage, offset);
+        require(offset == 0, "Monitor: trailing monitor message data");
+    }
 
-        message = BytesToTypes.bytesToVarBytes(offset, rawMessage);
-        require(offset == SizeOf.sizeOfBytes(message), "Monitor: trailing monitor message data");
+    /**
+     * Decode the legacy reverse-padded variable-bytes representation without
+     * relying on compiler-sensitive assembly memory alignment.
+     */
+    function _decodeReversePaddedBytes(bytes rawMessage, uint256 endOffset)
+        internal
+        pure
+        returns (bytes memory value, uint256 nextOffset)
+    {
+        require(endOffset >= 32, "Monitor: malformed variable bytes");
+        uint256 length = uint256(_readUint32AtEnd(rawMessage, endOffset));
+        uint256 wordCount = (length + 31) / 32;
+        uint256 paddedLength = wordCount * 32;
+        require(endOffset >= 32 + paddedLength, "Monitor: variable bytes out of bounds");
+
+        nextOffset = endOffset - 32 - paddedLength;
+        value = new bytes(length);
+        for (uint256 logicalWord = 0; logicalWord < wordCount; logicalWord++) {
+            uint256 sourceOffset = nextOffset + (wordCount - 1 - logicalWord) * 32;
+            uint256 targetOffset = logicalWord * 32;
+            uint256 copyLength = length - targetOffset;
+            if (copyLength > 32) {
+                copyLength = 32;
+            }
+            for (uint256 i = 0; i < copyLength; i++) {
+                value[targetOffset + i] = rawMessage[sourceOffset + i];
+            }
+        }
+    }
+
+    function _readUint32AtEnd(bytes rawMessage, uint256 endOffset)
+        internal
+        pure
+        returns (uint32)
+    {
+        require(endOffset >= 4 && endOffset <= rawMessage.length, "Monitor: uint32 out of bounds");
+        return (uint32(uint8(rawMessage[endOffset - 4])) << 24)
+            | (uint32(uint8(rawMessage[endOffset - 3])) << 16)
+            | (uint32(uint8(rawMessage[endOffset - 2])) << 8)
+            | uint32(uint8(rawMessage[endOffset - 1]));
     }
 
     /**

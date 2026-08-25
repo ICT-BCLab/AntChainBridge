@@ -73,7 +73,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
     private static final BigInteger SDP_MONITOR_ROUTING_VERSION = BigInteger.valueOf(2L);
 
-    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(2L);
+    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(3L);
 
     private FISCOBCOSConfig config;
 

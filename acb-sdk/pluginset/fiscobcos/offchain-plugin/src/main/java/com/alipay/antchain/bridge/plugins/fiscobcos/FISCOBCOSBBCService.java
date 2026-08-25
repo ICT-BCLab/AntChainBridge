@@ -84,7 +84,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
     private static final BigInteger SDP_MONITOR_ROUTING_VERSION = BigInteger.valueOf(3L);
 
-    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(4L);
+    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(5L);
 
     private static final String ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
