@@ -12,9 +12,11 @@ import com.alipay.antchain.bridge.relayer.commons.constant.AuthMsgProcessStateEn
 import com.alipay.antchain.bridge.relayer.commons.constant.UpperProtocolTypeBeyondAMEnum;
 import com.alipay.antchain.bridge.relayer.commons.model.AuthMsgWrapper;
 import com.alipay.antchain.bridge.relayer.commons.model.SDPMsgCommitResult;
+import com.alipay.antchain.bridge.relayer.commons.model.SDPMsgWrapper;
 import com.alipay.antchain.bridge.relayer.commons.model.UniformCrosschainPacketContext;
 import com.alipay.antchain.bridge.relayer.core.manager.blockchain.IBlockchainManager;
 import com.alipay.antchain.bridge.relayer.core.manager.network.IRelayerNetworkManager;
+import com.alipay.antchain.bridge.relayer.core.service.report.PlatformReportClient;
 import com.alipay.antchain.bridge.relayer.dal.repository.ICrossChainMessageRepository;
 import com.alipay.antchain.bridge.relayer.dal.repository.IScheduleRepository;
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +42,14 @@ public class AsyncReceiveHandler {
     @Resource
     private IRelayerNetworkManager relayerNetworkManager;
 
+    @Resource
+    private PlatformReportClient platformReportClient;
+
     public void receiveUniformCrosschainPackets(List<UniformCrosschainPacketContext> ucpContexts) {
+
+        ucpContexts.stream()
+                .filter(context -> !context.isFromNetwork())
+                .forEach(platformReportClient::reportUcp);
 
         int rowsNum = crossChainMessageRepository.putUniformCrosschainPackets(ucpContexts);
         if (ucpContexts.size() != rowsNum) {
@@ -95,6 +104,19 @@ public class AsyncReceiveHandler {
         if (commitResults.isEmpty()) {
             return true;
         }
+
+        commitResults.forEach(result -> {
+            if (!result.isConfirmed()) {
+                return;
+            }
+            SDPMsgWrapper message = crossChainMessageRepository.getSDPMessage(result.getTxHash());
+            if (ObjectUtil.isNotNull(message)) {
+                platformReportClient.reportTargetChainExecution(
+                        crossChainMessageRepository.getUcpId(message.getAuthMsgWrapper().getAuthMsgId()),
+                        result
+                );
+            }
+        });
 
         List<Integer> results = transactionTemplate.execute(
                 status -> crossChainMessageRepository.updateSDPMessageResults(commitResults)

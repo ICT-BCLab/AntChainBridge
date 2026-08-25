@@ -40,11 +40,13 @@ import com.alipay.antchain.bridge.ptc.committee.types.basic.EndorseBlockStateRes
 import com.alipay.antchain.bridge.ptc.committee.types.network.EndpointInfo;
 import com.alipay.antchain.bridge.ptc.committee.types.network.nodeclient.HeartbeatResp;
 import com.alipay.antchain.bridge.ptc.committee.types.network.nodeclient.Node;
+import com.alipay.antchain.bridge.ptc.committee.types.network.nodeclient.NodeVerifyCrossChainMessageResult;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.CommitteeEndorseRoot;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.NodeEndorseInfo;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.OptionalEndorsePolicy;
 import com.alipay.antchain.bridge.ptc.service.IPTCService;
 import com.alipay.antchain.bridge.ptc.types.PtcFeatureDescriptor;
+import com.alipay.antchain.bridge.ptc.types.PTCVerifyCrossChainMessageResult;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -333,7 +335,40 @@ public class CommitteePTCService implements IPTCService {
      */
     @Override
     public ThirdPartyProof verifyCrossChainMessage(ThirdPartyBlockchainTrustAnchor tpbta, ValidatedConsensusState validatedConsensusState, UniformCrosschainPacket ucp) {
+        return verifyCrossChainMessageWithResult(tpbta, validatedConsensusState, ucp).getThirdPartyProof();
+    }
+
+    @Override
+    public PTCVerifyCrossChainMessageResult verifyCrossChainMessageWithResult(
+            ThirdPartyBlockchainTrustAnchor tpbta,
+            ValidatedConsensusState validatedConsensusState,
+            UniformCrosschainPacket ucp
+    ) {
         try {
+
+            // 为dioxide链定制的逻辑，支持在无实际监管逻辑和PTC逻辑的情形下将跨链信息传递给外部监管系统
+            // 传入的tpbta是特殊构造的tpbta, tpbta.crossChainLane.crossChainChannel.senderDomain字段是"Dioxide"，用来标识这是传递给dioxide链的跨链信息
+            log.info("[CommitteePTCService]tpbta.getCrossChainLane().getSenderDomain().getDomain() = {}", tpbta.getCrossChainLane().getSenderDomain().getDomain());
+
+            if (Objects.equals(tpbta.getCrossChainLane().getSenderDomain().getDomain(), "dioxide2")) {
+                // 搜索节点名称带有“monitor”的节点使用, 搜索到一个即可
+                Node monitorNode = nodeMap.values().stream()
+                        .filter(Node::isAvailable)
+                        .filter(node -> node.getEndpointInfo().getNodeId().toLowerCase().contains("monitor"))
+                        .findFirst()
+                        .orElseThrow(() -> new RuntimeException("No available monitor node found in committee " + config.getCommitteeNetworkInfo().getCommitteeId()));
+                log.info("Forwarding crosschain message to monitor node {} for Dioxide chain", monitorNode.getEndpointInfo().getNodeId());
+
+                // "Dioxide"这个product继续通过tpbta中特殊的CrossChainLane来传递
+                NodeVerifyCrossChainMessageResult nodeResult = monitorNode.getNodeClient()
+                        .verifyCrossChainMessageWithResult(tpbta.getCrossChainLane(), ucp);
+                return new PTCVerifyCrossChainMessageResult(
+                        new ThirdPartyProof(),
+                        nodeResult.getRegulationStatus(),
+                        nodeResult.getRegulationReason()
+                );
+            }
+
             CommitteeEndorseRoot root = CommitteeEndorseRoot.decode(tpbta.getEndorseRoot());
             List<String> requiredNodeIds = root.getEndorsers().stream()
                     .filter(NodeEndorseInfo::isRequired)
@@ -346,26 +381,34 @@ public class CommitteePTCService implements IPTCService {
 
             checkNodes(requiredNodeIds, optionalNodeIds, root.getPolicy());
 
-            List<Future<CommitteeNodeProof>> resFutureList = reqExecutorService.invokeAll(
+            List<Future<NodeVerifyCrossChainMessageResult>> resFutureList = reqExecutorService.invokeAll(
                     nodeMap.entrySet().stream()
                             .filter(entry -> entry.getValue().isAvailable())
                             .filter(
                                     entry -> requiredNodeIds.contains(entry.getValue().getEndpointInfo().getNodeId())
                                             || optionalNodeIds.contains(entry.getValue().getEndpointInfo().getNodeId())
                             ).map(
-                                    entry -> (Callable<CommitteeNodeProof>) () -> {
+                                    entry -> (Callable<NodeVerifyCrossChainMessageResult>) () -> {
                                         log.debug("Verify crosschain msg with node {} {}", entry.getKey(), entry.getValue().getEndpointInfo().getEndpoint().getUrl());
-                                        return entry.getValue().getNodeClient().verifyCrossChainMessage(tpbta.getCrossChainLane(), ucp);
+                                        return entry.getValue().getNodeClient().verifyCrossChainMessageWithResult(tpbta.getCrossChainLane(), ucp);
                                     }
                             ).collect(Collectors.toList())
             );
-            List<CommitteeNodeProof> resList = collectNodeProof(resFutureList);
+            List<NodeVerifyCrossChainMessageResult> nodeResults = collectNodeVerifyResults(resFutureList);
+            List<CommitteeNodeProof> resList = nodeResults.stream()
+                    .map(NodeVerifyCrossChainMessageResult::getNodeProof)
+                    .collect(Collectors.toList());
             CommitteeEndorseProof proof = new CommitteeEndorseProof();
             ThirdPartyProof tpProof = assembleTpProof(tpbta, resList, ucp.getSrcMessage().getMessage(), proof);
 
             checkEndorsementsOrThrow(requiredNodeIds, optionalNodeIds, root.getPolicy(), proof);
 
-            return tpProof;
+            NodeVerifyCrossChainMessageResult regulationResult = selectRegulationResult(nodeResults);
+            return new PTCVerifyCrossChainMessageResult(
+                    tpProof,
+                    ObjectUtil.isNull(regulationResult) ? "" : regulationResult.getRegulationStatus(),
+                    ObjectUtil.isNull(regulationResult) ? "" : regulationResult.getRegulationReason()
+            );
         } catch (CommitteeBaseException e) {
             throw e;
         } catch (Throwable t) {
@@ -702,6 +745,67 @@ public class CommitteePTCService implements IPTCService {
             );
         }
         return resList;
+    }
+
+    private List<NodeVerifyCrossChainMessageResult> collectNodeVerifyResults(
+            List<Future<NodeVerifyCrossChainMessageResult>> resultFutures
+    ) {
+        List<NodeVerifyCrossChainMessageResult> results = resultFutures.stream().map(
+                future -> {
+                    try {
+                        return future.get();
+                    } catch (Exception e) {
+                        throw new RuntimeException("failed to collect node verification result from future object: ", e);
+                    }
+                }
+        ).collect(Collectors.toList());
+        if (ObjectUtil.isEmpty(results)) {
+            throw new RuntimeException(
+                    StrUtil.format("none endorsements received with {} nodes active",
+                            config.getCommitteeNetworkInfo().getCommitteeId(), getAvailableNodesCount())
+            );
+        }
+        return results;
+    }
+
+    private NodeVerifyCrossChainMessageResult selectRegulationResult(
+            List<NodeVerifyCrossChainMessageResult> results
+    ) {
+        List<NodeVerifyCrossChainMessageResult> regulationResults = results.stream()
+                .filter(result -> StrUtil.isNotEmpty(result.getRegulationStatus()))
+                .collect(Collectors.toList());
+        if (regulationResults.isEmpty()) {
+            return null;
+        }
+        int priority = regulationResults.stream()
+                .mapToInt(result -> regulationStatusPriority(result.getRegulationStatus()))
+                .min()
+                .orElse(2);
+        NodeVerifyCrossChainMessageResult selected = regulationResults.stream()
+                .filter(result -> regulationStatusPriority(result.getRegulationStatus()) == priority)
+                .findFirst()
+                .orElse(regulationResults.get(0));
+        String reasons = regulationResults.stream()
+                .filter(result -> regulationStatusPriority(result.getRegulationStatus()) == priority)
+                .map(NodeVerifyCrossChainMessageResult::getRegulationReason)
+                .filter(StrUtil::isNotEmpty)
+                .distinct()
+                .collect(Collectors.joining("; "));
+        return new NodeVerifyCrossChainMessageResult(
+                selected.getNodeProof(),
+                selected.getRegulationStatus(),
+                reasons
+        );
+    }
+
+    private int regulationStatusPriority(String status) {
+        if (StrUtil.equalsIgnoreCase("rejected", status)) {
+            return 0;
+        }
+        if (StrUtil.equalsIgnoreCase("error", status)) {
+            return 1;
+        }
+        return 2;
     }
 
     @SuppressWarnings("all")

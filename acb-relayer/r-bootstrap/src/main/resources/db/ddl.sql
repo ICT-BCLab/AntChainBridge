@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS `anchor_process`
     `gmt_create`         datetime            DEFAULT CURRENT_TIMESTAMP,
     `gmt_modified`       datetime            DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `blockchain_product` (`blockchain_product`, `instance`, `task`)
+    UNIQUE KEY `blockchain_product` (`blockchain_product`, `instance`, `task`, `tpbta_lane_key`)
 ) ENGINE = InnoDB
   ROW_FORMAT = DYNAMIC;
 
@@ -114,8 +114,8 @@ CREATE TABLE IF NOT EXISTS `ucp_pool`
     `src_domain`         varchar(128) BINARY  DEFAULT NULL,
     `tpbta_lane_key`     VARCHAR(255) BINARY  DEFAULT NULL,
     `tpbta_version`      INT(11)              DEFAULT NULL,
-    `blockhash`          varchar(66)          DEFAULT NULL,
-    `txhash`             varchar(66)          DEFAULT NULL,
+    `blockhash`          varchar(128)         DEFAULT NULL,
+    `txhash`             varchar(128)         DEFAULT NULL,
     `ledger_time`        TIMESTAMP(3),
     `udag_path`          varchar(1024) BINARY DEFAULT NULL,
     `protocol_type`      int(11)              DEFAULT NULL,

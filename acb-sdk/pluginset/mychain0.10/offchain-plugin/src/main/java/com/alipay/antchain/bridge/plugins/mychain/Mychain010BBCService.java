@@ -1342,4 +1342,30 @@ public class Mychain010BBCService extends AbstractBBCService {
                     e);
         }
     }
+
+    @Override
+    public void setMonitorContract(String contractAddress) {
+
+    }
+
+    @Override
+    public void setProtocolInMonitor(String contractAddress) {
+
+    }
+
+    @Override
+    public void setMonitorControl(int monitorType) {
+
+    }
+
+    @Override
+    public void setPtcHubInMonitorVerifier(String contractAddress) {
+
+    }
+
+    @Override
+    public CrossChainMessageReceipt relayMonitorOrder(String committeeId, String signAlgo, byte[] rawProof, byte[] rawMonitorOrder) {
+        return null;
+    }
+    
 }

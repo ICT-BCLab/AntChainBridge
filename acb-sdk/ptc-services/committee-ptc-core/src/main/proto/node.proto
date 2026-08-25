@@ -97,6 +97,8 @@ message VerifyCrossChainMessageRequest {
 
 message VerifyCrossChainMessageResponse {
   bytes rawNodeProof = 1;
+  string regulationStatus = 2;
+  string regulationReason = 3;
 }
 
 message QuerySupportedBlockchainProductsRequest {

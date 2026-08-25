@@ -32,6 +32,7 @@ import com.alipay.antchain.bridge.relayer.core.types.blockchain.HeteroBlockchain
 import com.alipay.antchain.bridge.relayer.core.types.network.IRelayerClientPool;
 import com.alipay.antchain.bridge.relayer.core.types.network.RelayerClient;
 import com.alipay.antchain.bridge.relayer.core.types.network.response.QueryCrossChainMsgReceiptsRespPayload;
+import com.alipay.antchain.bridge.relayer.core.service.report.PlatformReportClient;
 import com.alipay.antchain.bridge.relayer.dal.repository.ICrossChainMessageRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -64,6 +65,9 @@ public class AMConfirmService {
 
     @Resource
     private IBlockchainManager blockchainManager;
+
+    @Resource
+    private PlatformReportClient platformReportClient;
 
     public void process(String product, String blockchainId) {
         List<SDPMsgWrapper> sdpMsgWrappers = crossChainMessageRepository.peekSDPMessages(
@@ -132,6 +136,13 @@ public class AMConfirmService {
                                 && !result.getReceipt().isSuccessful() && blockchainManager.checkAndProcessMessageTimeouts(result.getSdpMsg())) {
                             sdpMsgCommitResult.setTimeout(true);
                         }
+                        platformReportClient.reportTargetChainExecution(
+                                crossChainMessageRepository.getUcpId(
+                                        result.getSdpMsg().getAuthMsgWrapper().getAuthMsgId()
+                                ),
+                                result.getReceipt(),
+                                sdpMsgCommitResult.isTimeout()
+                        );
                         commitResults.add(sdpMsgCommitResult);
 
                         log.info("sdp confirmed : (tx: {}, is_success: {}, error_msg: {})",

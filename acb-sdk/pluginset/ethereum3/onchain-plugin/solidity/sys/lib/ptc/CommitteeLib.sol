@@ -3,6 +3,8 @@ pragma solidity ^0.8.0;
 pragma experimental ABIEncoderV2;
 
 import "./PtcLib.sol";
+import "../../interfaces/IMonitorVerifier.sol";
+import "../../@openzeppelin/contracts/utils/Strings.sol";
 
 // tags for CommitteeEndorseRoot
 uint16 constant TAG_COMMITTEE_ID = 0x00;
@@ -69,35 +71,217 @@ struct NodeAnchorInfo {
     NodePublicKeyEntry[] nodePublicKeys;
 }
 
-// TODO: CommitteeEndorseProof, CommitteeNodeProof
+// tags for CommitteeEndorseProof
+uint16 constant TAG_CEP_COMMITTEE_ID = 0x00;
+uint16 constant TAG_CEP_SIGS = 0x01;
 
-library CommitteePtcVerifier {
+struct CommitteeEndorseProof {
+    string committeeId;
+    CommitteeNodeProof[] sigs;
+}
+
+// tags for CommitteeNodeProof
+uint16 constant TAG_CNP_NODE_ID = 0x00;
+uint16 constant TAG_CNP_SIGN_ALGO = 0x01;
+uint16 constant TAG_CNP_SIG_HEX = 0x02;
+
+struct CommitteeNodeProof {
+    string nodeId;
+    string signAlgo;
+    bytes signature;
+}
+
+library CommitteeLib {
+
+    event DoVeriyTpBta(CrossChainLane laneKey, string committeeId, string nodeId, bool result);
+    event DoVeriyTpProof(CrossChainLane laneKey, string committeeId, string nodeId, bool result);
+    event DoVerifyTpProofFromMonitorNode(CrossChainLane laneKey, string committeeId, string nodeId, bool result);
+    event DoVerifyMonitorOrder(string committeeId, string nodeId, bool res);
 
     using TLVUtils for TLVPacket;
     using TLVUtils for TLVItem;
     using TLVUtils for BytesArrayStream;
 
-    using CommitteePtcVerifier for Threshold;
-    using CommitteePtcVerifier for NodePublicKeyEntry;
-    using CommitteePtcVerifier for NodeEndorseInfo;
-    using CommitteePtcVerifier for OptionalEndorsePolicy;
-    using CommitteePtcVerifier for NodeAnchorInfo;
-    using CommitteePtcVerifier for CommitteeVerifyAnchor;
+    using CommitteeLib for Threshold;
+    using CommitteeLib for NodePublicKeyEntry;
+    using CommitteeLib for NodeEndorseInfo;
+    using CommitteeLib for OptionalEndorsePolicy;
+    using CommitteeLib for NodeAnchorInfo;
+    using CommitteeLib for CommitteeVerifyAnchor;
+    using CommitteeLib for CommitteeNodeProof;
 
     using PtcLib for PtcTrustRoot;
     using PtcLib for ThirdPartyResp;
     using PtcLib for TpBta;
+    using PtcLib for ThirdPartyProof;
 
     using Strings for string;
 
-    function verifyTpBta(PTCVerifyAnchor memory va, TpBta memory tpBta) internal pure returns (bool, string memory) {
+    function verifyTpBta(PTCVerifyAnchor memory va, TpBta memory tpBta) internal returns (bool) {
         require(
-            TLVUtils.getUint256FromRawBigInteger(0, va.version) == TLVUtils.getUint256FromRawBigInteger(0, tpBta.ptcVerifyAnchorVersion), 
+            TLVUtils.getUint256FromBytes(va.version) == TLVUtils.getUint256FromBytes(tpBta.ptcVerifyAnchorVersion), 
             "verify anchor version not equal"
         );
 
         CommitteeVerifyAnchor memory cva = decodeCommitteeVerifyAnchorFrom(va.anchor);
-        // tpBta.endorseProof
+        CommitteeEndorseProof memory ceProof = decodeCommitteeEndorseProofFrom(tpBta.endorseProof);
+                
+        return cva.verifyCommitteeEndorseProof(ceProof, tpBta);
+    }
+
+    function verifyCommitteeEndorseProof(CommitteeVerifyAnchor memory cva, CommitteeEndorseProof memory ceProof, TpBta memory tpBta) internal returns (bool) {
+        require(cva.committeeId.equal(ceProof.committeeId), "committee id in proof not equal with the one in verify anchor");
+
+        bytes memory encodedToSign = tpBta.getEncodedToSign();
+        uint correct = 0;
+        for (uint i = 0; i < ceProof.sigs.length; i++) 
+        {
+            CommitteeNodeProof memory proof = ceProof.sigs[i];
+            require(proof.signAlgo.equal(KECCAK256_WITH_SECP256K1), "only support KECCAK256_WITH_SECP256K1 sig");
+            for (uint j = 0; j < cva.anchors.length; j++) {
+                if (cva.anchors[j].nodeId.equal(proof.nodeId)) {
+                    bool res = false;
+                    for (uint k = 0; k < cva.anchors[j].nodePublicKeys.length; k++) 
+                    {
+                        res = AcbCommons.verifySig(
+                            proof.signAlgo,
+                            cva.anchors[j].nodePublicKeys[k].getRawPublicKey(),
+                            encodedToSign,
+                            proof.signature
+                        );
+                        if (res) {
+                            break;
+                        }
+                    }
+                    emit DoVeriyTpBta(tpBta.crossChainLane, cva.committeeId, proof.nodeId, res);
+                    if (res) {
+                        correct++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return 3 * correct > 2 * cva.anchors.length;
+    }
+
+    function verifyTpProof(TpBta memory tpBta, ThirdPartyProof memory tpProof , address monitorPtcAddr) internal returns (bool) {
+        CommitteeEndorseRoot memory cer = decodeCommitteeEndorseRootFrom(tpBta.endorseRoot);
+        CommitteeEndorseProof memory ceProof = decodeCommitteeEndorseProofFrom(tpProof.rawProof);
+
+        require(cer.committeeId.equal(ceProof.committeeId), "committee id in proof not equal with the one in endorse root");
+
+        bytes memory encodedToSign = tpProof.getEncodedToSign();
+        uint32 optinalCorrect = 0;
+        for (uint i = 0; i < cer.endorsers.length; i++)
+        {
+            NodeEndorseInfo memory info = cer.endorsers[i];
+            bool isMonitorNode = false;
+            bool res = false;
+            for (uint j = 0; j < ceProof.sigs.length; j++) {
+                if (info.nodeId.equal(ceProof.sigs[j].nodeId)) {
+                    // if it is monitor node proof, trans it to MonitorPTC
+                    if (checkMonitorNode(info.nodeId)) {
+                        isMonitorNode = true;
+                        IMonitorVerifier(monitorPtcAddr).receiveMonitorNodeProofMessage(tpBta.crossChainLane, cer.committeeId, ceProof.sigs[j], encodedToSign);
+                        res = true;
+                        break;
+                    }
+                    res = AcbCommons.verifySig(
+                        ceProof.sigs[j].signAlgo,
+                        info.publicKey.getRawPublicKey(),
+                        encodedToSign,
+                        ceProof.sigs[j].signature
+                    );
+                    if (res && !info.required) {
+                        optinalCorrect++;
+                        break;
+                    }
+                }
+            }
+            if (!isMonitorNode) {
+                emit DoVeriyTpProof(tpBta.crossChainLane, cer.committeeId, info.nodeId, res);
+            }
+            if (!res && info.required) {
+                return false;
+            }
+        }
+
+        return cer.policy.threshold.check(optinalCorrect);
+    }
+
+    function checkMonitorNode(string memory nodeId) internal pure returns (bool) {
+        bytes memory prefix = bytes("monitor");
+        bytes memory nodeIdBytes = bytes(nodeId);
+
+        if (nodeIdBytes.length < prefix.length) {
+            return false;
+        }
+
+        for (uint i = 0; i < prefix.length; i++) {
+            if (nodeIdBytes[i] != prefix[i]) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    function verifyTpProofFromMonitorNode(
+        CrossChainLane memory crossChainLane,
+        string memory committeeId,
+        NodeEndorseInfo memory monitorNodeEndorseInfo,
+        CommitteeNodeProof memory monitorNodeProof,
+        bytes memory encodedToSign
+    ) internal returns (bool) {
+        bool res = false;
+        res = AcbCommons.verifySig(
+            monitorNodeProof.signAlgo,
+            monitorNodeEndorseInfo.publicKey.getRawPublicKey(),
+            encodedToSign,
+            monitorNodeProof.signature
+        );
+        emit DoVerifyTpProofFromMonitorNode(crossChainLane, committeeId, monitorNodeEndorseInfo.nodeId, res);
+        return res;
+    }
+
+    function verifyMonitorOrder(
+        string memory committeeId,
+        NodeEndorseInfo memory monitorNodeEndorseInfo,
+        string memory signAlgo,
+        bytes memory rawProof,
+        bytes memory rawMonitorOrder
+    ) internal returns (bool) {
+        bool res = false;
+        res = AcbCommons.verifySig(
+            signAlgo,
+            monitorNodeEndorseInfo.publicKey.getRawPublicKey(),
+            rawMonitorOrder,
+            rawProof
+        );
+        emit DoVerifyMonitorOrder(committeeId, monitorNodeEndorseInfo.nodeId, res);
+        return res;
+    }
+
+    function getRawPublicKey(
+        NodePublicKeyEntry memory entry
+    ) internal pure returns (bytes memory) {
+        require(entry.rawPublicKey.length >= 64, "public key length not enouth");
+
+        bytes memory derPubkey = entry.rawPublicKey;
+        uint256 offset = derPubkey.length - 64;
+        bytes memory rawPubkey = new bytes(64);
+        assembly {
+            mstore(
+                add(rawPubkey, 0x20),
+                mload(add(add(derPubkey, 0x20), offset))
+            )
+            mstore(
+                add(rawPubkey, 0x40),
+                mload(add(add(derPubkey, 0x40), offset))
+            )
+        }
+        return rawPubkey;
     }
 
     function encode(CommitteeEndorseRoot memory self) internal pure returns (bytes memory) {
@@ -150,6 +334,7 @@ library CommitteePtcVerifier {
                 while (s.hasNext()) {
                     endorsers[j++] = decodeNodeEndorseInfoFrom(s.getNextVarBytes());
                 }
+                result.endorsers = endorsers;
             }
         }
         return result;
@@ -405,6 +590,96 @@ library CommitteePtcVerifier {
                     infos[j++] = decodeNodeAnchorInfoFrom(s.getNextVarBytes());
                 }
                 result.anchors = infos;
+            }
+        }
+        return result;
+    }
+
+    function encode(CommitteeNodeProof memory self) internal pure returns (bytes memory) {
+        TLVItem[] memory items = new TLVItem[](3);
+        items[0] = TLVUtils.fromStringToTLVItem(
+            TAG_CNP_NODE_ID,
+            self.nodeId
+        );
+        items[1] = TLVUtils.fromStringToTLVItem(
+            TAG_CNP_SIGN_ALGO,
+            self.signAlgo
+        );
+        items[2] = TLVUtils.fromBytesToTLVItem(
+            TAG_CNP_SIG_HEX,
+            self.signature
+        );
+
+        TLVPacket memory packet;
+        packet.items = items;
+
+        return packet.encode();
+    }
+
+    function decodeCommitteeNodeProofFrom(bytes memory rawData)
+        internal
+        pure
+        returns (CommitteeNodeProof memory)
+    {
+        CommitteeNodeProof memory result;
+        TLVPacket memory packet = TLVUtils.decodePacket(rawData);
+        for (uint256 i = 0; i < packet.items.length; i++) {
+            TLVItem memory currItem = packet.items[i];
+            if (currItem.tag == TAG_CNP_NODE_ID) {
+                result.nodeId = currItem.toString();
+            } else if (currItem.tag == TAG_CNP_SIGN_ALGO) {
+                result.signAlgo = currItem.toString();
+            } else if (currItem.tag == TAG_CNP_SIG_HEX) {
+                result.signature = currItem.toBytes();
+            }
+        }
+        return result;
+    }
+
+    function encode(CommitteeEndorseProof memory self) internal pure returns (bytes memory) {
+        TLVItem[] memory items = new TLVItem[](2);
+        items[0] = TLVUtils.fromStringToTLVItem(
+            TAG_CEP_COMMITTEE_ID,
+            self.committeeId
+        );
+        uint totalSize = 0;
+        bytes[] memory rawSigs = new bytes[](self.sigs.length);
+        for (uint i = 0; i < self.sigs.length; i++) 
+        {
+            rawSigs[i] = self.sigs[i].encode();
+            totalSize += rawSigs[i].length;
+        }
+        items[1] = TLVUtils.fromBytesArrayToTLVItem(
+            TAG_CEP_SIGS,
+            totalSize,
+            rawSigs
+        );
+
+        TLVPacket memory packet;
+        packet.items = items;
+
+        return packet.encode();
+    }
+
+    function decodeCommitteeEndorseProofFrom(bytes memory rawData)
+        internal
+        pure
+        returns (CommitteeEndorseProof memory)
+    {
+        CommitteeEndorseProof memory result;
+        TLVPacket memory packet = TLVUtils.decodePacket(rawData);
+        for (uint256 i = 0; i < packet.items.length; i++) {
+            TLVItem memory currItem = packet.items[i];
+            if (currItem.tag == TAG_CEP_COMMITTEE_ID) {
+                result.committeeId = currItem.toString();
+            } else if (currItem.tag == TAG_CEP_SIGS) {
+                BytesArrayStream memory s = currItem.toBytesArrayStream();
+                CommitteeNodeProof[] memory proofs = new CommitteeNodeProof[](s.calcLenValueSize());
+                uint j = 0;
+                while (s.hasNext()) {
+                    proofs[j++] = decodeCommitteeNodeProofFrom(s.getNextVarBytes());
+                }
+                result.sigs = proofs;
             }
         }
         return result;

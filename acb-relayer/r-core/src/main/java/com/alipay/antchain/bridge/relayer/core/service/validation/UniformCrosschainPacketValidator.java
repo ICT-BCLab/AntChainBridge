@@ -16,6 +16,9 @@
 
 package com.alipay.antchain.bridge.relayer.core.service.validation;
 
+import java.util.Objects;
+
+import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
 
 import cn.hutool.core.util.ObjectUtil;
@@ -25,9 +28,14 @@ import com.alipay.antchain.bridge.commons.core.am.AuthMessageTrustLevelEnum;
 import com.alipay.antchain.bridge.commons.core.am.AuthMessageV2;
 import com.alipay.antchain.bridge.commons.core.am.IAuthMessage;
 import com.alipay.antchain.bridge.commons.core.base.CrossChainMessage;
+import com.alipay.antchain.bridge.commons.core.base.CrossChainLane;
+import com.alipay.antchain.bridge.commons.core.base.CrossChainDomain;
 import com.alipay.antchain.bridge.commons.core.ptc.ThirdPartyProof;
 import com.alipay.antchain.bridge.commons.core.ptc.ValidatedConsensusState;
+import com.alipay.antchain.bridge.commons.core.ptc.ThirdPartyBlockchainTrustAnchorV1;
+import com.alipay.antchain.bridge.commons.core.ptc.ValidatedConsensusStateV1;
 import com.alipay.antchain.bridge.ptc.service.IPTCService;
+import com.alipay.antchain.bridge.ptc.types.PTCVerifyCrossChainMessageResult;
 import com.alipay.antchain.bridge.relayer.commons.constant.AuthMsgProcessStateEnum;
 import com.alipay.antchain.bridge.relayer.commons.constant.UniformCrosschainPacketStateEnum;
 import com.alipay.antchain.bridge.relayer.commons.exception.UcpValidationException;
@@ -35,10 +43,12 @@ import com.alipay.antchain.bridge.relayer.commons.model.TpBtaDO;
 import com.alipay.antchain.bridge.relayer.commons.model.UniformCrosschainPacketContext;
 import com.alipay.antchain.bridge.relayer.commons.model.ValidatedConsensusStateDO;
 import com.alipay.antchain.bridge.relayer.core.manager.ptc.PtcManager;
+import com.alipay.antchain.bridge.relayer.core.service.report.PlatformReportClient;
 import com.alipay.antchain.bridge.relayer.dal.repository.IBlockchainRepository;
 import com.alipay.antchain.bridge.relayer.dal.repository.ICrossChainMessageRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Value;
 
 @Component
 @Slf4j
@@ -52,6 +62,17 @@ public class UniformCrosschainPacketValidator {
 
     @Resource
     private PtcManager ptcManager;
+
+    @Resource
+    private PlatformReportClient platformReportClient;
+
+    @Value("${core_validation.ptc_id:ptc01}")
+    private String ptcId;
+
+    @PostConstruct
+    public void init() {
+        log.info("ptcId = {}", ptcId);
+    }
 
     public void doProcess(UniformCrosschainPacketContext ucpContext) {
 
@@ -94,14 +115,46 @@ public class UniformCrosschainPacketValidator {
                 }
 
                 log.info("calling ptc {} to verify ucp {} with TpBTA {}", tpBtaDO.getPtcServiceId(), ucpContext.getUcpId(), ucpContext.getTpbtaLaneKey());
-                ThirdPartyProof tpProof = ptcService.verifyCrossChainMessage(tpBtaDO.getTpbta(), vcs, ucpContext.getUcp());
+                PTCVerifyCrossChainMessageResult verifyResult = ptcService.verifyCrossChainMessageWithResult(
+                        tpBtaDO.getTpbta(),
+                        vcs,
+                        ucpContext.getUcp()
+                );
+                ThirdPartyProof tpProof = verifyResult.getThirdPartyProof();
                 if (ObjectUtil.isNull(tpProof)) {
                     throw new UcpValidationException(ucpContext.getUcpId(), ucpContext.getSrcDomain(), ucpContext.getTpbtaLaneKey(), "none tp proof found");
                 }
                 log.info("successful to verify ucp {} with TpBTA {}", ucpContext.getUcpId(), ucpContext.getTpbtaLaneKey());
 
+                platformReportClient.reportRegulation(
+                        ucpContext.getUcpId(),
+                        verifyResult.getRegulationStatus(),
+                        verifyResult.getRegulationReason()
+                );
                 ucpContext.getUcp().setTpProof(tpProof);
                 crossChainMessageRepository.putTpProof(ucpContext.getUcpId(), ucpContext.getTpProof());
+            }
+
+            // 为dioxide链定制的逻辑，支持在无实际监管逻辑和PTC逻辑的情形下将跨链信息传递给外部监管系统
+            // "Dioxide"这个product通过构造特殊的tpBtaOnlyRepresentDioxide来传递
+            if (Objects.equals(ucpContext.getProduct(), "dioxide2")) {
+                log.info("product is Dioxide, skip actual ptc verification but transfer ucp {} to momitor node", ucpContext.getUcpId());
+                IPTCService ptcService = ptcManager.getPtcService(ptcId);
+                ThirdPartyBlockchainTrustAnchorV1 tpBtaOnlyRepresentDioxide = new ThirdPartyBlockchainTrustAnchorV1();
+                tpBtaOnlyRepresentDioxide.setCrossChainLane(new CrossChainLane(new CrossChainDomain(ucpContext.getProduct())));
+                log.info("[1]tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain() = {}", tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain());
+                tpBtaOnlyRepresentDioxide.setCrossChainLane(new CrossChainLane(new CrossChainDomain("dioxide2")));
+                log.info("[2]tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain() = {}", tpBtaOnlyRepresentDioxide.getCrossChainLane().getSenderDomain().getDomain());
+                PTCVerifyCrossChainMessageResult verifyResult = ptcService.verifyCrossChainMessageWithResult(
+                        tpBtaOnlyRepresentDioxide,
+                        new ValidatedConsensusStateV1(),
+                        ucpContext.getUcp()
+                );
+                platformReportClient.reportRegulation(
+                        ucpContext.getUcpId(),
+                        verifyResult.getRegulationStatus(),
+                        verifyResult.getRegulationReason()
+                );
             }
 
             crossChainMessageRepository.updateUniformCrosschainPacketState(

@@ -14,6 +14,7 @@ scripts/antchain-bridge-sdk/
 scripts/contracts/
 scripts/*.tar.gz
 .vscode
+.codex
 pluginset/eos/**.wasm
 pluginset/eos/**.abi
 /conf-cloud/

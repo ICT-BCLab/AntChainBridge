@@ -387,6 +387,31 @@ public class EthereumBBCService extends AbstractBBCService {
     }
 
     @Override
+    public void setMonitorContract(String contractAddress) {
+
+    }
+
+    @Override
+    public void setProtocolInMonitor(String contractAddress) {
+
+    }
+
+    @Override
+    public void setMonitorControl(int monitorType) {
+
+    }
+
+    @Override
+    public void setPtcHubInMonitorVerifier(String contractAddress) {
+
+    }
+
+    @Override
+    public CrossChainMessageReceipt relayMonitorOrder(String committeeId, String signAlgo, byte[] rawProof, byte[] rawMonitorOrder) {
+        return null;
+    }
+
+    @Override
     public CrossChainMessageReceipt relayAuthMessage(byte[] rawMessage) {
         // 1. check context
         if (ObjectUtil.isNull(this.bbcContext)) {
