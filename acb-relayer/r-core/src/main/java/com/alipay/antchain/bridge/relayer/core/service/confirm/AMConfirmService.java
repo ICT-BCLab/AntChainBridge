@@ -118,14 +118,7 @@ public class AMConfirmService {
                         );
                     }
                     if (result.getReceipt().isConfirmed()) {
-                        SDPMsgCommitResult sdpMsgCommitResult = new SDPMsgCommitResult(
-                                product,
-                                blockchainId,
-                                result.getReceipt().getTxhash(),
-                                result.getReceipt().isSuccessful(),
-                                result.getReceipt().getErrorMsg(),
-                                System.currentTimeMillis()
-                        );
+                        SDPMsgCommitResult sdpMsgCommitResult = buildCommitResult(product, blockchainId, result);
                         if (result.getSdpMsg().getVersion() > 2
                                 && result.getSdpMsg().getSdpMessage().getAtomicFlag().ordinal() < AtomicFlagEnum.ACK_SUCCESS.ordinal()
                                 && result.getSdpMsg().getSdpMessage().getTimeoutMeasure() != TimeoutMeasureEnum.NO_TIMEOUT
@@ -157,6 +150,21 @@ public class AMConfirmService {
         crossChainMessageRepository.updateSDPMessageResults(commitResults);
         sdpNonceRecordsToSave.forEach(
                 r -> crossChainMessageRepository.saveSDPNonceRecord(r)
+        );
+    }
+
+    static SDPMsgCommitResult buildCommitResult(String product, String blockchainId, ConfirmResult result) {
+        // The pending row is already known. Updating by its primary key avoids
+        // depending on a plugin's native transaction-hash representation
+        // (notably Dioxide's non-hex hash) for terminal-state persistence.
+        return new SDPMsgCommitResult(
+                result.getSdpMsg().getId(),
+                product,
+                blockchainId,
+                result.getReceipt().getTxhash(),
+                result.getReceipt().isSuccessful(),
+                result.getReceipt().getErrorMsg(),
+                System.currentTimeMillis()
         );
     }
 
