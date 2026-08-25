@@ -22,7 +22,7 @@ public class SDPContractClientEVMTest {
         TransactionReceipt upgradedReceipt = mock(TransactionReceipt.class);
         when(legacyReceipt.getResult()).thenReturn(10201L);
         when(upgradedReceipt.getResult()).thenReturn((long) ErrorCode.SUCCESS.getErrorCode());
-        when(upgradedReceipt.getOutput()).thenReturn(new byte[32]);
+        when(upgradedReceipt.getOutput()).thenReturn(uint256(4));
         when(client.localCallContract(eq("legacy_sdp"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(legacyReceipt, upgradedReceipt);
         when(client.upgradeContract(
@@ -45,7 +45,7 @@ public class SDPContractClientEVMTest {
         Mychain020Client client = mock(Mychain020Client.class);
         TransactionReceipt receipt = mock(TransactionReceipt.class);
         when(receipt.getResult()).thenReturn((long) ErrorCode.SUCCESS.getErrorCode());
-        when(receipt.getOutput()).thenReturn(new byte[32]);
+        when(receipt.getOutput()).thenReturn(uint256(4));
         when(client.localCallContract(eq("current_sdp"), org.mockito.ArgumentMatchers.any()))
                 .thenReturn(receipt);
 
@@ -84,5 +84,11 @@ public class SDPContractClientEVMTest {
     public void shouldPackageMonitorEnabledSdpRuntime() {
         Assert.assertNotNull(SDPContractClientEVM.class.getResourceAsStream(
                 "/contract/v1/solidity/SDPMsg.bin-runtime"));
+    }
+
+    private static byte[] uint256(int value) {
+        byte[] encoded = new byte[32];
+        encoded[31] = (byte) value;
+        return encoded;
     }
 }

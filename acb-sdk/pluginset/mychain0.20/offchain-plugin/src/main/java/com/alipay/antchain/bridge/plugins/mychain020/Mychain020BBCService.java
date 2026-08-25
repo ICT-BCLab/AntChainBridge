@@ -1100,12 +1100,12 @@ public class Mychain020BBCService extends AbstractBBCService {
 
         try {
             if (StrUtil.isNotEmpty(context.getMonitorContractClientEVM().getContractAddress())
-                    && !context.getMonitorContractClientEVM().isImplementationVersionSupported()) {
+                    && !context.getMonitorContractClientEVM().ensureImplementationSupported()) {
                 getBBCLogger().info(
-                        "[Mychain020BBCService] upgrade monitor contract for {} from legacy implementation {}",
+                        "[Mychain020BBCService] failed to upgrade legacy monitor contract for {}: {}",
                         mychain020Client.getPrimary(),
                         context.getMonitorContractClientEVM().getContractAddress());
-                context.getMonitorContractClientEVM().resetDeployment();
+                throw new RuntimeException("upgrade legacy monitor for receive-side routing failed");
             }
 
             if (ObjectUtil.isNotNull(context.getPtcContractEvm())

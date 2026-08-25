@@ -11,6 +11,8 @@ import org.slf4j.LoggerFactory;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class MonitorContractClientEVMTest {
@@ -31,10 +33,10 @@ public class MonitorContractClientEVMTest {
     }
 
     @Test
-    public void implementationVersionThreeShouldBeSupported() {
+    public void implementationVersionFiveShouldBeSupported() {
         TransactionReceipt receipt = mock(TransactionReceipt.class);
         byte[] encodedVersion = new byte[32];
-        encodedVersion[31] = 3;
+        encodedVersion[31] = 5;
 
         when(receipt.getResult()).thenReturn(0L);
         when(receipt.getOutput()).thenReturn(encodedVersion);
@@ -52,10 +54,27 @@ public class MonitorContractClientEVMTest {
     }
 
     @Test
-    public void resetDeploymentShouldClearAddressAndStatus() {
-        monitorContractClient.resetDeployment();
+    public void legacyContractShouldBeUpgradedInPlace() {
+        TransactionReceipt legacyReceipt = mock(TransactionReceipt.class);
+        when(legacyReceipt.getResult()).thenReturn(10201L);
 
-        Assert.assertNull(monitorContractClient.getContractAddress());
-        Assert.assertNull(monitorContractClient.getStatus());
+        TransactionReceipt upgradedReceipt = mock(TransactionReceipt.class);
+        byte[] encodedVersion = new byte[32];
+        encodedVersion[31] = 5;
+        when(upgradedReceipt.getResult()).thenReturn(0L);
+        when(upgradedReceipt.getOutput()).thenReturn(encodedVersion);
+
+        when(mychain020Client.localCallContract(eq(MONITOR_CONTRACT), any()))
+                .thenReturn(legacyReceipt, upgradedReceipt);
+        when(mychain020Client.upgradeContract(any(String.class), eq(MONITOR_CONTRACT), eq(com.alipay.mychain.sdk.common.VMTypeEnum.EVM)))
+                .thenReturn(true);
+
+        Assert.assertTrue(monitorContractClient.ensureImplementationSupported());
+
+        Assert.assertEquals(MONITOR_CONTRACT, monitorContractClient.getContractAddress());
+        verify(mychain020Client, times(1)).upgradeContract(
+                eq("/contract/v1/solidity/Monitor.bin-runtime"),
+                eq(MONITOR_CONTRACT),
+                eq(com.alipay.mychain.sdk.common.VMTypeEnum.EVM));
     }
 }

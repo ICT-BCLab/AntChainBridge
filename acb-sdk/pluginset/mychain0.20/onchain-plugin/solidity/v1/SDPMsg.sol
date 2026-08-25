@@ -4,12 +4,18 @@ pragma solidity ^0.8.0;
 import "./interfaces/ISDPMessage.sol";
 import "./interfaces/IAuthMessage.sol";
 import "./interfaces/IContractUsingSDP.sol";
+import "./interfaces/IContractUsingMonitor.sol";
 import "./interfaces/IContractWithAcks.sol";
+import "./interfaces/IMonitor.sol";
 import "./lib/sdp/SDPLib.sol";
 import "./lib/utils/Ownable.sol";
 
 
 contract SDPMsg is ISDPMessage, Ownable {
+
+    // Version 4 fixes the ordered receive dispatch: SDP V1 must call the V1
+    // Monitor entry point and SDP V2 must call the V2 entry point.
+    uint32 private constant MONITOR_ROUTING_VERSION = 4;
 
     using SDPLib for SDPMessage;
     using SDPLib for SDPMessageV2;
@@ -81,6 +87,10 @@ contract SDPMsg is ISDPMessage, Ownable {
     function setMonitorContract(identity newMonitorContract) external onlyOwner {
         require(newMonitorContract != identity(0), "SDPMsg: invalid monitor contract");
         monitorAddress = newMonitorContract;
+    }
+
+    function getMonitorRoutingVersion() external pure returns (uint32) {
+        return MONITOR_ROUTING_VERSION;
     }
 
     function getAmAddress() external view returns (identity) {
@@ -173,6 +183,31 @@ contract SDPMsg is ISDPMessage, Ownable {
 
     // 发送有序消息 SDPv2
     function sendMessageV2(string calldata receiverDomain, identity receiverID, bool atomic, bytes calldata message) override external returns (bytes32) {
+        if (monitorAddress != identity(0)) {
+            return IMonitor(monitorAddress).sendMonitorMessageV2(
+                receiverDomain, receiverID, msg.sender, atomic, message
+            );
+        }
+        return _sendMessageV2(receiverDomain, receiverID, msg.sender, atomic, message);
+    }
+
+    function sendMessageV2FromMonitor(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message
+    ) override external onlyMonitorOrLegacySender returns (bytes32) {
+        return _sendMessageV2(receiverDomain, receiverID, senderID, atomic, message);
+    }
+
+    function _sendMessageV2(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message
+    ) internal returns (bytes32) {
         _beforeSend(receiverDomain, receiverID, message);
         bytes32 receiver = bytes32(receiverID);
         SDPMessageV2 memory sdpMessage = SDPMessageV2(
@@ -183,14 +218,14 @@ contract SDPMsg is ISDPMessage, Ownable {
                 receiver: receiver,
                 atomicFlag: atomic ? SDPLib.SDP_V2_ATOMIC_FLAG_ATOMIC_REQUEST : SDPLib.SDP_V2_ATOMIC_FLAG_NONE_ATOMIC,
                 nonce: SDPLib.MAX_NONCE,
-                sequence: _getAndUpdateSendSeq(receiverDomain, msg.sender, receiver),
+                sequence: _getAndUpdateSendSeq(receiverDomain, senderID, receiver),
                 message: message,
                 errorMsg: ""
             }
         );
         sdpMessage.calcMessageId(localDomainHash);
 
-        IAuthMessage(amAddress).recvFromProtocol(msg.sender, sdpMessage.encode());
+        IAuthMessage(amAddress).recvFromProtocol(senderID, sdpMessage.encode());
 
         _afterSend();
 
@@ -199,6 +234,31 @@ contract SDPMsg is ISDPMessage, Ownable {
 
     // 发送无序消息 SDPv2
     function sendUnorderedMessageV2(string calldata receiverDomain, identity receiverID, bool atomic, bytes calldata message) override external returns (bytes32) {
+        if (monitorAddress != identity(0)) {
+            return IMonitor(monitorAddress).sendUnorderedMonitorMessageV2(
+                receiverDomain, receiverID, msg.sender, atomic, message
+            );
+        }
+        return _sendUnorderedMessageV2(receiverDomain, receiverID, msg.sender, atomic, message);
+    }
+
+    function sendUnorderedMessageV2FromMonitor(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message
+    ) override external onlyMonitorOrLegacySender returns (bytes32) {
+        return _sendUnorderedMessageV2(receiverDomain, receiverID, senderID, atomic, message);
+    }
+
+    function _sendUnorderedMessageV2(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message
+    ) internal returns (bytes32) {
         _beforeSendUnordered(receiverDomain, receiverID, message);
         bytes32 receiver = bytes32(receiverID);
         SDPMessageV2 memory sdpMessage = SDPMessageV2(
@@ -208,7 +268,7 @@ contract SDPMsg is ISDPMessage, Ownable {
                 receiveDomain: receiverDomain,
                 receiver: receiver,
                 atomicFlag: atomic ? SDPLib.SDP_V2_ATOMIC_FLAG_ATOMIC_REQUEST : SDPLib.SDP_V2_ATOMIC_FLAG_NONE_ATOMIC,
-                nonce: _getAndUpdateSendNonce(receiverDomain, msg.sender, receiver),
+                nonce: _getAndUpdateSendNonce(receiverDomain, senderID, receiver),
                 sequence: SDPLib.UNORDERED_SEQUENCE,
                 message: message,
                 errorMsg: ""
@@ -216,7 +276,7 @@ contract SDPMsg is ISDPMessage, Ownable {
         );
         sdpMessage.calcMessageId(localDomainHash);
 
-        IAuthMessage(amAddress).recvFromProtocol(msg.sender, sdpMessage.encode());
+        IAuthMessage(amAddress).recvFromProtocol(senderID, sdpMessage.encode());
 
         _afterSendUnordered();
 
@@ -226,6 +286,46 @@ contract SDPMsg is ISDPMessage, Ownable {
     // 发送有序消息 SDPv3
     function sendMessageV3(string calldata receiverDomain, identity receiverID, bool atomic, bytes calldata message,
         uint8 _timeoutMeasure, uint256 _timeout) public returns (bytes32) {
+
+        if (monitorAddress != identity(0)) {
+            return IMonitor(monitorAddress).sendMonitorMessageV3(
+                receiverDomain,
+                receiverID,
+                msg.sender,
+                atomic,
+                message,
+                _timeoutMeasure,
+                _timeout
+            );
+        }
+        return _sendMessageV3(
+            receiverDomain, receiverID, msg.sender, atomic, message, _timeoutMeasure, _timeout
+        );
+    }
+
+    function sendMessageV3FromMonitor(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message,
+        uint8 _timeoutMeasure,
+        uint256 _timeout
+    ) override external onlyMonitorOrLegacySender returns (bytes32) {
+        return _sendMessageV3(
+            receiverDomain, receiverID, senderID, atomic, message, _timeoutMeasure, _timeout
+        );
+    }
+
+    function _sendMessageV3(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message,
+        uint8 _timeoutMeasure,
+        uint256 _timeout
+    ) internal returns (bytes32) {
 
         require(
             _timeoutMeasure >= SDPLib.SDP_V3_TIMEOUT_MEASUREMENT_NO_TIMEOUT && _timeoutMeasure <= SDPLib.SDP_V3_TIMEOUT_MEASUREMENT_RECEIVER_TIMESTAMP,
@@ -243,7 +343,7 @@ contract SDPMsg is ISDPMessage, Ownable {
                 receiver: receiver,
                 atomicFlag: atomic ? SDPLib.SDP_V3_ATOMIC_FLAG_ATOMIC_REQUEST : SDPLib.SDP_V3_ATOMIC_FLAG_NONE_ATOMIC,
                 nonce: SDPLib.MAX_NONCE,
-                sequence: _getAndUpdateSendSeq(receiverDomain, msg.sender, receiver),
+                sequence: _getAndUpdateSendSeq(receiverDomain, senderID, receiver),
                 message: message,
                 errorMsg: "",
                 timeoutMeasure: _timeoutMeasure,
@@ -255,7 +355,7 @@ contract SDPMsg is ISDPMessage, Ownable {
         // v3消息才有的记录，用于超时回滚前的验证
         sendSDPV3Msgs[sdpMessage.messageId] = true;
 
-        IAuthMessage(amAddress).recvFromProtocol(msg.sender, sdpMessage.encode());
+        IAuthMessage(amAddress).recvFromProtocol(senderID, sdpMessage.encode());
 
         _afterSend();
 
@@ -265,6 +365,46 @@ contract SDPMsg is ISDPMessage, Ownable {
     // 发送无序消息 SDPv3
     function sendUnorderedMessageV3(string calldata receiverDomain, identity receiverID, bool atomic, bytes calldata message,
         uint8 _timeoutMeasure, uint256 _timeout) public returns (bytes32) {
+
+        if (monitorAddress != identity(0)) {
+            return IMonitor(monitorAddress).sendUnorderedMonitorMessageV3(
+                receiverDomain,
+                receiverID,
+                msg.sender,
+                atomic,
+                message,
+                _timeoutMeasure,
+                _timeout
+            );
+        }
+        return _sendUnorderedMessageV3(
+            receiverDomain, receiverID, msg.sender, atomic, message, _timeoutMeasure, _timeout
+        );
+    }
+
+    function sendUnorderedMessageV3FromMonitor(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message,
+        uint8 _timeoutMeasure,
+        uint256 _timeout
+    ) override external onlyMonitorOrLegacySender returns (bytes32) {
+        return _sendUnorderedMessageV3(
+            receiverDomain, receiverID, senderID, atomic, message, _timeoutMeasure, _timeout
+        );
+    }
+
+    function _sendUnorderedMessageV3(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message,
+        uint8 _timeoutMeasure,
+        uint256 _timeout
+    ) internal returns (bytes32) {
 
         require(
             _timeoutMeasure >= SDPLib.SDP_V3_TIMEOUT_MEASUREMENT_NO_TIMEOUT && _timeoutMeasure <= SDPLib.SDP_V3_TIMEOUT_MEASUREMENT_RECEIVER_TIMESTAMP,
@@ -281,7 +421,7 @@ contract SDPMsg is ISDPMessage, Ownable {
                 receiveDomain: receiverDomain,
                 receiver: receiver,
                 atomicFlag: atomic ? SDPLib.SDP_V3_ATOMIC_FLAG_ATOMIC_REQUEST : SDPLib.SDP_V3_ATOMIC_FLAG_NONE_ATOMIC,
-                nonce: _getAndUpdateSendNonce(receiverDomain, msg.sender, receiver),
+                nonce: _getAndUpdateSendNonce(receiverDomain, senderID, receiver),
                 sequence: SDPLib.UNORDERED_SEQUENCE,
                 message: message,
                 errorMsg: "",
@@ -293,7 +433,7 @@ contract SDPMsg is ISDPMessage, Ownable {
 
         sendSDPV3Msgs[sdpMessage.messageId] = true;
 
-        IAuthMessage(amAddress).recvFromProtocol(msg.sender, sdpMessage.encode());
+        IAuthMessage(amAddress).recvFromProtocol(senderID, sdpMessage.encode());
 
         _afterSend();
 
@@ -367,25 +507,41 @@ contract SDPMsg is ISDPMessage, Ownable {
             res = false;
             errMsg = "receiver has no code";
         } else {
-            try
-            IContractUsingSDP(receiver).recvMessage(senderDomain, identity(senderID), sdpMessage.message)
-            {
-                res = true;
-            } catch Error(
-                string memory reason
-            ) {
-                errMsg = reason;
-            } catch (
-                bytes memory /*lowLevelData*/
-            ) {}
+            if (monitorAddress == identity(0)) {
+                try IContractUsingSDP(receiver).recvMessage(senderDomain, identity(senderID), sdpMessage.message) {
+                    res = true;
+                } catch Error(string memory reason) {
+                    errMsg = reason;
+                } catch (bytes memory /*lowLevelData*/) {}
+            } else {
+                try IContractUsingMonitor(monitorAddress).recvMessageFromSDP(
+                    senderDomain,
+                    identity(senderID),
+                    receiver,
+                    sdpMessage.message
+                ) {
+                    res = true;
+                } catch Error(string memory reason) {
+                    errMsg = reason;
+                } catch (bytes memory /*lowLevelData*/) {}
+            }
         }
 
         emit receiveMessage(senderDomain, senderID, receiver, seqExpected, res, errMsg);
     }
 
     function _routeUnorderedMessage(string calldata senderDomain, bytes32 senderID, SDPMessage memory sdpMessage) internal {
-        IContractUsingSDP(sdpMessage.getReceiverAddress())
-        .recvUnorderedMessage(senderDomain, identity(senderID), sdpMessage.message);
+        identity receiver = sdpMessage.getReceiverAddress();
+        if (monitorAddress == identity(0)) {
+            IContractUsingSDP(receiver).recvUnorderedMessage(senderDomain, identity(senderID), sdpMessage.message);
+        } else {
+            IContractUsingMonitor(monitorAddress).recvUnorderedMessageFromSDP(
+                senderDomain,
+                identity(senderID),
+                receiver,
+                sdpMessage.message
+            );
+        }
     }
 
     function _processSDPv2(string calldata senderDomain, bytes32 senderID, bytes memory pkg) internal {
@@ -452,17 +608,24 @@ contract SDPMsg is ISDPMessage, Ownable {
             res = false;
             errMsg = "receiver has no code";
         } else {
-            try
-            IContractUsingSDP(receiver).recvMessage(senderDomain, identity(senderID), sdpMessage.message)
-            {
-                res = true;
-            } catch Error(
-                string memory reason
-            ) {
-                errMsg = reason;
-            } catch (
-                bytes memory /*lowLevelData*/
-            ) {}
+            if (monitorAddress == identity(0)) {
+                try IContractUsingSDP(receiver).recvMessage(senderDomain, identity(senderID), sdpMessage.message) {
+                    res = true;
+                } catch Error(string memory reason) {
+                    errMsg = reason;
+                } catch (bytes memory /*lowLevelData*/) {}
+            } else {
+                try IContractUsingMonitor(monitorAddress).recvMessageV2FromSDP(
+                    senderDomain,
+                    identity(senderID),
+                    receiver,
+                    sdpMessage.message
+                ) {
+                    res = true;
+                } catch Error(string memory reason) {
+                    errMsg = reason;
+                } catch (bytes memory /*lowLevelData*/) {}
+            }
         }
 
         return (res, errMsg);
@@ -475,17 +638,25 @@ contract SDPMsg is ISDPMessage, Ownable {
             res = false;
             errMsg = "receiver has no code";
         } else {
-            try
-            IContractUsingSDP(sdpMessage.getReceiverAddress()).recvUnorderedMessage(senderDomain, identity(senderID), sdpMessage.message)
-            {
-                res = true;
-            } catch Error(
-                string memory reason
-            ) {
-                errMsg = reason;
-            } catch (
-                bytes memory /*lowLevelData*/
-            ) {}
+            identity receiver = sdpMessage.getReceiverAddress();
+            if (monitorAddress == identity(0)) {
+                try IContractUsingSDP(receiver).recvUnorderedMessage(senderDomain, identity(senderID), sdpMessage.message) {
+                    res = true;
+                } catch Error(string memory reason) {
+                    errMsg = reason;
+                } catch (bytes memory /*lowLevelData*/) {}
+            } else {
+                try IContractUsingMonitor(monitorAddress).recvUnorderedMessageV2FromSDP(
+                    senderDomain,
+                    identity(senderID),
+                    receiver,
+                    sdpMessage.message
+                ) {
+                    res = true;
+                } catch Error(string memory reason) {
+                    errMsg = reason;
+                } catch (bytes memory /*lowLevelData*/) {}
+            }
         }
 
         return (res, errMsg);
@@ -503,14 +674,26 @@ contract SDPMsg is ISDPMessage, Ownable {
     }
 
     function _processSDPv2AckSuccess(string calldata senderDomain, bytes32 senderID, SDPMessageV2 memory sdpMessage) internal {
-        IContractWithAcks(sdpMessage.getReceiverAddress()).ackOnSuccess(
-            sdpMessage.messageId,
-            senderDomain,
-            identity(senderID),
-            sdpMessage.sequence,
-            sdpMessage.nonce,
-            sdpMessage.message
-        );
+        if (monitorAddress == identity(0)) {
+            IContractWithAcks(sdpMessage.getReceiverAddress()).ackOnSuccess(
+                sdpMessage.messageId,
+                senderDomain,
+                identity(senderID),
+                sdpMessage.sequence,
+                sdpMessage.nonce,
+                sdpMessage.message
+            );
+        } else {
+            IContractUsingMonitor(monitorAddress).ackOnSuccessFromSDP(
+                sdpMessage.getReceiverAddress(),
+                sdpMessage.messageId,
+                senderDomain,
+                identity(senderID),
+                sdpMessage.sequence,
+                sdpMessage.nonce,
+                sdpMessage.message
+            );
+        }
         emit ReceiveMessageV2(
             sdpMessage.messageId,
             senderDomain,
@@ -526,15 +709,28 @@ contract SDPMsg is ISDPMessage, Ownable {
     }
 
     function _processSDPv2AckError(string calldata senderDomain, bytes32 senderID, SDPMessageV2 memory sdpMessage) internal {
-        IContractWithAcks(sdpMessage.getReceiverAddress()).ackOnError(
-            sdpMessage.messageId,
-            senderDomain,
-            identity(senderID),
-            sdpMessage.sequence,
-            sdpMessage.nonce,
-            sdpMessage.message,
-            sdpMessage.errorMsg
-        );
+        if (monitorAddress == identity(0)) {
+            IContractWithAcks(sdpMessage.getReceiverAddress()).ackOnError(
+                sdpMessage.messageId,
+                senderDomain,
+                identity(senderID),
+                sdpMessage.sequence,
+                sdpMessage.nonce,
+                sdpMessage.message,
+                sdpMessage.errorMsg
+            );
+        } else {
+            IContractUsingMonitor(monitorAddress).ackOnErrorFromSDP(
+                sdpMessage.getReceiverAddress(),
+                sdpMessage.messageId,
+                senderDomain,
+                identity(senderID),
+                sdpMessage.sequence,
+                sdpMessage.nonce,
+                sdpMessage.message,
+                sdpMessage.errorMsg
+            );
+        }
         emit ReceiveMessageV2(
             sdpMessage.messageId,
             senderDomain,
@@ -628,17 +824,25 @@ contract SDPMsg is ISDPMessage, Ownable {
             res = false;
             errMsg = "receiver has no code";
         } else {
-            try
-            IContractUsingSDP(sdpMessage.getReceiverAddress()).recvUnorderedMessage(senderDomain, identity(senderID), sdpMessage.message)
-            {
-                res = true;
-            } catch Error(
-                string memory reason
-            ) {
-                errMsg = reason;
-            } catch (
-                bytes memory /*lowLevelData*/
-            ) {}
+            identity receiver = sdpMessage.getReceiverAddress();
+            if (monitorAddress == identity(0)) {
+                try IContractUsingSDP(receiver).recvUnorderedMessage(senderDomain, identity(senderID), sdpMessage.message) {
+                    res = true;
+                } catch Error(string memory reason) {
+                    errMsg = reason;
+                } catch (bytes memory /*lowLevelData*/) {}
+            } else {
+                try IContractUsingMonitor(monitorAddress).recvUnorderedMessageV3FromSDP(
+                    senderDomain,
+                    identity(senderID),
+                    receiver,
+                    sdpMessage.message
+                ) {
+                    res = true;
+                } catch Error(string memory reason) {
+                    errMsg = reason;
+                } catch (bytes memory /*lowLevelData*/) {}
+            }
         }
 
         return (res, errMsg);
@@ -655,17 +859,24 @@ contract SDPMsg is ISDPMessage, Ownable {
             res = false;
             errMsg = "receiver has no code";
         } else {
-            try
-            IContractUsingSDP(receiver).recvMessage(senderDomain, identity(senderID), sdpMessage.message)
-            {
-                res = true;
-            } catch Error(
-                string memory reason
-            ) {
-                errMsg = reason;
-            } catch (
-                bytes memory /*lowLevelData*/
-            ) {}
+            if (monitorAddress == identity(0)) {
+                try IContractUsingSDP(receiver).recvMessage(senderDomain, identity(senderID), sdpMessage.message) {
+                    res = true;
+                } catch Error(string memory reason) {
+                    errMsg = reason;
+                } catch (bytes memory /*lowLevelData*/) {}
+            } else {
+                try IContractUsingMonitor(monitorAddress).recvMessageV3FromSDP(
+                    senderDomain,
+                    identity(senderID),
+                    receiver,
+                    sdpMessage.message
+                ) {
+                    res = true;
+                } catch Error(string memory reason) {
+                    errMsg = reason;
+                } catch (bytes memory /*lowLevelData*/) {}
+            }
         }
 
         return (res, errMsg);
@@ -683,14 +894,26 @@ contract SDPMsg is ISDPMessage, Ownable {
     }
 
     function _processSDPv3AckSuccess(string calldata senderDomain, bytes32 senderID, SDPMessageV3 memory sdpMessage) internal {
-        IContractWithAcks(sdpMessage.getReceiverAddress()).ackOnSuccess(
-            sdpMessage.messageId,
-            senderDomain,
-            identity(senderID),
-            sdpMessage.sequence,
-            sdpMessage.nonce,
-            sdpMessage.message
-        );
+        if (monitorAddress == identity(0)) {
+            IContractWithAcks(sdpMessage.getReceiverAddress()).ackOnSuccess(
+                sdpMessage.messageId,
+                senderDomain,
+                identity(senderID),
+                sdpMessage.sequence,
+                sdpMessage.nonce,
+                sdpMessage.message
+            );
+        } else {
+            IContractUsingMonitor(monitorAddress).ackOnSuccessFromSDP(
+                sdpMessage.getReceiverAddress(),
+                sdpMessage.messageId,
+                senderDomain,
+                identity(senderID),
+                sdpMessage.sequence,
+                sdpMessage.nonce,
+                sdpMessage.message
+            );
+        }
 
         emit ReceiveMessageV3(
             sdpMessage.messageId,
@@ -713,15 +936,28 @@ contract SDPMsg is ISDPMessage, Ownable {
     }
 
     function _processSDPv3AckError(string calldata senderDomain, bytes32 senderID, SDPMessageV3 memory sdpMessage) internal {
-        IContractWithAcks(sdpMessage.getReceiverAddress()).ackOnError(
-            sdpMessage.messageId,
-            senderDomain,
-            identity(senderID),
-            sdpMessage.sequence,
-            sdpMessage.nonce,
-            sdpMessage.message,
-            sdpMessage.errorMsg
-        );
+        if (monitorAddress == identity(0)) {
+            IContractWithAcks(sdpMessage.getReceiverAddress()).ackOnError(
+                sdpMessage.messageId,
+                senderDomain,
+                identity(senderID),
+                sdpMessage.sequence,
+                sdpMessage.nonce,
+                sdpMessage.message,
+                sdpMessage.errorMsg
+            );
+        } else {
+            IContractUsingMonitor(monitorAddress).ackOnErrorFromSDP(
+                sdpMessage.getReceiverAddress(),
+                sdpMessage.messageId,
+                senderDomain,
+                identity(senderID),
+                sdpMessage.sequence,
+                sdpMessage.nonce,
+                sdpMessage.message,
+                sdpMessage.errorMsg
+            );
+        }
 
         emit ReceiveMessageV3(
             sdpMessage.messageId,
@@ -798,15 +1034,29 @@ contract SDPMsg is ISDPMessage, Ownable {
                 }
 
                 // 调用onError接口
-                IContractWithAcks(SDPLib.encodeCrossChainIDIntoAddress(exceptionMsgAuthor)).ackOnError(
-                    sdpMessage.messageId,
-                    sdpMessage.receiveDomain,
-                    identity(sdpMessage.receiver),
-                    sdpMessage.sequence,
-                    sdpMessage.nonce,
-                    sdpMessage.message,
-                    sdpMessage.errorMsg
-                );
+                identity exceptionReceiver = SDPLib.encodeCrossChainIDIntoAddress(exceptionMsgAuthor);
+                if (monitorAddress == identity(0)) {
+                    IContractWithAcks(exceptionReceiver).ackOnError(
+                        sdpMessage.messageId,
+                        sdpMessage.receiveDomain,
+                        identity(sdpMessage.receiver),
+                        sdpMessage.sequence,
+                        sdpMessage.nonce,
+                        sdpMessage.message,
+                        sdpMessage.errorMsg
+                    );
+                } else {
+                    IContractUsingMonitor(monitorAddress).ackOnErrorFromSDP(
+                        exceptionReceiver,
+                        sdpMessage.messageId,
+                        sdpMessage.receiveDomain,
+                        identity(sdpMessage.receiver),
+                        sdpMessage.sequence,
+                        sdpMessage.nonce,
+                        sdpMessage.message,
+                        sdpMessage.errorMsg
+                    );
+                }
             } else {
                 revert("SDP_MSG_ERROR: the message is not timeout with timeoutMeasure 2");
             }

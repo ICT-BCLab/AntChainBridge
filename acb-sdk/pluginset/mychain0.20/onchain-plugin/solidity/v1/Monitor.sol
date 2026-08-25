@@ -3,13 +3,16 @@ pragma solidity ^0.8.0;
 pragma experimental ABIEncoderV2;
 
 import "./interfaces/ISDPMessage.sol";
+import "./interfaces/IContractUsingSDP.sol";
+import "./interfaces/IContractWithAcks.sol";
 import "./interfaces/IMonitorVerifier.sol";
 import "./lib/utils/Ownable.sol";
+import "./lib/utils/BytesToTypes.sol";
 import "./lib/utils/SizeOf.sol";
 import "./lib/utils/TypesToBytes.sol";
 
 contract Monitor is Ownable {
-    uint32 public constant IMPLEMENTATION_VERSION = 3;
+    uint32 public constant IMPLEMENTATION_VERSION = 5;
     uint32 public constant MONITOR_CLOSE = 1;
     uint32 public constant MONITOR_OPEN = 2;
     uint32 public constant MONITOR_ROLLBACK = 3;
@@ -35,6 +38,18 @@ contract Monitor is Ownable {
         uint32 monitorControl
     );
     event MonitorMessageSent(identity indexed sender, string receiverDomain, identity receiverID, uint32 monitorType);
+    event MonitorMessageReceived(
+        string senderDomain,
+        identity indexed sender,
+        identity indexed receiver,
+        uint32 monitorType,
+        bool unordered
+    );
+
+    modifier onlySubProtocol() {
+        require(msg.sender == sdpAddress, "Monitor: sender is not sdp");
+        _;
+    }
 
     constructor() {
         monitorControl = MONITOR_OPEN;
@@ -75,7 +90,9 @@ contract Monitor is Ownable {
         identity receiverID,
         bytes calldata message
     ) external {
-        require(_preMonitoring(receiverID), "Monitor: pre monitoring blocked");
+        if (monitorControl == MONITOR_OPEN) {
+            require(_preMonitoring(msg.sender, receiverID), "Monitor: pre monitoring blocked");
+        }
         bytes memory rawMonitorMessage = _encodeMonitorMessage(monitorControl, message);
         ISDPMessage(sdpAddress).sendMessageFromMonitor(receiverDomain, receiverID, msg.sender, rawMonitorMessage);
         emit MonitorMessageSent(msg.sender, receiverDomain, receiverID, monitorControl);
@@ -86,10 +103,184 @@ contract Monitor is Ownable {
         identity receiverID,
         bytes calldata message
     ) external {
-        require(_preMonitoring(receiverID), "Monitor: pre monitoring blocked");
+        if (monitorControl == MONITOR_OPEN) {
+            require(_preMonitoring(msg.sender, receiverID), "Monitor: pre monitoring blocked");
+        }
         bytes memory rawMonitorMessage = _encodeMonitorMessage(monitorControl, message);
         ISDPMessage(sdpAddress).sendUnorderedMessageFromMonitor(receiverDomain, receiverID, msg.sender, rawMonitorMessage);
         emit MonitorMessageSent(msg.sender, receiverDomain, receiverID, monitorControl);
+    }
+
+    function sendMonitorMessageV2(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message
+    ) external onlySubProtocol returns (bytes32) {
+        bytes memory rawMessage = _prepareMonitoredMessage(senderID, receiverID, message);
+        return ISDPMessage(sdpAddress).sendMessageV2FromMonitor(
+            receiverDomain, receiverID, senderID, atomic, rawMessage
+        );
+    }
+
+    function sendUnorderedMonitorMessageV2(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message
+    ) external onlySubProtocol returns (bytes32) {
+        bytes memory rawMessage = _prepareMonitoredMessage(senderID, receiverID, message);
+        return ISDPMessage(sdpAddress).sendUnorderedMessageV2FromMonitor(
+            receiverDomain, receiverID, senderID, atomic, rawMessage
+        );
+    }
+
+    function sendMonitorMessageV3(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message,
+        uint8 timeoutMeasure,
+        uint256 timeout
+    ) external onlySubProtocol returns (bytes32) {
+        bytes memory rawMessage = _prepareMonitoredMessage(senderID, receiverID, message);
+        return ISDPMessage(sdpAddress).sendMessageV3FromMonitor(
+            receiverDomain, receiverID, senderID, atomic, rawMessage, timeoutMeasure, timeout
+        );
+    }
+
+    function sendUnorderedMonitorMessageV3(
+        string calldata receiverDomain,
+        identity receiverID,
+        identity senderID,
+        bool atomic,
+        bytes calldata message,
+        uint8 timeoutMeasure,
+        uint256 timeout
+    ) external onlySubProtocol returns (bytes32) {
+        bytes memory rawMessage = _prepareMonitoredMessage(senderID, receiverID, message);
+        return ISDPMessage(sdpAddress).sendUnorderedMessageV3FromMonitor(
+            receiverDomain, receiverID, senderID, atomic, rawMessage, timeoutMeasure, timeout
+        );
+    }
+
+    function _prepareMonitoredMessage(
+        identity senderID,
+        identity receiverID,
+        bytes calldata message
+    ) internal view returns (bytes memory) {
+        if (monitorControl == MONITOR_OPEN) {
+            require(_preMonitoring(senderID, receiverID), "Monitor: pre monitoring blocked");
+        }
+        return _encodeMonitorMessage(monitorControl, message);
+    }
+
+    function recvMessageFromSDP(
+        string calldata senderDomain,
+        identity author,
+        identity receiverID,
+        bytes calldata rawMessage
+    ) external onlySubProtocol {
+        (uint32 monitorType, bytes memory message) = _decodeMonitorMessage(rawMessage);
+        IContractUsingSDP(receiverID).recvMessage(senderDomain, author, message);
+        emit MonitorMessageReceived(senderDomain, author, receiverID, monitorType, false);
+    }
+
+    function recvUnorderedMessageFromSDP(
+        string calldata senderDomain,
+        identity author,
+        identity receiverID,
+        bytes calldata rawMessage
+    ) external onlySubProtocol {
+        (uint32 monitorType, bytes memory message) = _decodeMonitorMessage(rawMessage);
+        IContractUsingSDP(receiverID).recvUnorderedMessage(senderDomain, author, message);
+        emit MonitorMessageReceived(senderDomain, author, receiverID, monitorType, true);
+    }
+
+    function recvUnorderedMessageV2FromSDP(
+        string calldata senderDomain,
+        identity author,
+        identity receiverID,
+        bytes calldata rawMessage
+    ) external onlySubProtocol {
+        _recvVersionedMessage(senderDomain, author, receiverID, rawMessage, true);
+    }
+
+    function recvMessageV2FromSDP(
+        string calldata senderDomain,
+        identity author,
+        identity receiverID,
+        bytes calldata rawMessage
+    ) external onlySubProtocol {
+        _recvVersionedMessage(senderDomain, author, receiverID, rawMessage, false);
+    }
+
+    function recvUnorderedMessageV3FromSDP(
+        string calldata senderDomain,
+        identity author,
+        identity receiverID,
+        bytes calldata rawMessage
+    ) external onlySubProtocol {
+        _recvVersionedMessage(senderDomain, author, receiverID, rawMessage, true);
+    }
+
+    function recvMessageV3FromSDP(
+        string calldata senderDomain,
+        identity author,
+        identity receiverID,
+        bytes calldata rawMessage
+    ) external onlySubProtocol {
+        _recvVersionedMessage(senderDomain, author, receiverID, rawMessage, false);
+    }
+
+    function _recvVersionedMessage(
+        string memory senderDomain,
+        identity author,
+        identity receiverID,
+        bytes memory rawMessage,
+        bool unordered
+    ) internal {
+        (uint32 monitorType, bytes memory message) = _decodeMonitorMessage(rawMessage);
+        if (unordered) {
+            IContractUsingSDP(receiverID).recvUnorderedMessage(senderDomain, author, message);
+        } else {
+            IContractUsingSDP(receiverID).recvMessage(senderDomain, author, message);
+        }
+        emit MonitorMessageReceived(senderDomain, author, receiverID, monitorType, unordered);
+    }
+
+    function ackOnSuccessFromSDP(
+        identity receiverID,
+        bytes32 messageId,
+        string memory receiverDomain,
+        identity receiver,
+        uint32 sequence,
+        uint64 nonce,
+        bytes memory rawMessage
+    ) external onlySubProtocol {
+        (, bytes memory message) = _decodeMonitorMessage(rawMessage);
+        IContractWithAcks(receiverID).ackOnSuccess(
+            messageId, receiverDomain, receiver, sequence, nonce, message
+        );
+    }
+
+    function ackOnErrorFromSDP(
+        identity receiverID,
+        bytes32 messageId,
+        string memory receiverDomain,
+        identity receiver,
+        uint32 sequence,
+        uint64 nonce,
+        bytes memory rawMessage,
+        string memory errorMsg
+    ) external onlySubProtocol {
+        (, bytes memory message) = _decodeMonitorMessage(rawMessage);
+        IContractWithAcks(receiverID).ackOnError(
+            messageId, receiverDomain, receiver, sequence, nonce, message, errorMsg
+        );
     }
 
     function _encodeMonitorMessage(uint32 monitorType, bytes memory message) internal pure returns (bytes memory) {
@@ -109,8 +300,32 @@ contract Monitor is Ownable {
         return rawMessage;
     }
 
+    function _decodeMonitorMessage(bytes memory rawMessage)
+        internal
+        pure
+        returns (uint32 monitorType, bytes memory message)
+    {
+        uint256 offset = rawMessage.length;
+        require(offset >= 68, "Monitor: malformed monitor message");
+
+        monitorType = BytesToTypes.bytesToUint32(offset, rawMessage);
+        require(
+            monitorType == MONITOR_CLOSE || monitorType == MONITOR_OPEN || monitorType == MONITOR_ROLLBACK,
+            "Monitor: invalid monitor type"
+        );
+        offset -= SizeOf.sizeOfUint(32);
+
+        bytes memory monitorMsg = BytesToTypes.bytesToVarBytes(offset, rawMessage);
+        uint256 monitorMsgSize = SizeOf.sizeOfBytes(monitorMsg);
+        require(offset >= monitorMsgSize, "Monitor: malformed monitor metadata");
+        offset -= monitorMsgSize;
+
+        message = BytesToTypes.bytesToVarBytes(offset, rawMessage);
+        require(offset == SizeOf.sizeOfBytes(message), "Monitor: trailing monitor message data");
+    }
+
     function preMonitoring(identity receiverID) external view returns (bool) {
-        return _preMonitoring(receiverID);
+        return monitorControl != MONITOR_OPEN || _preMonitoring(msg.sender, receiverID);
     }
 
     function recvMonitorOrder(
@@ -135,9 +350,8 @@ contract Monitor is Ownable {
         receiverBlacklist[receiver] = blocked;
     }
 
-    function _preMonitoring(identity receiverID) internal view returns (bool) {
-        require(monitorControl != MONITOR_CLOSE, "Monitor: monitor closed");
-        if (senderBlacklist[bytes32(msg.sender)]) {
+    function _preMonitoring(identity senderID, identity receiverID) internal view returns (bool) {
+        if (senderBlacklist[bytes32(senderID)]) {
             return false;
         }
         if (receiverBlacklist[bytes32(receiverID)]) {

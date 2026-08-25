@@ -26,9 +26,10 @@ import org.slf4j.Logger;
 @Setter
 public class MonitorContractClientEVM {
 
-    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 3;
+    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 5;
 
     private static final String MONITOR_EVM_CONTRACT_PREFIX = "MONITOR_EVM_CONTRACT_";
+    private static final String MONITOR_EVM_RUNTIME_PATH = "/contract/v1/solidity/Monitor.bin-runtime";
     private static final String GET_IMPLEMENTATION_VERSION_SIGN = "getImplementationVersion()";
     private static final String GET_MONITOR_VERIFIER_SIGN = "getMonitorVerifier()";
     private static final String SET_SDP_ADDRESS_SIGN = "setSdpAddress(identity)";
@@ -108,6 +109,42 @@ public class MonitorContractClientEVM {
         }
     }
 
+    /**
+     * Upgrade a legacy Monitor in place so that its identity, verifier,
+     * protocol wiring and policy state are preserved. Monitor V4 only appends
+     * receive-side entry points and does not change the existing storage
+     * layout. Monitor V5 additionally routes SDP V2/V3 request and ACK paths
+     * through the same monitor envelope used by V1, and exposes matching
+     * receive-side entry points for all three SDP versions.
+     */
+    public boolean ensureImplementationSupported() {
+        if (isImplementationVersionSupported()) {
+            return true;
+        }
+        if (StrUtil.isEmpty(this.contractAddress)) {
+            logger.error("cannot upgrade an empty monitor contract");
+            return false;
+        }
+
+        logger.info(
+                "Upgrade legacy Monitor {} with runtime {}",
+                this.contractAddress,
+                MONITOR_EVM_RUNTIME_PATH);
+        if (!mychain020Client.upgradeContract(
+                MONITOR_EVM_RUNTIME_PATH,
+                this.contractAddress,
+                VMTypeEnum.EVM)) {
+            logger.error("failed to upgrade legacy Monitor {}", this.contractAddress);
+            return false;
+        }
+
+        boolean supported = isImplementationVersionSupported();
+        if (!supported) {
+            logger.error("Monitor {} is still unsupported after upgrade", this.contractAddress);
+        }
+        return supported;
+    }
+
     public Identity getMonitorVerifierIdentity() {
         TransactionReceipt receipt = mychain020Client.localCallContract(
                 this.contractAddress,
@@ -122,11 +159,6 @@ public class MonitorContractClientEVM {
                     "monitor verifier identity is unavailable");
         }
         return new Identity(new Hash(receipt.getOutput()));
-    }
-
-    public void resetDeployment() {
-        this.contractAddress = null;
-        this.status = null;
     }
 
     public void setProtocol(String sdpContractName) {

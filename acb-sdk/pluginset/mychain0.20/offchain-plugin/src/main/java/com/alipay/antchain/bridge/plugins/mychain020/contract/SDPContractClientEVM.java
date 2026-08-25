@@ -32,10 +32,11 @@ public class SDPContractClientEVM extends SDPContract implements AbstractSDPCont
     private static final String SDP_EVM_CONTRACT_PREFIX = "SDP_EVM_CONTRACT_";
 
     private static final String SDP_EVM_RUNTIME_PATH = "/contract/v1/solidity/SDPMsg.bin-runtime";
+    public static final int SUPPORTED_MONITOR_ROUTING_VERSION = 4;
 
     private static final String SET_AM_CONTRACT_AND_DOMAIN_SIGN = "SetAmContractAndDomain(identity,string)";
     private static final String SET_MONITOR_CONTRACT_SIGN = "setMonitorContract(identity)";
-    private static final String GET_MONITOR_CONTRACT_SIGN = "monitorAddress()";
+    private static final String GET_MONITOR_ROUTING_VERSION_SIGN = "getMonitorRoutingVersion()";
     private static final String RECV_OFF_CHAIN_EXCEPTION_SIGN = "recvOffChainException(bytes32,bytes)";
     private static final String UPDATE_VERIFIED_INFO_SIGN = "updateVerifiedInfo(string,bytes32,uint64,uint64)";
     private static final String QUERY_VALIDATED_BLOCK_STATE_BY_DOMAIN_SIGN = "queryValidatedBlockStateByDomain(string)";
@@ -120,7 +121,7 @@ public class SDPContractClientEVM extends SDPContract implements AbstractSDPCont
         try {
             TransactionReceipt receipt = mychain020Client.localCallContract(
                     this.getContractAddress(),
-                    new EVMParameter(GET_MONITOR_CONTRACT_SIGN));
+                    new EVMParameter(GET_MONITOR_ROUTING_VERSION_SIGN));
             if (ObjectUtil.isEmpty(receipt)) {
                 throw new IllegalStateException("empty sdp capability probe receipt");
             }
@@ -134,7 +135,8 @@ public class SDPContractClientEVM extends SDPContract implements AbstractSDPCont
                                 "unexpected sdp capability probe result: {}",
                                 receipt.getResult()));
             }
-            return true;
+            BigInteger version = new EVMOutput(Hex.toHexString(receipt.getOutput())).getUint();
+            return BigInteger.valueOf(SUPPORTED_MONITOR_ROUTING_VERSION).equals(version);
         } catch (Exception e) {
             throw new IllegalStateException(
                     StrUtil.format(

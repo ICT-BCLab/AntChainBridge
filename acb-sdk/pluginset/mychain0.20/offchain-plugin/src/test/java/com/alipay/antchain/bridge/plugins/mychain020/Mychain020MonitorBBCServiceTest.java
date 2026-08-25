@@ -114,7 +114,7 @@ public class Mychain020MonitorBBCServiceTest {
     public void setupMonitorContractShouldUpgradeLegacyMonitorContracts() {
         when(monitorContractClientEVM.getContractAddress())
                 .thenReturn("legacy_monitor_contract", MONITOR_CONTRACT);
-        when(monitorContractClientEVM.isImplementationVersionSupported()).thenReturn(false);
+        when(monitorContractClientEVM.ensureImplementationSupported()).thenReturn(true);
         when(monitorVerifierContractEVM.deployContract()).thenReturn(true);
         when(monitorContractClientEVM.deployContract()).thenReturn(true);
         when(monitorVerifierContractEVM.getContractAddress()).thenReturn(MONITOR_VERIFIER_CONTRACT);
@@ -124,8 +124,7 @@ public class Mychain020MonitorBBCServiceTest {
 
         service.setupMonitorContract();
 
-        verify(monitorContractClientEVM).isImplementationVersionSupported();
-        verify(monitorContractClientEVM).resetDeployment();
+        verify(monitorContractClientEVM).ensureImplementationSupported();
         verify(ptcContractEvm).ensureMonitorVerifierSupport();
         verify(monitorVerifierContractEVM).deployContract();
         verify(monitorContractClientEVM).deployContract();
@@ -139,15 +138,14 @@ public class Mychain020MonitorBBCServiceTest {
     @Test
     public void setupMonitorContractShouldReuseSupportedMonitorContracts() {
         when(monitorContractClientEVM.getContractAddress()).thenReturn(MONITOR_CONTRACT);
-        when(monitorContractClientEVM.isImplementationVersionSupported()).thenReturn(true);
+        when(monitorContractClientEVM.ensureImplementationSupported()).thenReturn(true);
         when(monitorVerifierContractEVM.deployContract()).thenReturn(true);
         when(monitorContractClientEVM.deployContract()).thenReturn(true);
         when(monitorVerifierContractEVM.getContractAddress()).thenReturn(MONITOR_VERIFIER_CONTRACT);
 
         service.setupMonitorContract();
 
-        verify(monitorContractClientEVM).isImplementationVersionSupported();
-        verify(monitorContractClientEVM, never()).resetDeployment();
+        verify(monitorContractClientEVM).ensureImplementationSupported();
         verify(monitorVerifierContractEVM, times(1)).deployContract();
         verify(monitorContractClientEVM, times(1)).deployContract();
     }
