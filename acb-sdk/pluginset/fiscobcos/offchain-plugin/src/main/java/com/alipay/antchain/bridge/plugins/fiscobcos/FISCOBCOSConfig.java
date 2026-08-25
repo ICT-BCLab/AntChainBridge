@@ -79,6 +79,17 @@ public class FISCOBCOSConfig {
     @JSONField
     private String accountFileFormat = "pem";
 
+    /**
+     * Optional explicit account file. FISCO SDK v3 does not select a PEM from
+     * {@link #keyStoreDir} unless an account address is also configured, so a
+     * production BBC should set this field to a root-only PEM path.
+     */
+    @JSONField
+    private String accountFilePath;
+
+    @JSONField
+    private String accountPassword = "";
+
     // client
     @JSONField
     private String groupID;
@@ -89,6 +100,9 @@ public class FISCOBCOSConfig {
 
     @JSONField
     private String sdpContractAddressDeployed;
+
+    @JSONField
+    private String monitorContractAddressDeployed;
     
     @JSONField
     private String ptcHubContractAddressDeployed;

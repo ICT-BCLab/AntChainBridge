@@ -58,6 +58,7 @@ import org.fisco.bcos.sdk.transaction.model.dto.TransactionResponse;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.Future;
 import java.util.stream.Collectors;
@@ -69,6 +70,10 @@ import static com.alipay.antchain.bridge.plugins.fiscobcos3.abi.AuthMsg.SENDAUTH
 public class FISCOBCOSBBCService extends AbstractBBCService {
 
     static private String TX_RECEIPT_STATUS_SUCCESS = "0x0";
+
+    private static final BigInteger SDP_MONITOR_ROUTING_VERSION = BigInteger.valueOf(2L);
+
+    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(2L);
 
     private FISCOBCOSConfig config;
 
@@ -670,9 +675,15 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         }
         if (ObjectUtil.isNotNull(this.bbcContext.getSdpContract())
                 && StrUtil.isNotEmpty(this.bbcContext.getSdpContract().getContractAddress())) {
-            // If the contract has been pre-deployed and the contract address is configured in the configuration file,
-            // there is no need to redeploy.
-            return;
+            try {
+                assertSdpMonitorRoutingSupported(
+                        this.bbcContext.getSdpContract().getContractAddress());
+                return;
+            } catch (IllegalStateException e) {
+                getBBCLogger().warn(
+                        "replace legacy FISCO SDP {} during explicit BBC reconciliation",
+                        this.bbcContext.getSdpContract().getContractAddress());
+            }
         }
 
         // 2. deploy contract
@@ -692,6 +703,9 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             sdpContract.setContractAddress(sdpMsg.getContractAddress());
             sdpContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
             bbcContext.setSdpContract(sdpContract);
+            config.setSdpContractAddressDeployed(sdpMsg.getContractAddress());
+            bbcContext.setConfForBlockchainClient(
+                    config.toJsonString().getBytes(StandardCharsets.UTF_8));
             getBBCLogger().info("setup sdp contract successful: {}", sdpMsg.getContractAddress());
         } else {
             throw new RuntimeException("failed to get deploy sdpMsg tx receipt");
@@ -883,7 +897,15 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         }
         if (ObjectUtil.isNotNull(this.bbcContext.getMonitorContract())
                 && StrUtil.isNotEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
-            return;
+            try {
+                assertMonitorImplementationSupported(
+                        this.bbcContext.getMonitorContract().getContractAddress());
+                return;
+            } catch (IllegalStateException e) {
+                getBBCLogger().warn(
+                        "replace legacy FISCO Monitor {} during explicit BBC reconciliation",
+                        this.bbcContext.getMonitorContract().getContractAddress());
+            }
         }
 
         // 1. Deploy MonitorVerifier
@@ -956,6 +978,46 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
         getBBCLogger().info("setupMonitorContract done. Monitor={}, MonitorVerifier={}",
                 monitorAddress, monitorVerifierAddress);
+    }
+
+    private void assertSdpMonitorRoutingSupported(String sdpAddress) {
+        try {
+            SDPMsg sdp = SDPMsg.load(sdpAddress, client, keyPair);
+            BigInteger routingVersion = sdp.getMonitorRoutingVersion();
+            if (!SDP_MONITOR_ROUTING_VERSION.equals(routingVersion)) {
+                throw new IllegalStateException(
+                        String.format(
+                                "unsupported SDP monitor routing version %s at %s",
+                                routingVersion,
+                                sdpAddress));
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    String.format(
+                            "FISCO SDP %s predates V1/V2 receive-side Monitor routing",
+                            sdpAddress),
+                    e);
+        }
+    }
+
+    private void assertMonitorImplementationSupported(String monitorAddress) {
+        try {
+            Monitor monitor = Monitor.load(monitorAddress, client, keyPair);
+            BigInteger implementationVersion = monitor.getImplementationVersion();
+            if (!MONITOR_IMPLEMENTATION_VERSION.equals(implementationVersion)) {
+                throw new IllegalStateException(
+                        String.format(
+                                "unsupported Monitor implementation version %s at %s",
+                                implementationVersion,
+                                monitorAddress));
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    String.format(
+                            "FISCO Monitor %s lacks exact envelope decode and receive-side routing",
+                            monitorAddress),
+                    e);
+        }
     }
 
     @Override

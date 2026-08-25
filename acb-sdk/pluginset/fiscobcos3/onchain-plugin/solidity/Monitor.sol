@@ -3,8 +3,12 @@ pragma solidity ^0.4.22;
 pragma experimental ABIEncoderV2;
 
 import "./interfaces/ISDPMessage.sol";
+import "./interfaces/IContractUsingSDP.sol";
 import "./interfaces/IMonitorVerifier.sol";
 import "./lib/utils/Ownable.sol";
+import "./lib/utils/BytesToTypes.sol";
+import "./lib/utils/SizeOf.sol";
+import "./lib/utils/TypesToBytes.sol";
 
 /**
  * @dev Monitor contract for FISCO BCOS cross-chain monitoring.
@@ -19,6 +23,7 @@ import "./lib/utils/Ownable.sol";
  */
 contract Monitor is Ownable {
 
+    uint32 constant IMPLEMENTATION_VERSION = 2;
     uint32 constant MONITOR_CLOSE    = 1;
     uint32 constant MONITOR_OPEN     = 2;
     uint32 constant MONITOR_ROLLBACK = 3;
@@ -41,9 +46,19 @@ contract Monitor is Ownable {
     event MonitorOrderApplied(uint32 orderType, bytes orderData);
     event MessageSent(address indexed sender, string receiverDomain, bytes32 receiverID);
     event MessageBlocked(address indexed sender, string receiverDomain, bytes32 receiverID, string reason);
+    event MessageReceived(string senderDomain, bytes32 indexed sender, address indexed receiver, uint32 monitorType, bool unordered);
+
+    modifier onlySubProtocol() {
+        require(msg.sender == sdpAddress, "Monitor: sender is not sdp");
+        _;
+    }
 
     constructor() public {
         monitorControl = MONITOR_OPEN;
+    }
+
+    function getImplementationVersion() external pure returns (uint32) {
+        return IMPLEMENTATION_VERSION;
     }
 
     function setSdpAddress(address _sdpAddress) external onlyOwner {
@@ -57,6 +72,10 @@ contract Monitor is Ownable {
     }
 
     function setMonitorControl(uint32 _control) external onlyOwner {
+        require(
+            _control == MONITOR_CLOSE || _control == MONITOR_OPEN || _control == MONITOR_ROLLBACK,
+            "Monitor: invalid monitor control"
+        );
         monitorControl = _control;
     }
 
@@ -69,21 +88,104 @@ contract Monitor is Ownable {
         bytes32 receiverID,
         bytes message
     ) external {
-        require(monitorControl != MONITOR_CLOSE, "Monitor: cross-chain messaging is closed");
-
-        bytes32 senderKey = bytes32(uint256(msg.sender));
-        if (senderBlacklist[senderKey]) {
-            emit MessageBlocked(msg.sender, receiverDomain, receiverID, "sender blacklisted");
-            revert("Monitor: sender is in blacklist");
+        if (monitorControl == MONITOR_OPEN) {
+            bytes32 senderKey = bytes32(uint256(msg.sender));
+            if (senderBlacklist[senderKey]) {
+                emit MessageBlocked(msg.sender, receiverDomain, receiverID, "sender blacklisted");
+                revert("Monitor: sender is in blacklist");
+            }
+            if (receiverBlacklist[receiverID]) {
+                emit MessageBlocked(msg.sender, receiverDomain, receiverID, "receiver blacklisted");
+                revert("Monitor: receiver is in blacklist");
+            }
         }
-        if (receiverBlacklist[receiverID]) {
-            emit MessageBlocked(msg.sender, receiverDomain, receiverID, "receiver blacklisted");
-            revert("Monitor: receiver is in blacklist");
-        }
 
+        bytes memory rawMonitorMessage = _encodeMonitorMessage(monitorControl, message);
         emit MessageSent(msg.sender, receiverDomain, receiverID);
+        ISDPMessage(sdpAddress).sendMessage(receiverDomain, receiverID, msg.sender, rawMonitorMessage);
+    }
 
-        ISDPMessage(sdpAddress).sendMessage(receiverDomain, receiverID, msg.sender, message);
+    function sendUnorderedMonitorMessage(
+        string receiverDomain,
+        bytes32 receiverID,
+        bytes message
+    ) external {
+        if (monitorControl == MONITOR_OPEN) {
+            bytes32 senderKey = bytes32(uint256(msg.sender));
+            require(!senderBlacklist[senderKey], "Monitor: sender is in blacklist");
+            require(!receiverBlacklist[receiverID], "Monitor: receiver is in blacklist");
+        }
+
+        bytes memory rawMonitorMessage = _encodeMonitorMessage(monitorControl, message);
+        emit MessageSent(msg.sender, receiverDomain, receiverID);
+        ISDPMessage(sdpAddress).sendUnorderedMessage(receiverDomain, receiverID, msg.sender, rawMonitorMessage);
+    }
+
+    function recvMessageFromSDP(
+        string senderDomain,
+        bytes32 author,
+        address receiverID,
+        bytes rawMessage
+    ) external onlySubProtocol {
+        uint32 monitorType;
+        bytes memory message;
+        (monitorType, message) = _decodeMonitorMessage(rawMessage);
+        IContractUsingSDP(receiverID).recvMessage(senderDomain, author, message);
+        emit MessageReceived(senderDomain, author, receiverID, monitorType, false);
+    }
+
+    function recvUnorderedMessageFromSDP(
+        string senderDomain,
+        bytes32 author,
+        address receiverID,
+        bytes rawMessage
+    ) external onlySubProtocol {
+        uint32 monitorType;
+        bytes memory message;
+        (monitorType, message) = _decodeMonitorMessage(rawMessage);
+        IContractUsingSDP(receiverID).recvUnorderedMessage(senderDomain, author, message);
+        emit MessageReceived(senderDomain, author, receiverID, monitorType, true);
+    }
+
+    function _encodeMonitorMessage(uint32 monitorType, bytes message) internal pure returns (bytes memory) {
+        bytes memory monitorMsg = new bytes(0);
+        uint256 monitorMsgSize = SizeOf.sizeOfBytes(monitorMsg);
+        uint256 messageSize = SizeOf.sizeOfBytes(message);
+        bytes memory rawMessage = new bytes(4 + monitorMsgSize + messageSize);
+        uint256 offset = rawMessage.length;
+
+        TypesToBytes.uint32ToBytes(offset, monitorType, rawMessage);
+        offset -= SizeOf.sizeOfUint(32);
+
+        TypesToBytes.stringToBytes(offset, monitorMsg, rawMessage);
+        offset -= monitorMsgSize;
+
+        TypesToBytes.stringToBytes(offset, message, rawMessage);
+        return rawMessage;
+    }
+
+    function _decodeMonitorMessage(bytes rawMessage)
+        internal
+        pure
+        returns (uint32 monitorType, bytes memory message)
+    {
+        uint256 offset = rawMessage.length;
+        require(offset >= 68, "Monitor: malformed monitor message");
+
+        monitorType = BytesToTypes.bytesToUint32(offset, rawMessage);
+        require(
+            monitorType == MONITOR_CLOSE || monitorType == MONITOR_OPEN || monitorType == MONITOR_ROLLBACK,
+            "Monitor: invalid monitor type"
+        );
+        offset -= SizeOf.sizeOfUint(32);
+
+        bytes memory monitorMsg = BytesToTypes.bytesToVarBytes(offset, rawMessage);
+        uint256 monitorMsgSize = SizeOf.sizeOfBytes(monitorMsg);
+        require(offset >= monitorMsgSize, "Monitor: malformed monitor metadata");
+        offset -= monitorMsgSize;
+
+        message = BytesToTypes.bytesToVarBytes(offset, rawMessage);
+        require(offset == SizeOf.sizeOfBytes(message), "Monitor: trailing monitor message data");
     }
 
     /**
