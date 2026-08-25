@@ -235,6 +235,11 @@ public class Mychain020BBCService extends AbstractBBCService {
             throw new RuntimeException("[Mychain020BBCService] empty bbc context");
         }
 
+        // setup-bbccontracts is repeatable and is also used to reconcile
+        // upgraded system contracts. Do not downgrade a fully wired SDP to
+        // CONTRACT_DEPLOYED merely because its address already exists.
+        boolean sdpWasReady = context.isSDPReady(mychain020Client.isTeeChain());
+
         try {
 
             if (mychain020Client.isTeeChain()) {
@@ -294,7 +299,9 @@ public class Mychain020BBCService extends AbstractBBCService {
                             MychainUtils.contractAddrFormat(
                                     context.getSdpContractClientEVM().getContractAddress(),
                                     context.getSdpContractClientWASM().getContractAddress()),
-                            ContractStatusEnum.CONTRACT_DEPLOYED)
+                            sdpWasReady
+                                    ? ContractStatusEnum.CONTRACT_READY
+                                    : ContractStatusEnum.CONTRACT_DEPLOYED)
                     );
                 }
             }
@@ -1071,6 +1078,11 @@ public class Mychain020BBCService extends AbstractBBCService {
 
             if (StrUtil.isEmpty(context.getPtcContractEvm().getContractAddress())) {
                 throw new RuntimeException("empty ptc hub contract in context after deployment");
+            }
+
+            if (!context.getPtcContractEvm().reconcileRootBcdnsCert(
+                    this.mychain020Client.getConfig().getBcdnsRootCertPem())) {
+                throw new RuntimeException("reconcile ptc hub BCDNS root failed");
             }
 
             PTCContract ptcContract = new PTCContract();

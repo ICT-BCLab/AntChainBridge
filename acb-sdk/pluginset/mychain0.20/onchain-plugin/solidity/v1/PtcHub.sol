@@ -49,6 +49,20 @@ contract PtcHub is IPtcHub, Ownable {
         _initBcdns(rawRootBcdnsCert);
     }
 
+    function getImplementationVersion() external pure returns (uint32) {
+        return 2;
+    }
+
+    /**
+     * Reconcile a legacy deployment with the BCDNS root used by the current
+     * Relayer. Runtime upgrades preserve storage and do not run constructors,
+     * so an explicit owner-only operation is required when the configured root
+     * changed after the PTC Hub was first deployed.
+     */
+    function reconcileRootBcdnsCert(bytes calldata rawRootBcdnsCert) external onlyOwner {
+        _initBcdns(rawRootBcdnsCert);
+    }
+
     function _initBcdns(bytes memory rawRootBcdnsCert) internal {
         CrossChainCertificate memory rootBcdnsCert = AcbCommons
             .decodeCrossChainCertificateFrom(rawRootBcdnsCert);

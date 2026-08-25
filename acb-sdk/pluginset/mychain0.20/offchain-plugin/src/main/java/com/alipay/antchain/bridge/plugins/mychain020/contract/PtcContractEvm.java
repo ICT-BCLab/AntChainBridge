@@ -57,6 +57,10 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
 
     private static final String GET_MONITOR_VERIFIER_SIGN = "getMonitorVerifier()";
 
+    private static final String GET_IMPLEMENTATION_VERSION_SIGN = "getImplementationVersion()";
+
+    private static final BigInteger ROOT_RECONCILIATION_IMPLEMENTATION_VERSION = BigInteger.valueOf(2L);
+
     private static final long LEGACY_METHOD_NOT_FOUND_RESULT = 10201L;
 
     private Mychain020Client mychain020Client;
@@ -127,6 +131,65 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
 
         logger.info("Update PTC trust root {} with tx {} successfully!",
                 ptcTrustRoot.getPtcCredentialSubject().getApplicant().toHex(), result.getTxId());
+    }
+
+    public boolean reconcileRootBcdnsCert(String bcdnsRootCertPem) {
+        if (!ensureRootReconciliationSupport()) {
+            return false;
+        }
+        AbstractCrossChainCertificate bcdnsRootCert =
+                CrossChainCertificateUtil.readCrossChainCertificateFromPem(bcdnsRootCertPem.getBytes());
+        if (bcdnsRootCert.getType() != CrossChainCertificateTypeEnum.BCDNS_TRUST_ROOT_CERTIFICATE) {
+            throw new IllegalArgumentException("PTC hub requires a BCDNS trust root certificate");
+        }
+
+        EVMParameter parameters = new EVMParameter("reconcileRootBcdnsCert(bytes)");
+        parameters.addBytes(bcdnsRootCert.encode());
+        SendResponseResult result = mychain020Client.callContract(this.getContractAddress(), parameters, true);
+        if (!result.isSuccess()) {
+            throw new CallContractException(getContractAddress(), result.getTxId(), result.getErrorMessage());
+        }
+        logger.info("Reconciled PTC hub {} with the configured BCDNS root in tx {}",
+                getContractAddress(), result.getTxId());
+        return true;
+    }
+
+    public boolean ensureRootReconciliationSupport() {
+        if (StrUtil.isEmpty(this.getContractAddress())) {
+            return false;
+        }
+        BigInteger version = queryImplementationVersion();
+        if (version.compareTo(ROOT_RECONCILIATION_IMPLEMENTATION_VERSION) >= 0) {
+            return true;
+        }
+
+        logger.info("Upgrade legacy PTC hub {} for BCDNS root reconciliation", getContractAddress());
+        if (!mychain020Client.upgradeContract(
+                PTC_HUB_EVM_RUNTIME_PATH,
+                getContractAddress(),
+                VMTypeEnum.EVM)) {
+            logger.error("failed to upgrade PTC hub {} for BCDNS root reconciliation", getContractAddress());
+            return false;
+        }
+        return queryImplementationVersion().compareTo(ROOT_RECONCILIATION_IMPLEMENTATION_VERSION) >= 0;
+    }
+
+    private BigInteger queryImplementationVersion() {
+        TransactionReceipt receipt = mychain020Client.localCallContract(
+                this.getContractAddress(),
+                new EVMParameter(GET_IMPLEMENTATION_VERSION_SIGN));
+        if (ObjectUtil.isEmpty(receipt)) {
+            throw new IllegalStateException("empty PTC hub implementation-version receipt");
+        }
+        if (receipt.getResult() == LEGACY_METHOD_NOT_FOUND_RESULT) {
+            return BigInteger.ZERO;
+        }
+        if (receipt.getResult() != ErrorCode.SUCCESS.getErrorCode()
+                || ObjectUtil.isEmpty(receipt.getOutput())) {
+            throw new IllegalStateException(
+                    StrUtil.format("unexpected PTC hub implementation-version result: {}", receipt.getResult()));
+        }
+        return new BigInteger(1, receipt.getOutput());
     }
 
     public void setCommitteeVerifier(String committeeVerifierName) {

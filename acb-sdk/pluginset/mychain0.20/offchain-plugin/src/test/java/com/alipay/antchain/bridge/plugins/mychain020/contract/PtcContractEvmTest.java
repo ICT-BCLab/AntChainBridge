@@ -98,4 +98,48 @@ public class PtcContractEvmTest {
         Assert.assertNotNull(PtcContractEvm.class.getResourceAsStream(
                 "/contract/v1/solidity/PtcHub.bin-runtime"));
     }
+
+    @Test
+    public void shouldUpgradeLegacyPtcHubForRootReconciliation() {
+        Mychain020Client client = mock(Mychain020Client.class);
+        TransactionReceipt legacyReceipt = mock(TransactionReceipt.class);
+        TransactionReceipt upgradedReceipt = mock(TransactionReceipt.class);
+        when(legacyReceipt.getResult()).thenReturn(10201L);
+        when(upgradedReceipt.getResult()).thenReturn((long) ErrorCode.SUCCESS.getErrorCode());
+        when(upgradedReceipt.getOutput()).thenReturn(new byte[] {2});
+        when(client.localCallContract(eq("legacy_root_ptc_hub"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(legacyReceipt, upgradedReceipt);
+        when(client.upgradeContract(
+                "/contract/v1/solidity/PtcHub.bin-runtime",
+                "legacy_root_ptc_hub",
+                VMTypeEnum.EVM)).thenReturn(true);
+
+        PtcContractEvm contract = new PtcContractEvm(client, mock(Logger.class));
+        contract.setContractAddress("legacy_root_ptc_hub");
+
+        Assert.assertTrue(contract.ensureRootReconciliationSupport());
+        verify(client).upgradeContract(
+                "/contract/v1/solidity/PtcHub.bin-runtime",
+                "legacy_root_ptc_hub",
+                VMTypeEnum.EVM);
+    }
+
+    @Test
+    public void shouldKeepCurrentPtcHubForRootReconciliation() {
+        Mychain020Client client = mock(Mychain020Client.class);
+        TransactionReceipt receipt = mock(TransactionReceipt.class);
+        when(receipt.getResult()).thenReturn((long) ErrorCode.SUCCESS.getErrorCode());
+        when(receipt.getOutput()).thenReturn(new byte[] {2});
+        when(client.localCallContract(eq("current_root_ptc_hub"), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(receipt);
+
+        PtcContractEvm contract = new PtcContractEvm(client, mock(Logger.class));
+        contract.setContractAddress("current_root_ptc_hub");
+
+        Assert.assertTrue(contract.ensureRootReconciliationSupport());
+        verify(client, org.mockito.Mockito.never()).upgradeContract(
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(VMTypeEnum.class));
+    }
 }
