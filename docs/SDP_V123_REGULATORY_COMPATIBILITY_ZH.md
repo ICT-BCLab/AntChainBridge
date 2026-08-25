@@ -71,6 +71,18 @@ Verifier 虽然地址双向绑定正确，但没有历史 TPBTA 的监管节点�
 从而保留既有背书状态。已产生空 Verifier 的环境必须在审计后将新 Monitor 和 PTC Hub 同时绑定
 回旧 Verifier；只修改其中一侧会留下不一致状态。
 
+### 4.6 V0 目标链被误走 PTC Hub 同步
+
+发送链存在 BTA 时，Relayer 需要把该链的 TPBTA 同步到支持链上 PTC Hub 的接收链。旧判断只
+看发送链是否有 BTA，没有再检查接收链是否真的配置了 PTC Hub。Dioxide 当前使用 V0 BBC 与
+原生 SDP V1，`ptc_contract` 为空；因此 Ethereum 到 Dioxide 的消息在监管已批准后仍会被
+`hasTpBta` 的“不支持 V1 BBC 接口”异常阻断，根本没有进入 `relayAuthMessage`。
+
+修复后仍以发送链 BTA 决定是否需要可信同步，但在同步前先读取目标链 BBC Context。只有目标链
+存在非空 PTC 合约时才执行 `hasTpBta/addTpBta`；没有 PTC Hub 的 V0 目标按其原生 AM 路径继续
+提交。这个判断不降低 Ethereum、FISCO、Mychain 之间的可信校验，它们的目标链 Context 都包含
+已配置 PTC Hub。
+
 ## 5. 部署与升级顺序
 
 1. 备份当前插件 JAR、Relayer 链配置与合约地址。
@@ -79,6 +91,9 @@ Verifier 虽然地址双向绑定正确，但没有历史 TPBTA 的监管节点�
 4. 对目标链执行一次 `setup-bbccontracts`；根据插件能力原位升级旧运行码，或部署新 Monitor 并重建绑定。不要假设所有链的地址都会保持不变。
 5. 读取 Monitor/SDP/PTC 实现版本与绑定关系，再发起新的链上验收交易。
 6. 分别使用监管关闭和监管开启模式发送 V1/V2/V3，同时验证源交易、Relayer 归档、监管结果、目标交易和业务 payload。
+
+对 Dioxide 还应确认 `get-blockchain-contracts` 的 `ptc_contract` 为 `empty`。这是当前 V0/V1
+原生路径的能力声明，不应通过伪地址强行开启 PTC Hub 接口。
 
 不要只以“目标交易 success”作为验收标准；必须读取目标业务合约的事件或状态，确认 payload 没有 Monitor 外层且逐字节一致。
 

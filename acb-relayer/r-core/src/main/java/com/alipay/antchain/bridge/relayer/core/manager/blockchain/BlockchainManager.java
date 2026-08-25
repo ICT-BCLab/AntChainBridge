@@ -566,8 +566,33 @@ public class BlockchainManager implements IBlockchainManager {
         // source blockchain is trust-enabled, and the subsequent target-chain
         // submission then fails with "tpbta not found".
         if (blockchainRepository.hasBta(new CrossChainDomain(sdpMsgWrapper.getSenderBlockchainDomain()))) {
+            AbstractBlockchainClient receivingClient = blockchainClientPool.getClient(
+                    sdpMsgWrapper.getReceiverBlockchainProduct(),
+                    sdpMsgWrapper.getReceiverBlockchainId()
+            );
+            if (ObjectUtil.isNotNull(receivingClient)
+                    && !hasConfiguredPtcContract(receivingClient.queryBBCContext())) {
+                // Some V0 BBC implementations (currently Dioxide) intentionally
+                // verify the relayed AM without an on-chain PTC Hub. Calling the
+                // V1 hasTpBta API for those targets fails before relayAuthMessage
+                // can run. Trust synchronization is only applicable when the
+                // receiving chain actually exposes a configured PTC contract.
+                log.info(
+                        "receiving blockchain {}-{} has no configured ptc contract, skip tpbta upload check",
+                        sdpMsgWrapper.getReceiverBlockchainProduct(),
+                        sdpMsgWrapper.getReceiverBlockchainId()
+                );
+                return;
+            }
             checkTpBtaReadyOnReceivingChain(sdpMsgWrapper, tpProof);
         }
+    }
+
+    static boolean hasConfiguredPtcContract(AbstractBBCContext bbcContext) {
+        return ObjectUtil.isNotNull(bbcContext)
+                && ObjectUtil.isNotNull(bbcContext.getPtcContract())
+                && StrUtil.isNotBlank(bbcContext.getPtcContract().getContractAddress())
+                && !"empty".equalsIgnoreCase(bbcContext.getPtcContract().getContractAddress());
     }
 
     @Override

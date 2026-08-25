@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.alipay.antchain.bridge.commons.bbc.DefaultBBCContext;
+import com.alipay.antchain.bridge.commons.bbc.syscontract.PTCContract;
 import com.alipay.antchain.bridge.commons.core.base.CrossChainDomain;
 import com.alipay.antchain.bridge.commons.core.ptc.ThirdPartyProof;
 import com.alipay.antchain.bridge.commons.core.sdp.SDPMessageV1;
@@ -36,6 +37,24 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class BlockchainManagerTest {
+
+    @Test
+    public void hasConfiguredPtcContractShouldRejectLegacyTargetWithoutPtcHub() {
+        Assert.assertFalse(BlockchainManager.hasConfiguredPtcContract(null));
+        Assert.assertFalse(BlockchainManager.hasConfiguredPtcContract(new DefaultBBCContext()));
+
+        DefaultBBCContext emptyContext = new DefaultBBCContext();
+        PTCContract emptyPtc = new PTCContract();
+        emptyPtc.setContractAddress("empty");
+        emptyContext.setPtcContract(emptyPtc);
+        Assert.assertFalse(BlockchainManager.hasConfiguredPtcContract(emptyContext));
+
+        DefaultBBCContext configuredContext = new DefaultBBCContext();
+        PTCContract configuredPtc = new PTCContract();
+        configuredPtc.setContractAddress("ptc-contract-address");
+        configuredContext.setPtcContract(configuredPtc);
+        Assert.assertTrue(BlockchainManager.hasConfiguredPtcContract(configuredContext));
+    }
 
     @Test
     public void checkTpBtaReadyShouldCheckSendingBlockchainBta() throws Exception {
