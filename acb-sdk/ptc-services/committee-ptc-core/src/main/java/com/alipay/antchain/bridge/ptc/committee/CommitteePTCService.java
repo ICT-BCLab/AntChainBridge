@@ -695,15 +695,24 @@ public class CommitteePTCService implements IPTCService {
     }
 
     private ValidatedConsensusState collectValidatedConsensusStateResults(List<Future<ValidatedConsensusState>> resFutureList) {
-        List<ValidatedConsensusState> resList = resFutureList.stream().map(
-                future -> {
+        List<ValidatedConsensusState> resList = resFutureList.stream()
+                .map(future -> {
                     try {
                         return future.get();
                     } catch (Exception e) {
-                        throw new RuntimeException("failed to collect node proof from future object: ", e);
+                        // A committee may contain optional nodes that are temporarily unavailable
+                        // or lag behind the required nodes. Their failed futures must not abort the
+                        // whole round before the endorsement policy is evaluated below. Required
+                        // node failures are still rejected by checkEndorsementsOrThrow because the
+                        // resulting proof will be missing their signatures.
+                        log.warn("failed to collect a validated consensus state from committee node; "
+                                + "continue with successful endorsements and enforce the TpBTA policy: {}",
+                                e.getMessage());
+                        return null;
                     }
-                }
-        ).collect(Collectors.toList());
+                })
+                .filter(ObjectUtil::isNotNull)
+                .collect(Collectors.toList());
         if (ObjectUtil.isEmpty(resList)) {
             throw new RuntimeException(
                     StrUtil.format("none endorsements received with {} nodes active",
@@ -734,10 +743,12 @@ public class CommitteePTCService implements IPTCService {
                     try {
                         return future.get();
                     } catch (Exception e) {
-                        throw new RuntimeException("failed to collect node proof from future object: ", e);
+                        log.warn("failed to collect a committee node proof; continue with successful "
+                                + "endorsements and enforce the TpBTA policy: {}", e.getMessage());
+                        return null;
                     }
                 }
-        ).collect(Collectors.toList());
+        ).filter(ObjectUtil::isNotNull).collect(Collectors.toList());
         if (ObjectUtil.isEmpty(resList)) {
             throw new RuntimeException(
                     StrUtil.format("none endorsements received with {} nodes active",
@@ -755,10 +766,17 @@ public class CommitteePTCService implements IPTCService {
                     try {
                         return future.get();
                     } catch (Exception e) {
-                        throw new RuntimeException("failed to collect node verification result from future object: ", e);
+                        // Optional committee nodes may not have indexed the requested consensus
+                        // state yet. Keep the successful results here and let
+                        // checkEndorsementsOrThrow enforce required endorsers and the optional
+                        // threshold. This is the same policy used when collecting consensus states.
+                        log.warn("failed to collect a committee node verification result; continue "
+                                + "with successful endorsements and enforce the TpBTA policy: {}",
+                                e.getMessage());
+                        return null;
                     }
                 }
-        ).collect(Collectors.toList());
+        ).filter(ObjectUtil::isNotNull).collect(Collectors.toList());
         if (ObjectUtil.isEmpty(results)) {
             throw new RuntimeException(
                     StrUtil.format("none endorsements received with {} nodes active",

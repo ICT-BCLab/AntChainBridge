@@ -16,16 +16,67 @@
 
 package com.alipay.antchain.bridge.relayer.core.manager.blockchain;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 import com.alipay.antchain.bridge.commons.bbc.DefaultBBCContext;
+import com.alipay.antchain.bridge.commons.core.base.CrossChainDomain;
+import com.alipay.antchain.bridge.commons.core.ptc.ThirdPartyProof;
+import com.alipay.antchain.bridge.commons.core.sdp.SDPMessageV1;
 import com.alipay.antchain.bridge.relayer.commons.constant.BlockchainStateEnum;
+import com.alipay.antchain.bridge.relayer.commons.model.AuthMsgWrapper;
 import com.alipay.antchain.bridge.relayer.commons.model.BlockchainMeta;
+import com.alipay.antchain.bridge.relayer.commons.model.SDPMsgWrapper;
+import com.alipay.antchain.bridge.relayer.dal.repository.IBlockchainRepository;
+import com.alipay.antchain.bridge.relayer.dal.repository.ICrossChainMessageRepository;
 import org.junit.Assert;
 import org.junit.Test;
 
 public class BlockchainManagerTest {
+
+    @Test
+    public void checkTpBtaReadyShouldCheckSendingBlockchainBta() throws Exception {
+        AtomicReference<CrossChainDomain> checkedDomain = new AtomicReference<>();
+        IBlockchainRepository blockchainRepository = (IBlockchainRepository) Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class[]{IBlockchainRepository.class},
+                (proxy, method, args) -> {
+                    if ("hasBta".equals(method.getName()) && args.length == 1) {
+                        checkedDomain.set((CrossChainDomain) args[0]);
+                        return false;
+                    }
+                    return defaultValue(method.getReturnType());
+                }
+        );
+        ICrossChainMessageRepository crossChainMessageRepository =
+                (ICrossChainMessageRepository) Proxy.newProxyInstance(
+                        getClass().getClassLoader(),
+                        new Class[]{ICrossChainMessageRepository.class},
+                        (proxy, method, args) -> "getTpProof".equals(method.getName())
+                                ? new ThirdPartyProof()
+                                : defaultValue(method.getReturnType())
+                );
+
+        AuthMsgWrapper authMsgWrapper = new AuthMsgWrapper();
+        authMsgWrapper.setDomain("source.example");
+        authMsgWrapper.setUcpId("ucp-test");
+        SDPMessageV1 sdpMessage = new SDPMessageV1();
+        sdpMessage.setTargetDomain(new CrossChainDomain("target.example"));
+        SDPMsgWrapper sdpMsgWrapper = new SDPMsgWrapper();
+        sdpMsgWrapper.setAuthMsgWrapper(authMsgWrapper);
+        sdpMsgWrapper.setSdpMessage(sdpMessage);
+
+        BlockchainManager blockchainManager = new BlockchainManager();
+        setField(blockchainManager, "blockchainRepository", blockchainRepository);
+        setField(blockchainManager, "crossChainMessageRepository", crossChainMessageRepository);
+
+        blockchainManager.checkTpBtaReadyOnReceivingChain(sdpMsgWrapper);
+
+        Assert.assertEquals(new CrossChainDomain("source.example"), checkedDomain.get());
+    }
 
     @Test
     public void updateBlockchainShouldPersistMergedProperties() {
@@ -96,5 +147,24 @@ public class BlockchainManagerTest {
             updatedMeta = blockchainMeta;
             return true;
         }
+    }
+
+    private static void setField(Object target, String name, Object value) throws Exception {
+        Field field = BlockchainManager.class.getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
+    }
+
+    private static Object defaultValue(Class<?> type) {
+        if (!type.isPrimitive()) {
+            return null;
+        }
+        if (type == boolean.class) {
+            return false;
+        }
+        if (type == char.class) {
+            return '\0';
+        }
+        return 0;
     }
 }
