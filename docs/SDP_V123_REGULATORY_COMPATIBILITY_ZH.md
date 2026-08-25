@@ -60,6 +60,17 @@ PTC Hub V2 增加 owner-only 的根证书对账入口；Mychain 插件在可重�
 
 旧 `setupSDPMessageContract()` 在合约已经完成绑定时仍把聚合状态写回 `CONTRACT_DEPLOYED`，使后续任务判断为“SDP not ready”。修复后，重复 setup 保留 `CONTRACT_READY`。
 
+### 4.5 替换 Monitor 时丢失既有监管节点背书
+
+MonitorVerifier 的 `monitorNodeEndorseInfoMap` 在 TPBTA 写入 PTC Hub 时同步生成。旧 FISCO
+升级流程在替换 Monitor 时同时部署了一个空 MonitorVerifier，再让已有 PTC Hub 指向它；新
+Verifier 虽然地址双向绑定正确，但没有历史 TPBTA 的监管节点背书，所有监管消息都会在目标链
+以 `MonitorVerifierMsg: no monitor node endorse info` 回滚。
+
+修复后的升级流程仅替换存在问题的 Monitor，并复用当前 PTC Hub 已绑定的旧 MonitorVerifier，
+从而保留既有背书状态。已产生空 Verifier 的环境必须在审计后将新 Monitor 和 PTC Hub 同时绑定
+回旧 Verifier；只修改其中一侧会留下不一致状态。
+
 ## 5. 部署与升级顺序
 
 1. 备份当前插件 JAR、Relayer 链配置与合约地址。
