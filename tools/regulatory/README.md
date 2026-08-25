@@ -22,6 +22,7 @@ Chain configuration is supplied at runtime through a root-only JSON file.
 | `FiscoMessageScanInspect` | Inspect FISCO cross-chain message scan results |
 | `FiscoReceiptInspect` | Inspect FISCO transaction receipts and emitted events |
 | `FiscoSystemBindingInspect` | Verify FISCO AM/SDP/Monitor/PTC bindings |
+| `FiscoMonitorVerifierRebind` | Rebind a replacement Monitor to a populated legacy MonitorVerifier after an audited upgrade |
 | `FiscoSystemContractsDeploy` | Deploy the FISCO system-contract test set |
 | `MychainPtcRootReconcileLiveCheck` | Probe and reconcile a legacy Mychain PTC Hub BCDNS root |
 | `CrossChainPayloadInspect` | Decode captured AuthMessage/SDP payloads for byte-level comparison |

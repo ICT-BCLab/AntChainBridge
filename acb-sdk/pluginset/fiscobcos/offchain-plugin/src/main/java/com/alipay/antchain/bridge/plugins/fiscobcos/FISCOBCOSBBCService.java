@@ -1361,26 +1361,39 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
                 || StrUtil.isEmpty(this.bbcContext.getSdpContract().getContractAddress())) {
             throw new RuntimeException("SDP contract must be deployed before Monitor");
         }
+        String reusableMonitorVerifierAddress = null;
         if (ObjectUtil.isNotNull(this.bbcContext.getMonitorContract())
                 && StrUtil.isNotEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
+            String existingMonitorAddress = this.bbcContext.getMonitorContract().getContractAddress();
             try {
-                assertMonitorImplementationSupported(
-                        this.bbcContext.getMonitorContract().getContractAddress());
+                assertMonitorImplementationSupported(existingMonitorAddress);
                 return;
             } catch (IllegalStateException e) {
                 getBBCLogger().warn(
                         "replace legacy FISCO Monitor {} during explicit BBC reconciliation",
-                        this.bbcContext.getMonitorContract().getContractAddress());
+                        existingMonitorAddress);
+                reusableMonitorVerifierAddress = findReusableMonitorVerifier(existingMonitorAddress);
             }
         }
 
         final MonitorVerifier monitorVerifier;
         final Monitor monitor;
         try {
-            monitorVerifier = MonitorVerifier.deploy(client, keyPair);
-            requireSuccessfulReceipt(
-                    monitorVerifier.getDeployReceipt(),
-                    "deploy MonitorVerifier");
+            if (StrUtil.isNotEmpty(reusableMonitorVerifierAddress)) {
+                monitorVerifier = MonitorVerifier.load(
+                        reusableMonitorVerifierAddress,
+                        client,
+                        keyPair);
+                getBBCLogger().info(
+                        "reuse legacy FISCO MonitorVerifier {} so existing TPBTA monitor-node "
+                                + "endorsements remain available",
+                        reusableMonitorVerifierAddress);
+            } else {
+                monitorVerifier = MonitorVerifier.deploy(client, keyPair);
+                requireSuccessfulReceipt(
+                        monitorVerifier.getDeployReceipt(),
+                        "deploy MonitorVerifier");
+            }
 
             monitor = Monitor.deploy(client, keyPair);
             requireSuccessfulReceipt(monitor.getDeployReceipt(), "deploy Monitor");
@@ -1400,6 +1413,40 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
                 "setup monitor contracts successful: Monitor={}, MonitorVerifier={}",
                 monitor.getContractAddress(),
                 monitorVerifier.getContractAddress());
+    }
+
+    private String findReusableMonitorVerifier(String monitorAddress) {
+        try {
+            String candidate = Monitor.load(monitorAddress, client, keyPair).getMonitorVerifier();
+            if (StrUtil.isEmpty(candidate) || ZERO_ADDRESS.equalsIgnoreCase(candidate)) {
+                return null;
+            }
+            String verifierPtcHub = MonitorVerifier.load(candidate, client, keyPair).getPtcHubAddress();
+            if (StrUtil.isEmpty(verifierPtcHub) || ZERO_ADDRESS.equalsIgnoreCase(verifierPtcHub)) {
+                return null;
+            }
+            if (ObjectUtil.isNotNull(this.bbcContext.getPtcContract())
+                    && StrUtil.isNotEmpty(this.bbcContext.getPtcContract().getContractAddress())) {
+                String expectedPtcHub = this.bbcContext.getPtcContract().getContractAddress();
+                String ptcMonitorVerifier = PtcHub.load(expectedPtcHub, client, keyPair)
+                        .getMonitorVerifier();
+                if (!expectedPtcHub.equalsIgnoreCase(verifierPtcHub)
+                        || !candidate.equalsIgnoreCase(ptcMonitorVerifier)) {
+                    getBBCLogger().warn(
+                            "legacy FISCO MonitorVerifier {} is not the active verifier of PTC Hub {}",
+                            candidate,
+                            expectedPtcHub);
+                    return null;
+                }
+            }
+            return candidate;
+        } catch (Exception e) {
+            getBBCLogger().warn(
+                    "unable to reuse MonitorVerifier from legacy FISCO Monitor {}",
+                    monitorAddress,
+                    e);
+            return null;
+        }
     }
 
     private void assertSdpMonitorRoutingSupported(String sdpAddress) {

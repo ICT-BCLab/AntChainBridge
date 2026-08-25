@@ -39,6 +39,8 @@ public final class FiscoReceiptInspect {
                 }
                 System.out.println(args[i] + ".status=" + receipt.getStatus());
                 System.out.println(args[i] + ".blockNumber=" + receipt.getBlockNumber());
+                System.out.println(args[i] + ".message=" + receipt.getMessage());
+                System.out.println(args[i] + ".output=" + receipt.getOutput());
                 System.out.println(args[i] + ".logCount=" + receipt.getLogEntries().size());
                 for (int j = 0; j < receipt.getLogEntries().size(); j++) {
                     TransactionReceipt.Logs log = receipt.getLogEntries().get(j);
