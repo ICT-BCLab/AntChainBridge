@@ -30,6 +30,9 @@ public final class FiscoSystemBindingInspect {
             PtcHub ptcHub = PtcHub.load(args[1], service.getClient(), service.getKeyPair());
             MonitorVerifier verifier = MonitorVerifier.load(
                     verifierAddress, service.getClient(), service.getKeyPair());
+            System.out.println("monitor.version=" + monitor.getImplementationVersion());
+            System.out.println("monitor.control=" + monitor.getMonitorControl());
+            System.out.println("monitor.sdp=" + monitor.sdpAddress());
             System.out.println("monitor.verifier=" + verifierAddress);
             System.out.println("ptc.monitorVerifier=" + ptcHub.getMonitorVerifier());
             System.out.println("verifier.ptcHub=" + verifier.getPtcHubAddress());
