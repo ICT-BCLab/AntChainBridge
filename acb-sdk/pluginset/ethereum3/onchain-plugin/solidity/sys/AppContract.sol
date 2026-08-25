@@ -63,7 +63,6 @@ contract AppContract is IContractUsingSDP, Ownable {
         emit recvCrosschainMsg(senderDomain, author, message, true);
     }
 
-    // notice: monitor only support the sendV1 version message
     function sendUnorderedMessage(string memory receiverDomain, bytes32 receiver, bytes memory message) external {
         IMonitor(monitorAddress).sendUnorderedMonitorMessage(receiverDomain, receiver, message);
 
@@ -89,6 +88,42 @@ contract AppContract is IContractUsingSDP, Ownable {
 
         ISDPMessage sdp = ISDPMessage(sdpAddress);
         latest_msg_id_sent_unorder = sdp.sendUnorderedMessageV2(domain, receiver, atomic, _msg);
+    }
+
+    function sendV3(
+        bytes32 receiver,
+        string memory domain,
+        bool atomic,
+        bytes memory _msg,
+        uint8 timeoutMeasure,
+        uint256 timeout
+    ) public {
+        latest_msg_id_sent_order = ISDPMessage(sdpAddress).sendMessageV3(
+            domain,
+            receiver,
+            atomic,
+            _msg,
+            timeoutMeasure,
+            timeout
+        );
+    }
+
+    function sendUnorderedV3(
+        bytes32 receiver,
+        string memory domain,
+        bool atomic,
+        bytes memory _msg,
+        uint8 timeoutMeasure,
+        uint256 timeout
+    ) public {
+        latest_msg_id_sent_unorder = ISDPMessage(sdpAddress).sendUnorderedMessageV3(
+            domain,
+            receiver,
+            atomic,
+            _msg,
+            timeoutMeasure,
+            timeout
+        );
     }
 
     function ackOnSuccess(bytes32 messageId, string memory receiverDomain, bytes32 receiver, uint32 sequence, uint64 nonce, bytes memory message) public {

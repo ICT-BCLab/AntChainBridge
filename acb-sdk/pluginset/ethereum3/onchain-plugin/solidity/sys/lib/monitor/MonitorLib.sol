@@ -153,19 +153,24 @@ library MonitorLib {
 
     function decode(MonitorMessage memory monitorMessage, bytes memory rawMessage) internal pure {
         uint256 offset = rawMessage.length;
+        require(offset >= 68, "MonitorLib: malformed monitor message");
 
         monitorMessage.monitorType = BytesToTypes.bytesToUint32(offset, rawMessage);
+        require(
+            monitorMessage.monitorType == MONITOR_CLOSE
+                || monitorMessage.monitorType == MONITOR_OPEN
+                || monitorMessage.monitorType == MONITOR_ROLLBACK,
+            "MonitorLib: invalid monitor type"
+        );
         offset -= SizeOf.sizeOfInt(32);
 
-        uint32 monitor_msg_len = BytesToTypes.bytesToUint32(offset, rawMessage) + 32;
-        bytes memory monitor_msg = new bytes(monitor_msg_len);
-        BytesToTypes.bytesToString(offset, rawMessage, monitor_msg);
-        offset -= SizeOf.sizeOfBytes(monitor_msg);
+        bytes memory monitor_msg = BytesToTypes.bytesToVarBytes(offset, rawMessage);
+        uint256 monitorMsgSize = SizeOf.sizeOfBytes(monitor_msg);
+        require(offset >= monitorMsgSize, "MonitorLib: malformed monitor metadata");
+        offset -= monitorMsgSize;
 
-        uint32 message_len = BytesToTypes.bytesToUint32(offset, rawMessage) + 32;
-        bytes memory message = new bytes(message_len);
-        BytesToTypes.bytesToString(offset, rawMessage, message);
-        offset -= SizeOf.sizeOfBytes(message);
+        bytes memory message = BytesToTypes.bytesToVarBytes(offset, rawMessage);
+        require(offset == SizeOf.sizeOfBytes(message), "MonitorLib: trailing monitor message data");
 
         monitorMessage.monitorMsg = string(monitor_msg);
         monitorMessage.message = message;

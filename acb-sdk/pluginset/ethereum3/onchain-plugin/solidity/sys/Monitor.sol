@@ -3,6 +3,7 @@ pragma solidity ^0.8.0;
 
 import "./interfaces/IContractUsingSDP.sol";
 import "./interfaces/IContractUsingMonitor.sol";
+import "./interfaces/IContractWithAcks.sol";
 import "./interfaces/ISDPMessage.sol";
 import "./interfaces/IMonitor.sol";
 import "./interfaces/IMonitorVerifier.sol";
@@ -12,6 +13,10 @@ import "./@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 // 接受监管指令; 只在发送方进行事前监管
 contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
+    // Version 4 fixes monitor-control handling: CLOSE/OPEN/ROLLBACK are stored
+    // as the protocol enum instead of treating every non-zero value as OPEN.
+    uint32 public constant IMPLEMENTATION_VERSION = 4;
+
     using MonitorLib for MonitorOrder;
     using MonitorLib for MonitorMessage;
 
@@ -53,13 +58,19 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
         sdpAddress = protocolAddress;
     }
 
-    function setMonitorVerifier(address newMonitorVerifierAddress) override external {
+    function setMonitorVerifier(address newMonitorVerifierAddress) override external onlyOwner {
         require(newMonitorVerifierAddress != address(0), "MonitorMsg: invalid MonitorVerifier contract");
         monitorVerifierAddress = newMonitorVerifierAddress;
     }
 
     function setMonitorControl(uint32 monitorType) override external onlyOwner {
-        monitorControl = monitorType == 0 ? MonitorLib.MONITOR_CLOSE : MonitorLib.MONITOR_OPEN;
+        require(
+            monitorType == MonitorLib.MONITOR_CLOSE
+                || monitorType == MonitorLib.MONITOR_OPEN
+                || monitorType == MonitorLib.MONITOR_ROLLBACK,
+            "MonitorMsg: invalid monitor control"
+        );
+        monitorControl = monitorType;
     }
 
     function getProtocol() external view returns (address) {
@@ -72,6 +83,10 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
 
     function getMonitorVerifier() external view returns (address) {
         return monitorVerifierAddress;
+    }
+
+    function getImplementationVersion() external pure returns (uint32) {
+        return IMPLEMENTATION_VERSION;
     }
 
     // function getSuccessfulCallInMonitorOPEN() external view returns (uint32) {
@@ -92,7 +107,7 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
         // 执行事前监管的检查
         if (monitorControl == MonitorLib.MONITOR_OPEN) {
             bool monitorResult = false;
-            monitorResult = PreMonitoring(receiverDomain, receiverID, message);
+            monitorResult = PreMonitoring(msg.sender, receiverDomain, receiverID, message);
             if(monitorResult == false) {
                 revert("beforehand Monitor disapproval");
             }
@@ -119,7 +134,7 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
         // 执行事前监管的检查
         if (monitorControl == MonitorLib.MONITOR_OPEN) {
             bool monitorResult = false;
-            monitorResult = PreMonitoring(receiverDomain, receiverID, message);
+            monitorResult = PreMonitoring(msg.sender, receiverDomain, receiverID, message);
             if(monitorResult == false) {
                 revert("beforehand Monitor disapproval");
             }
@@ -138,6 +153,82 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
         ISDPMessage(sdpAddress).sendUnorderedMessage(receiverDomain, receiverID, msg.sender, rawMsg);
 
         _afterSendUnordered();
+    }
+
+    function sendMonitorMessageV2(
+        string calldata receiverDomain,
+        bytes32 receiverID,
+        address senderID,
+        bool atomic,
+        bytes calldata message
+    ) external override onlySubProtocols returns (bytes32) {
+        bytes memory rawMsg = _prepareMonitoredMessage(senderID, receiverDomain, receiverID, message);
+        return ISDPMessage(sdpAddress).sendMessageV2FromMonitor(
+            receiverDomain, receiverID, senderID, atomic, rawMsg
+        );
+    }
+
+    function sendUnorderedMonitorMessageV2(
+        string calldata receiverDomain,
+        bytes32 receiverID,
+        address senderID,
+        bool atomic,
+        bytes calldata message
+    ) external override onlySubProtocols returns (bytes32) {
+        bytes memory rawMsg = _prepareMonitoredMessage(senderID, receiverDomain, receiverID, message);
+        return ISDPMessage(sdpAddress).sendUnorderedMessageV2FromMonitor(
+            receiverDomain, receiverID, senderID, atomic, rawMsg
+        );
+    }
+
+    function sendMonitorMessageV3(
+        string calldata receiverDomain,
+        bytes32 receiverID,
+        address senderID,
+        bool atomic,
+        bytes calldata message,
+        uint8 timeoutMeasure,
+        uint256 timeout
+    ) external override onlySubProtocols returns (bytes32) {
+        bytes memory rawMsg = _prepareMonitoredMessage(senderID, receiverDomain, receiverID, message);
+        return ISDPMessage(sdpAddress).sendMessageV3FromMonitor(
+            receiverDomain, receiverID, senderID, atomic, rawMsg, timeoutMeasure, timeout
+        );
+    }
+
+    function sendUnorderedMonitorMessageV3(
+        string calldata receiverDomain,
+        bytes32 receiverID,
+        address senderID,
+        bool atomic,
+        bytes calldata message,
+        uint8 timeoutMeasure,
+        uint256 timeout
+    ) external override onlySubProtocols returns (bytes32) {
+        bytes memory rawMsg = _prepareMonitoredMessage(senderID, receiverDomain, receiverID, message);
+        return ISDPMessage(sdpAddress).sendUnorderedMessageV3FromMonitor(
+            receiverDomain, receiverID, senderID, atomic, rawMsg, timeoutMeasure, timeout
+        );
+    }
+
+    function _prepareMonitoredMessage(
+        address senderID,
+        string calldata receiverDomain,
+        bytes32 receiverID,
+        bytes calldata message
+    ) internal returns (bytes memory) {
+        if (monitorControl == MonitorLib.MONITOR_OPEN) {
+            require(
+                PreMonitoring(senderID, receiverDomain, receiverID, message),
+                "beforehand Monitor disapproval"
+            );
+        }
+        MonitorMessage memory monitorMessage = MonitorMessage({
+            monitorType: monitorControl,
+            monitorMsg: "",
+            message: message
+        });
+        return monitorMessage.encode();
     }
 
     // IContractUsingMonitor.sol里面的接口
@@ -203,11 +294,123 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
         }
     }
 
-    function PreMonitoring(string calldata receiverDomain, bytes32 receiverID, bytes calldata message) internal returns (bool) {
+    function recvUnorderedMessageV2FromSDP(
+        string memory senderDomain,
+        bytes32 author,
+        address receiverID,
+        bytes memory message
+    ) external override onlySubProtocols {
+        _recvVersionedMessage(senderDomain, author, receiverID, message, true);
+    }
+
+    function recvMessageV2FromSDP(
+        string memory senderDomain,
+        bytes32 author,
+        address receiverID,
+        bytes memory message
+    ) external override onlySubProtocols {
+        _recvVersionedMessage(senderDomain, author, receiverID, message, false);
+    }
+
+    function recvUnorderedMessageV3FromSDP(
+        string memory senderDomain,
+        bytes32 author,
+        address receiverID,
+        bytes memory message
+    ) external override onlySubProtocols {
+        _recvVersionedMessage(senderDomain, author, receiverID, message, true);
+    }
+
+    function recvMessageV3FromSDP(
+        string memory senderDomain,
+        bytes32 author,
+        address receiverID,
+        bytes memory message
+    ) external override onlySubProtocols {
+        _recvVersionedMessage(senderDomain, author, receiverID, message, false);
+    }
+
+    function _recvVersionedMessage(
+        string memory senderDomain,
+        bytes32 author,
+        address receiverID,
+        bytes memory rawMessage,
+        bool unordered
+    ) internal {
+        MonitorMessage memory monitorMessage;
+        monitorMessage.decode(rawMessage);
+        if (monitorMessage.monitorType == MonitorLib.MONITOR_OPEN) {
+            bool verified = IMonitorVerifier(monitorVerifierAddress).verifyMonitorNodeProofMessage();
+            emit VerifyMonitorNodeProofMessage(senderDomain, author, receiverID, verified);
+            require(verified, "Monitor_Msg: MidMonitoring not pass");
+        } else {
+            require(
+                monitorMessage.monitorType == MonitorLib.MONITOR_CLOSE
+                    || monitorMessage.monitorType == MonitorLib.MONITOR_ROLLBACK,
+                "Monitor_Msg: wrong monitor type"
+            );
+        }
+
+        if (unordered) {
+            IContractUsingSDP(receiverID).recvUnorderedMessage(
+                senderDomain, author, monitorMessage.message
+            );
+        } else {
+            IContractUsingSDP(receiverID).recvMessage(
+                senderDomain, author, monitorMessage.message
+            );
+        }
+    }
+
+    function ackOnSuccessFromSDP(
+        address receiverID,
+        bytes32 messageId,
+        string memory receiverDomain,
+        bytes32 receiver,
+        uint32 sequence,
+        uint64 nonce,
+        bytes memory message
+    ) external override onlySubProtocols {
+        MonitorMessage memory monitorMessage;
+        monitorMessage.decode(message);
+        IContractWithAcks(receiverID).ackOnSuccess(
+            messageId,
+            receiverDomain,
+            receiver,
+            sequence,
+            nonce,
+            monitorMessage.message
+        );
+    }
+
+    function ackOnErrorFromSDP(
+        address receiverID,
+        bytes32 messageId,
+        string memory receiverDomain,
+        bytes32 receiver,
+        uint32 sequence,
+        uint64 nonce,
+        bytes memory message,
+        string memory errorMsg
+    ) external override onlySubProtocols {
+        MonitorMessage memory monitorMessage;
+        monitorMessage.decode(message);
+        IContractWithAcks(receiverID).ackOnError(
+            messageId,
+            receiverDomain,
+            receiver,
+            sequence,
+            nonce,
+            monitorMessage.message,
+            errorMsg
+        );
+    }
+
+    function PreMonitoring(address senderAddress, string calldata receiverDomain, bytes32 receiverID, bytes calldata message) internal returns (bool) {
         bool result = false;
 
         // 事前监管逻辑
-        bytes32 senderID = MonitorLib.encodeAddressIntoCrossChainID(msg.sender);
+        bytes32 senderID = MonitorLib.encodeAddressIntoCrossChainID(senderAddress);
         if(senderBlacklist[senderID]) {
             emit MonitorDisapproval(senderID,
                                     receiverDomain,

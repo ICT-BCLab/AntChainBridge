@@ -58,6 +58,10 @@ import tech.pegasys.teku.spec.datastructures.blocks.blockbody.common.BlockBodyFi
 
 public class AcbEthClient {
 
+    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(4L);
+
+    private static final BigInteger SDP_MONITOR_ROUTING_VERSION = BigInteger.valueOf(3L);
+
     private static final String SEND_AUTH_MESSAGE_LOG_TOPIC = "0x79b7516b1b7a6a39fb4b7b22e8667cd3744e5c27425292f8a9f49d1042c0c651";
 
     private static final LogsBloomFilter SEND_AUTH_MESSAGE_LOG_TOPIC_FILTER = LogsBloomFilter.builder()
@@ -160,6 +164,124 @@ public class AcbEthClient {
             ).send();
         } catch (Exception e) {
             throw new RuntimeException("failed to deploy proxy admin", e);
+        }
+    }
+
+    public boolean ensureSdpMonitorRouting(String sdpContractAddress) {
+        if (isSdpMonitorRoutingSupported(sdpContractAddress)) {
+            return true;
+        }
+        upgradeTransparentProxy(sdpContractAddress, deploySdpImplementation(), "SDP");
+        return isSdpMonitorRoutingSupported(sdpContractAddress);
+    }
+
+    public boolean ensureMonitorImplementation(String monitorContractAddress) {
+        if (isMonitorImplementationSupported(monitorContractAddress)) {
+            return true;
+        }
+        upgradeTransparentProxy(monitorContractAddress, deployMonitorImplementation(), "Monitor");
+        return isMonitorImplementationSupported(monitorContractAddress);
+    }
+
+    private boolean isSdpMonitorRoutingSupported(String sdpContractAddress) {
+        try {
+            SDPMsg sdp = SDPMsg.load(
+                    sdpContractAddress,
+                    web3j,
+                    rawTransactionManager,
+                    new DefaultGasProvider());
+            return SDP_MONITOR_ROUTING_VERSION.equals(sdp.getMonitorRoutingVersion().send());
+        } catch (Exception e) {
+            getBbcLogger().info(
+                    "SDP {} does not expose monitor routing version {}",
+                    sdpContractAddress,
+                    SDP_MONITOR_ROUTING_VERSION);
+            return false;
+        }
+    }
+
+    private boolean isMonitorImplementationSupported(String monitorContractAddress) {
+        try {
+            Monitor monitor = Monitor.load(
+                    monitorContractAddress,
+                    web3j,
+                    rawTransactionManager,
+                    new DefaultGasProvider());
+            return MONITOR_IMPLEMENTATION_VERSION.equals(monitor.getImplementationVersion().send());
+        } catch (Exception e) {
+            getBbcLogger().info(
+                    "Monitor {} does not expose implementation version {}",
+                    monitorContractAddress,
+                    MONITOR_IMPLEMENTATION_VERSION);
+            return false;
+        }
+    }
+
+    private String deploySdpImplementation() {
+        try {
+            return SDPMsg.deploy(
+                    web3j,
+                    rawTransactionManager,
+                    new AcbGasProvider(
+                            contractGasPriceProvider,
+                            createDeployGasLimitProvider(SDPMsg.BINARY)))
+                    .send()
+                    .getContractAddress();
+        } catch (Exception e) {
+            throw new RuntimeException("failed to deploy monitor-routing SDP implementation", e);
+        }
+    }
+
+    private String deployMonitorImplementation() {
+        try {
+            return Monitor.deploy(
+                    web3j,
+                    rawTransactionManager,
+                    new AcbGasProvider(
+                            contractGasPriceProvider,
+                            createDeployGasLimitProvider(Monitor.BINARY)))
+                    .send()
+                    .getContractAddress();
+        } catch (Exception e) {
+            throw new RuntimeException("failed to deploy receive-side Monitor implementation", e);
+        }
+    }
+
+    private void upgradeTransparentProxy(String proxyAddress, String implementationAddress, String contractName) {
+        if (!config.isUpgradableContracts()) {
+            throw new IllegalStateException(
+                    contractName + " requires a receive-side regulatory upgrade, but upgradableContracts is disabled");
+        }
+        if (StrUtil.isEmpty(config.getProxyAdmin())) {
+            throw new IllegalStateException("empty proxy admin for " + contractName + " upgrade");
+        }
+
+        ProxyAdmin proxyAdmin = ProxyAdmin.load(
+                config.getProxyAdmin(),
+                web3j,
+                rawTransactionManager,
+                new DefaultGasProvider());
+        try {
+            TransactionReceipt receipt = proxyAdmin.upgrade(proxyAddress, implementationAddress).send();
+            if (!receipt.isStatusOK()) {
+                throw new IllegalStateException(
+                        String.format(
+                                "%s proxy upgrade failed: proxy=%s, implementation=%s, tx=%s",
+                                contractName,
+                                proxyAddress,
+                                implementationAddress,
+                                receipt.getTransactionHash()));
+            }
+            getBbcLogger().info(
+                    "upgrade {} proxy {} to implementation {} by tx {}",
+                    contractName,
+                    proxyAddress,
+                    implementationAddress,
+                    receipt.getTransactionHash());
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format("failed to upgrade %s proxy %s", contractName, proxyAddress),
+                    e);
         }
     }
 
