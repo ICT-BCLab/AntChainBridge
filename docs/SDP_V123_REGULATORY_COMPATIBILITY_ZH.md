@@ -96,6 +96,23 @@ Dioxide 与 Dioxide2 插件现在同时读取两套节点状态：`TXN_FINALIZED
 次数而被伪造成成功。Relayer 的批量确认也按单条消息隔离原生回执异常，避免一条坏记录阻塞同批
 其它已确认交易。
 
+### 4.8 Dioxide 重建后合约 CID 与 Relayer 高度游标同时失效
+
+Dioxide 测试网发生快照恢复或重建时，节点块高可能回退，但 Relayer 的 `polling`、`sync`、
+`notify_*` 游标仍保留在原来的更高位置。旧轮询逻辑只在远端块高更高时更新记录，因此会长期
+停留在不可达高度；如果同一 dapp 又部署了新版本系统合约，合约名不变但
+`ContractVersionID` 已递增，旧 BBC Context 中“非空”的 CID 也会被误判为已部署。
+
+修复后，Relayer 在发现 `recordedHeight > latestHeight` 时给出明确的高度回退错误，要求先停止
+anchor 并对账 `polling/sync/notify` 游标，避免把无效高度伪装成普通节点超时。Dioxide 与
+Dioxide2 插件的 AM、SDP、Monitor 就绪检查也会查询当前 `dx.contract_info`；只有配置 CID 与
+当前合约版本完全一致时才认为合约已经部署。
+
+恢复流程必须作为一个受控事务执行：备份链配置和游标、停止 anchor、部署并绑定新合约、同时
+更新顶层地址/异构 BBC Context/base64 `raw_conf`、把三类游标重置到部署块前一块、清除对应
+Redis 高度缓存，最后启动 anchor 并确认它追到最新块高。只改 CID 或只改数据库高度都会留下
+半更新状态。
+
 ## 5. 部署与升级顺序
 
 1. 备份当前插件 JAR、Relayer 链配置与合约地址。
@@ -104,6 +121,9 @@ Dioxide 与 Dioxide2 插件现在同时读取两套节点状态：`TXN_FINALIZED
 4. 对目标链执行一次 `setup-bbccontracts`；根据插件能力原位升级旧运行码，或部署新 Monitor 并重建绑定。不要假设所有链的地址都会保持不变。
 5. 读取 Monitor/SDP/PTC 实现版本与绑定关系，再发起新的链上验收交易。
 6. 分别使用监管关闭和监管开启模式发送 V1/V2/V3，同时验证源交易、Relayer 归档、监管结果、目标交易和业务 payload。
+
+如果节点块高小于 Relayer 已记录高度，不得直接启动 anchor。应先确认这是权威链回退而不是
+临时 RPC 分叉，再按 4.8 的顺序重置全部相关游标；基线应不晚于新系统合约部署块前一块。
 
 对 Dioxide 还应确认 `get-blockchain-contracts` 的 `ptc_contract` 为 `empty`。这是当前 V0/V1
 原生路径的能力声明，不应通过伪地址强行开启 PTC Hub 接口。

@@ -12,6 +12,13 @@ import java.util.Map;
 public class DioxideClientFinalityTest {
 
     @Test
+    public void testContractVersionMatches() {
+        Assert.assertTrue(DioxideClient.contractVersionMatches("1043692781569", 1043692781569L));
+        Assert.assertFalse(DioxideClient.contractVersionMatches("1043692781569", 1043692781570L));
+        Assert.assertFalse(DioxideClient.contractVersionMatches("not-a-cid", 1043692781569L));
+    }
+
+    @Test
     public void testIsTxFinalized() {
         Assert.assertFalse(DioxideClient.isTxFinalized(null));
         Assert.assertFalse(DioxideClient.isTxFinalized(transactionWithState(null)));

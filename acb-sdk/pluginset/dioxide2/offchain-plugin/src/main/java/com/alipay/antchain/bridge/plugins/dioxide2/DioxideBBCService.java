@@ -529,17 +529,29 @@ public class DioxideBBCService extends AbstractBBCService {
 
     private boolean checkAmContractIsDeployed() {
         return ObjectUtil.isNotNull(this.bbcContext.getAuthMessageContract())
-        && StrUtil.isNotEmpty(this.bbcContext.getAuthMessageContract().getContractAddress());
+        && StrUtil.isNotEmpty(this.bbcContext.getAuthMessageContract().getContractAddress())
+        && dioxideClient.isContractVersionCurrent(
+                config.getAmContractName(),
+                this.bbcContext.getAuthMessageContract().getContractAddress()
+        );
     }
 
     private boolean checkSdpContractIsDeployed() {
         return ObjectUtil.isNotNull(this.bbcContext.getSdpContract())
-        && StrUtil.isNotEmpty(this.bbcContext.getSdpContract().getContractAddress());
+        && StrUtil.isNotEmpty(this.bbcContext.getSdpContract().getContractAddress())
+        && dioxideClient.isContractVersionCurrent(
+                config.getSdpContractName(),
+                this.bbcContext.getSdpContract().getContractAddress()
+        );
     }
 
     private boolean checkMonitorContractIsDeployed() {
         return ObjectUtil.isNotNull(this.bbcContext.getMonitorContract())
-        && StrUtil.isNotEmpty(this.bbcContext.getMonitorContract().getContractAddress());
+        && StrUtil.isNotEmpty(this.bbcContext.getMonitorContract().getContractAddress())
+        && dioxideClient.isContractVersionCurrent(
+                config.getMonitorContractName(),
+                this.bbcContext.getMonitorContract().getContractAddress()
+        );
     }
 
     private boolean isByteArrayZero(byte[] bytes) {

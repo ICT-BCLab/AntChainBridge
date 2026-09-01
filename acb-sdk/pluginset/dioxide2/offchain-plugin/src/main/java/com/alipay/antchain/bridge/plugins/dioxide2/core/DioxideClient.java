@@ -583,6 +583,32 @@ public class DioxideClient {
         return resp.getLongValue("ContractVersionID");
     }
 
+    public boolean isContractVersionCurrent(String contractName, String configuredContractCid) {
+        if (StrUtil.isEmpty(configuredContractCid)) {
+            return false;
+        }
+        long currentCid = getContractCid(contractName);
+        if (!contractVersionMatches(configuredContractCid, currentCid)) {
+            getBbcLogger().warn(
+                    "stale or invalid Dioxide contract context for {}.{}: configured CID {}, current CID {}",
+                    config.getDappName(),
+                    contractName,
+                    configuredContractCid,
+                    currentCid
+            );
+            return false;
+        }
+        return true;
+    }
+
+    static boolean contractVersionMatches(String configuredContractCid, long currentCid) {
+        try {
+            return Long.parseLong(configuredContractCid) == currentCid;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
     public long querySdpSeq(String senderDomain, String senderID, String receiverDomain, String receiverID) {
         try {
             int[] senderDomainArray = toIntArray(senderDomain.getBytes(StandardCharsets.UTF_8));
