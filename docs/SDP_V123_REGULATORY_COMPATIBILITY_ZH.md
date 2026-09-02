@@ -113,6 +113,18 @@ Dioxide2 插件的 AM、SDP、Monitor 就绪检查也会查询当前 `dx.contrac
 Redis 高度缓存，最后启动 anchor 并确认它追到最新块高。只改 CID 或只改数据库高度都会留下
 半更新状态。
 
+### 4.9 Mychain 目标交易哈希缺少跨系统十六进制前缀
+
+Mychain 插件返回的原生交易哈希是 64 位十六进制字符串且不带 `0x`；Ethereum 和 FISCO BCOS
+插件返回的同类字段已经带有 `0x`。旧 Relayer 将插件值直接写入
+`target-chain-submission` 和 `target-chain-execution`，导致同一个监管接口里的固定 32 字节
+十六进制哈希格式不一致。
+
+修复只发生在监管上报边界：裸 64 位 hex 增加 `0x`，已有 `0x` 保持不变，`0X` 只统一前缀
+大小写；Dioxide Base32、空值、长度不符或含非十六进制字符的值均原样保留，不猜测或左补缺失
+字节。Relayer 数据库和 Mychain 节点查询仍使用裸 64 位原生哈希，`/ucps` 首报中的源链
+`provableData.txHash` 也不受影响。
+
 ## 5. 部署与升级顺序
 
 1. 备份当前插件 JAR、Relayer 链配置与合约地址。
@@ -145,10 +157,14 @@ curl -k 'https://47.94.7.98:18443/api/data/message/{ucpId}'
 单条详情中至少应看到：
 
 - 源链与目标链交易哈希；
-- `monitor.reportStatus=REPORTED`；
-- `monitor.status=APPROVED`（对允许通过的测试样例）；
-- `monitor.currentStage=TARGET_EXECUTED`；
-- `monitor.completeness` 中四个阶段均为 `true`。
+- `regulation.reportStatus=REPORTED`；
+- `regulation.status=APPROVED`（对允许通过的测试样例）；
+- `regulation.currentStage=TARGET_EXECUTED`；
+- `regulation.completeness` 中四个阶段均为 `true`。
+
+对 Mychain 目标消息还应同时验证：`target.txHash` 是可直接查询节点的裸 64 位值，而
+`regulation.targetSubmission.txHash` 与 `regulation.targetExecution.txHash` 都是同一个
+`0x`+64 位值。两种表示服务于不同边界，不能把监管格式反写到链原生查询字段。
 
 ## 7. 回滚
 
