@@ -12,6 +12,29 @@ import java.util.Map;
 public class DioxideClientFinalityTest {
 
     @Test
+    public void testEmbeddedInvocationFailureAndChildFinality() {
+        DioxideTransaction root = DioxideTransaction.builder().txHash("root").confirmState("TXN_ARCHIVED")
+                .embeddedRelays(List.of(DioxideTransaction.builder()
+                        .invocation(DioxideTransaction.Invocation.builder().status("IVKRET_EXCEPTION_THROWN").build()).build())).build();
+        Assert.assertEquals(DioxideClient.TxFinalityState.FAILED, evaluate(root, Map.of()).state());
+        root.setEmbeddedRelays(List.of(DioxideTransaction.builder()
+                .invocation(DioxideTransaction.Invocation.builder().status("IVKRET_SUCCESS").relays(List.of("child:0")).build()).build()));
+        DioxideTransaction child = DioxideTransaction.builder().txHash("child").confirmState("TXN_READY").build();
+        Assert.assertEquals(DioxideClient.TxFinalityState.PENDING, evaluate(root, Map.of("child", child)).state());
+        child.setConfirmState("TXN_ARCHIVED");
+        Assert.assertEquals(DioxideClient.TxFinalityState.FINALIZED, evaluate(root, Map.of("child", child)).state());
+    }
+
+    @Test
+    public void testDiagnosticFieldsRetainUnsignedIsnAndSigner() {
+        DioxideTransaction tx = com.alibaba.fastjson.JSON.parseObject(
+                "{\"ISN\":4294967295,\"Signers\":[\"account:ed25519\"],\"Timestamp\":1788415666329}",
+                DioxideTransaction.class);
+        Assert.assertEquals(Long.valueOf(4294967295L), tx.getIsn());
+        Assert.assertEquals(List.of("account:ed25519"), tx.getSigners());
+    }
+
+    @Test
     public void testContractVersionMatches() {
         Assert.assertTrue(DioxideClient.contractVersionMatches("1043692781569", 1043692781569L));
         Assert.assertFalse(DioxideClient.contractVersionMatches("1043692781569", 1043692781570L));
