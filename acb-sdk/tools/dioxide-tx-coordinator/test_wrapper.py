@@ -5,6 +5,17 @@ from dioxide_tx_coordinator import CoordinatedDioxClient
 
 
 class WrapperTest(unittest.TestCase):
+    def test_indexed_group_ignores_unrelated_failed_business(self):
+        wrapper = self.wrapper([
+            {"State": "DUS_ARCHIVED", "Invocation": {"Status": "IVKRET_SUCCESS", "Relays": ["group:1"]}},
+            {"State": "DUS_ARCHIVED", "Relays": [
+                {"Invocation": {"Status": "IVKRET_EXCEPTION_THROWN"}},
+                {"Invocation": {"Status": "IVKRET_SUCCESS"}},
+            ]},
+        ])
+        self.assertTrue(wrapper.wait_for_transaction_confirmed("root"))
+        wrapper.coordinator.record_outcome.assert_called_once_with("root", True)
+
     def wrapper(self, responses):
         wrapper = CoordinatedDioxClient.__new__(CoordinatedDioxClient)
         wrapper.client = Mock()
@@ -55,7 +66,7 @@ class WrapperTest(unittest.TestCase):
 
     def test_waits_for_referenced_child_before_success(self):
         wrapper = self.wrapper([
-            {"State": "DUS_ARCHIVED", "Relays": [{"Invocation": {"Status": "IVKRET_SUCCESS", "Relays": ["child:0"]}}]},
+            {"State": "DUS_ARCHIVED", "Relays": [{"Invocation": {"Status": "IVKRET_SUCCESS", "Relays": ["child"]}}]},
             {"State": "DUS_ARCHIVED", "Invocation": {"Status": "IVKRET_SUCCESS"}},
         ])
         self.assertTrue(wrapper.wait_for_transaction_confirmed("root"))

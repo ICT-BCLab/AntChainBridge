@@ -212,15 +212,19 @@ public class DioxideClient {
 
         List<String> tx2Hashes = dioxideTransaction.getInvocation().getRelays().stream()
                 .filter(Objects::nonNull)
-                .map(DioxideClient::normalizeRelayTxHash)
                 .filter(StrUtil::isNotEmpty)
                 .distinct()
                 .toList();
 
         boolean eventStructurePending = false;
         List<String> eventTargetTxHashes = new ArrayList<>();
+        Map<String, JSONObject> relayGroups = new HashMap<>();
         for (String tx2Hash : tx2Hashes) {
-            JSONObject tx2 = getTransactionJonObjectByHash(tx2Hash);
+            String groupHash = normalizeRelayTxHash(tx2Hash);
+            if (!relayGroups.containsKey(groupHash)) {
+                relayGroups.put(groupHash, getTransactionJonObjectByHash(groupHash));
+            }
+            JSONObject tx2 = scopeRelayGroup(relayGroups.get(groupHash), tx2Hash);
             RelayEventInspection relayEventInspection = inspectRelayEvents(tx2, tx2Hash);
             if (relayEventInspection.state() == RelayEventState.FAILED) {
                 return buildCrossChainMessageReceipt(
@@ -239,7 +243,8 @@ public class DioxideClient {
                 : null;
         List<DioxideTransaction> eventTargetTxs = new ArrayList<>();
         for (String eventTargetTxHash : eventTargetTxHashes.stream().distinct().toList()) {
-            DioxideTransaction eventTargetTx = getTransactionByHash(eventTargetTxHash);
+            DioxideTransaction eventTargetTx = scopeTransactionReference(
+                    getTransactionByHash(normalizeRelayTxHash(eventTargetTxHash)), eventTargetTxHash);
             if (eventTargetTx == null) {
                 if (pendingEventFinality == null) {
                     pendingEventFinality = new TxFinalityResult(
@@ -946,6 +951,7 @@ public class DioxideClient {
 
         Queue<DioxideTransaction> queue = new ArrayDeque<>();
         Set<String> queuedTxHashes = new HashSet<>();
+        Map<String, DioxideTransaction> resolvedGroups = new HashMap<>();
         queue.add(dioxideTransaction);
         if (StrUtil.isNotEmpty(dioxideTransaction.getTxHash())) {
             queuedTxHashes.add(normalizeRelayTxHash(dioxideTransaction.getTxHash()));
@@ -982,10 +988,13 @@ public class DioxideClient {
                     }
                     continue;
                 }
-                if (!queuedTxHashes.add(relayTxHash)) {
+                if (!queuedTxHashes.add(relayTxReference)) {
                     continue;
                 }
-                DioxideTransaction relayTx = transactionResolver.apply(relayTxHash);
+                if (!resolvedGroups.containsKey(relayTxHash)) {
+                    resolvedGroups.put(relayTxHash, transactionResolver.apply(relayTxHash));
+                }
+                DioxideTransaction relayTx = scopeTransactionReference(resolvedGroups.get(relayTxHash), relayTxReference);
                 if (relayTx == null) {
                     if (pendingResult == null) {
                         pendingResult = new TxFinalityResult(TxFinalityState.PENDING, relayTxHash, "");
@@ -1003,6 +1012,37 @@ public class DioxideClient {
                         dioxideTransaction.getConfirmState()
                 )
                 : pendingResult;
+    }
+
+    /** A group may contain many unrelated business transactions: preserve its indexed member. */
+    static DioxideTransaction scopeTransactionReference(DioxideTransaction group, String reference) {
+        if (group == null || reference == null) { return null; }
+        int separator = reference.indexOf(':');
+        if (separator < 0) { return group; }
+        try {
+            int index = Integer.parseInt(reference.substring(separator + 1));
+            if (index < 0 || group.getEmbeddedRelays() == null || index >= group.getEmbeddedRelays().size()) { return null; }
+            DioxideTransaction member = group.getEmbeddedRelays().get(index);
+            if (member == null) { return null; }
+            return DioxideTransaction.builder().txHash(reference).state(group.getState())
+                    .confirmState(group.getConfirmState()).target(member.getTarget()).embeddedRelays(List.of(member)).build();
+        } catch (NumberFormatException e) { return null; }
+    }
+
+    static JSONObject scopeRelayGroup(JSONObject group, String reference) {
+        if (group == null || reference == null) { return null; }
+        int separator = reference.indexOf(':');
+        if (separator < 0) { return group; }
+        try {
+            int index = Integer.parseInt(reference.substring(separator + 1));
+            JSONArray members = group.getJSONArray("Relays");
+            if (index < 0 || members == null || index >= members.size()) { return null; }
+            JSONObject result = new JSONObject(group);
+            JSONArray selected = new JSONArray();
+            selected.add(members.get(index));
+            result.put("Relays", selected);
+            return result;
+        } catch (NumberFormatException e) { return null; }
     }
 
     static String normalizeRelayTxHash(String relayTxReference) {
@@ -1070,7 +1110,6 @@ public class DioxideClient {
                 continue;
             }
             embeddedInvocation.getInvocation().getRelays().stream()
-                    .map(DioxideClient::normalizeRelayTxHash)
                     .filter(StrUtil::isNotEmpty)
                     .forEach(eventTargetTxHashes::add);
         }
@@ -1078,6 +1117,11 @@ public class DioxideClient {
         List<String> distinctTargetTxHashes = eventTargetTxHashes.stream().distinct().toList();
         if (CollUtil.isNotEmpty(distinctTargetTxHashes)) {
             return new RelayEventInspection(RelayEventState.READY, distinctTargetTxHashes, "");
+        }
+        // One indexed member (e.g. AM lambda 8) may legitimately emit no event.
+        // The combined receipt still requires a protocol event from another member of THIS root.
+        if (relayGroupFinalized && relayGroupTxHash.contains(":")) {
+            return new RelayEventInspection(RelayEventState.READY, List.of(), "");
         }
         return relayGroupFinalized
                 ? failedRelayEventInspection(relayGroupTxHash, "produced no protocol event transaction")

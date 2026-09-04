@@ -205,16 +205,26 @@ class CoordinatedDioxClient:
     def wait_for_transaction_confirmed(self, tx_hash, timeout=120000):
         deadline = time.monotonic() + timeout / 1000
         while time.monotonic() < deadline:
-            queue, seen, pending = [tx_hash], set(), False
+            queue, seen, pending, resolved = [tx_hash], set(), False, {}
             while queue:
-                current = queue.pop().split(":")[0]
+                current = queue.pop()
                 if current in seen:
                     continue
                 seen.add(current)
-                tx = self.client.make_request("dx.transaction", {"hash": current})
+                base_hash = current.split(":", 1)[0]
+                if base_hash not in resolved:
+                    resolved[base_hash] = self.client.make_request("dx.transaction", {"hash": base_hash})
+                tx = resolved[base_hash]
                 if not isinstance(tx, dict):
                     pending = True
                     continue
+                if ":" in current:
+                    suffix = current.split(":", 1)[1]
+                    members = tx.get("Relays") or []
+                    if not suffix.isdecimal() or int(suffix) >= len(members):
+                        pending = True
+                        continue
+                    tx = dict(tx, Invocation=None, Relays=[members[int(suffix)]])
                 if tx.get("ConfirmState") in {"TXN_ABORTED", "TXN_EXPIRED", "TXN_RELAY_INVALIDED"} or tx.get("State") in {"DUS_INVALID", "DUS_FORKED", "DUS_ARCHIVED_UNCLE"}:
                     self.coordinator.record_outcome(tx_hash, False)
                     raise RuntimeError(f"Dioxide transaction failed: {current} ({tx.get('ConfirmState')})")
