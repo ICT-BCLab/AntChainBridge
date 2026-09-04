@@ -5,6 +5,22 @@ from dioxide_tx_coordinator import CoordinatedDioxClient
 
 
 class WrapperTest(unittest.TestCase):
+    def test_dapp_setup_uses_coordinated_submission_and_checks_wait(self):
+        wrapper = self.wrapper([])
+        wrapper.send_transaction = Mock(return_value="same-hash")
+        user = Mock()
+        self.assertEqual("same-hash", wrapper.mint_dio(user, 100, operation_id="setup:fund"))
+        wrapper.send_transaction.assert_called_with(user, "core.coin.mint", {"Amount": "100"},
+                                                    is_sync=True, timeout=120000, operation_id="setup:fund")
+        wrapper.client.wait_for_dapp_deployed.return_value = True
+        self.assertEqual(("same-hash", True), wrapper.create_dapp(user, "test", 10, operation_id="setup:dapp"))
+        wrapper.send_transaction.assert_called_with(user, "core.delegation.create",
+                                                    {"Type": 10, "Name": "test", "Deposit": "10"},
+                                                    is_sync=True, timeout=120000, operation_id="setup:dapp")
+        wrapper.client.wait_for_dapp_deployed.return_value = False
+        with self.assertRaises(TimeoutError):
+            wrapper.create_dapp(user, "test", 10, operation_id="setup:dapp")
+
     def test_indexed_group_ignores_unrelated_failed_business(self):
         wrapper = self.wrapper([
             {"State": "DUS_ARCHIVED", "Invocation": {"Status": "IVKRET_SUCCESS", "Relays": ["group:1"]}},

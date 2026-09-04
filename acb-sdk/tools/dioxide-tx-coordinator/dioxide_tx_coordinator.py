@@ -247,6 +247,18 @@ class CoordinatedDioxClient:
             time.sleep(1)
         return False
 
+    def mint_dio(self, user, amount, sync=True, timeout=120000, operation_id=None):
+        return self.send_transaction(user, "core.coin.mint", {"Amount": str(amount)},
+                                     is_sync=sync, timeout=timeout, operation_id=operation_id)
+
+    def create_dapp(self, user, dapp_name, deposit_amount, sync=True, timeout=120000, operation_id=None):
+        tx_hash = self.send_transaction(user, "core.delegation.create",
+                                       {"Type": 10, "Name": str(dapp_name), "Deposit": str(deposit_amount)},
+                                       is_sync=sync, timeout=timeout, operation_id=operation_id)
+        if sync and not self.client.wait_for_dapp_deployed(tx_hash, timeout):
+            raise TimeoutError(f"Dioxide dapp deployment did not complete: {tx_hash}")
+        return tx_hash, True if sync else None
+
     def deploy_contracts(self, dapp_name, delegator, contracts, compile_time=None, operation_id=None):
         args = {"code": [], "cargs": []}
         for filename, constructor in contracts.items():
