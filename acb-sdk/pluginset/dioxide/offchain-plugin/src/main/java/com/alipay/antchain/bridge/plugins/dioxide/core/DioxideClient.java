@@ -1037,7 +1037,8 @@ public class DioxideClient {
             int index = Integer.parseInt(reference.substring(separator + 1));
             JSONArray members = group.getJSONArray("Relays");
             if (index < 0 || members == null || index >= members.size()) { return null; }
-            JSONObject result = new JSONObject(group);
+            JSONObject result = new JSONObject();
+            result.putAll(group); // JSONObject(Map) aliases its backing map; never shrink the cached group.
             JSONArray selected = new JSONArray();
             selected.add(members.get(index));
             result.put("Relays", selected);

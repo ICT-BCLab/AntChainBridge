@@ -10,6 +10,15 @@ import java.util.List;
 import java.util.Map;
 
 public class DioxideClientFinalityTest {
+    @Test public void scopingJsonMembersDoesNotMutateTheCachedGroup() {
+        com.alibaba.fastjson.JSONObject group = com.alibaba.fastjson.JSON.parseObject(
+                "{\"State\":\"DUS_ARCHIVED\",\"Relays\":[{\"Function\":\"first\"},{\"Function\":\"second\"}]}");
+        Assert.assertEquals("first", DioxideClient.scopeRelayGroup(group, "group:0")
+                .getJSONArray("Relays").getJSONObject(0).getString("Function"));
+        Assert.assertEquals("second", DioxideClient.scopeRelayGroup(group, "group:1")
+                .getJSONArray("Relays").getJSONObject(0).getString("Function"));
+        Assert.assertEquals(2, group.getJSONArray("Relays").size());
+    }
 
     @Test public void indexedGroupDoesNotInspectAnotherBusinessFailure() {
         DioxideTransaction bad = DioxideTransaction.builder().invocation(
