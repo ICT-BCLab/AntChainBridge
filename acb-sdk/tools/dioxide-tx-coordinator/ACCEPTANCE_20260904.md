@@ -2,19 +2,21 @@
 
 ## 结论
 
-Dioxide ISN 修复已部署；**完整验收矩阵尚未全部通过**，独立的 Ethereum/PTC 日志索引错误
-阻塞了普通突发测试中的 93 条源消息。没有重发这些消息、强制 PROVED 或绕过 PTC。
+Dioxide ISN 修复及后续获授权的 Ethereum/PTC 日志索引修复均已部署。
+已执行的普通96条、监管96条、竞争32条及新增采集4条全部成功，原93条阻塞已解除。
+没有重发这些消息、强制 PROVED 或绕过 PTC。未执行的Mychain普通/Dioxide原生V2/V3组合另列边界，不计为通过。
 
 ## 本轮已通过
 
 - Mychain→Dioxide 监管：三批各 32 条，加额外跨插件竞争 32 条，共 128 条全部闭环，
   每条业务正文只执行一次；PTC 100%、监管四阶段完整。
-- Mychain 冒烟一条；普通 Ethereum 入站三条；Dioxide 普通/监管反向各一条。
+- Mychain 冒烟一条；普通 Ethereum 三批共96条及新增同块2条；Dioxide 普通/监管反向各一条。
 - 两插件交错分配：ISN 306=diox11、307=diox04、308=diox11、309=diox04。
-- 生产协调库总共 134 个 ISN（181–314）全部唯一、FINALIZED，无 ISN abort/UNKNOWN/FAILED。
+- 生产协调库最终229个ISN（181–409）全部唯一、FINALIZED，无ISN abort/UNKNOWN/FAILED。
 - Python 同一 operationId 再次调用复用原始哈希，数据库只有一条提交记录。
 - Ethereum→FISCO SDP V1/V2/V3 均成功，PTC 100%、监管四阶段完整；通过独立只读 SDK 核对
   三个 receipt 的接收合约事件，业务正文逐字节一致、各出现一次，目标状态为0（FISCO成功码）。
+- 新增Ethereum→FISCO同块监管2条全部SUCCESS、PTC100%、监管四阶段完整；独立SDK确认正文各一次。
 - 两条 Dioxide 锚定及现有 Ethereum/FISCO/Mychain 锚定 RUNNING。Portal、Runner、Data API、
   Mychain 查询适配器和三条隧道 active；公网 Overview/Statistics/UCP/Dioxide 交易查询 HTTP 200。
 
@@ -44,7 +46,10 @@ Ethereum2/Ethereum3 采集端使用区块级 logIndex，HCDVS 却按 receipt 局
 截至2026-09-04 21:29，原93条已正常取得背书并在Dioxide完成，三批共96/96成功；96条原raw_message指纹全部未变。
 原93条分配93个唯一ISN，分配窗口48.075秒，首条分配至最后FINALIZED为73.377秒。
 协调库此时227条/227个唯一ISN（181–407），无未决或失败项；监管96条和跨插件竞争32条亦重新回归通过。
-没有重发源交易、改写UCP证明或强制PROVED。新增采集普通/监管各2条同块消息正等待源链最终确定，另行记录结果。
+没有重发源交易、改写UCP证明或强制PROVED。新增采集普通/监管各2条同块消息也全部完成：
+第二条普通消息RPC全局索引2、新局部索引0；第二条监管消息全局索引4、新局部索引1，PTC均100%。
+普通目标正文各一次；监管目标通过独立FISCO SDK确认receipt状态0、解封装正文精确一致且各一次。
+最终协调库229条/229个唯一ISN（181–409）全部FINALIZED。未改变Ethereum最终性策略。
 
 my02 现有测试应用处于全局监管模式，未为测试关闭其他业务的监管。Dioxide 原生 SDP 是 V1；
 AppContractV2 是业务存储版本，不是 SDP V2。普通和 V2/V3 的替代测试矩阵待用户确认。
