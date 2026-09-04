@@ -67,7 +67,7 @@ public class DioxideClient {
             }
             Properties p = JdbcTransactionCoordinator.readConfig(filename);
             coordinatorCheckpointHeight = Long.parseLong(JdbcTransactionCoordinator.required(p, "checkpointHeight"));
-            transactionCoordinator = JdbcTransactionCoordinator.fromProperties(p);
+            transactionCoordinator = JdbcTransactionCoordinator.fromProperties(p, getClass().getClassLoader());
         }
         return transactionCoordinator;
     }

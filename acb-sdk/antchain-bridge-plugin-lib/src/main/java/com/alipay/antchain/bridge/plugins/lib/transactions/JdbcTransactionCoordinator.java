@@ -48,13 +48,17 @@ public final class JdbcTransactionCoordinator {
     }
 
     public static JdbcTransactionCoordinator fromProperties(Properties p) throws Exception {
+        return fromProperties(p, Thread.currentThread().getContextClassLoader());
+    }
+
+    public static JdbcTransactionCoordinator fromProperties(Properties p, ClassLoader pluginLoader) throws Exception {
         final String url = required(p, "jdbcUrl");
         final Properties credentials = new Properties();
         credentials.setProperty("user", required(p, "user"));
         credentials.setProperty("password", new String(Files.readAllBytes(Paths.get(
                 required(p, "passwordFile"))), StandardCharsets.UTF_8).trim());
         // DriverManager's caller class-loader filtering is unsuitable for PF4J plugin drivers.
-        final Driver driver = (Driver) Class.forName("com.mysql.cj.jdbc.Driver").newInstance();
+        final Driver driver = (Driver) Class.forName("com.mysql.cj.jdbc.Driver", true, pluginLoader).newInstance();
         return new JdbcTransactionCoordinator(() -> {
             Connection c = driver.connect(url, credentials);
             if (c == null) { throw new SQLException("unsupported transaction coordinator JDBC URL"); }

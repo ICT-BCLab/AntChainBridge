@@ -125,4 +125,24 @@ public class JdbcTransactionCoordinatorTest {
         catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("regressed")); }
         assertEquals(1, node.composeCalls.get());
     }
+
+    @Test public void jdbcDriverIsLoadedFromThePluginClassLoader() throws Exception {
+        java.nio.file.Path password = java.nio.file.Files.createTempFile("isn-test-", ".password");
+        try {
+            Properties config = new Properties();
+            config.setProperty("jdbcUrl", System.getProperty("isn.test.jdbc"));
+            config.setProperty("user", "root"); config.setProperty("passwordFile", password.toString());
+            config.setProperty("networkId", network); config.setProperty("checkpointHash", "checkpoint");
+            java.util.concurrent.atomic.AtomicBoolean consulted = new java.util.concurrent.atomic.AtomicBoolean();
+            ClassLoader loader = new ClassLoader(getClass().getClassLoader()) {
+                @Override protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
+                    if (name.equals("com.mysql.cj.jdbc.Driver")) { consulted.set(true); }
+                    return super.loadClass(name, resolve);
+                }
+            };
+            assertEquals("tx-181", JdbcTransactionCoordinator.fromProperties(config, loader)
+                    .submit("op", "account", PAYLOAD, new Node()));
+            assertTrue(consulted.get());
+        } finally { java.nio.file.Files.deleteIfExists(password); }
+    }
 }
