@@ -17,7 +17,7 @@ MAX_ISN = 0xFFFFFFFF
 
 
 def config_file(filename=None):
-    filename = filename or os.environ.get("DIOXIDE_TX_COORDINATOR_CONFIG")
+    filename = filename or os.environ.get("DIOXIDE_TX_COORDINATOR_CONFIG") or "/etc/antchain-bridge/dioxide-tx.properties"
     if not filename:
         raise RuntimeError("DIOXIDE_TX_COORDINATOR_CONFIG is required; unsafe allocation is disabled")
     result = {}
@@ -82,9 +82,9 @@ class Coordinator:
                     cursor.execute(
                         "INSERT INTO bridge_tx_account(network_id,account,checkpoint_hash,next_isn) VALUES(%s,%s,%s,0) "
                         "ON DUPLICATE KEY UPDATE account=VALUES(account)", (self.network, account, self.checkpoint))
-                    cursor.execute("SELECT checkpoint_hash,next_isn FROM bridge_tx_account WHERE network_id=%s AND account=%s FOR UPDATE",
+                    cursor.execute("SELECT checkpoint_hash,next_isn,observed_isn FROM bridge_tx_account WHERE network_id=%s AND account=%s FOR UPDATE",
                                    (self.network, account))
-                    checkpoint, persisted = cursor.fetchone()
+                    checkpoint, persisted, observed = cursor.fetchone()
                     if checkpoint != self.checkpoint:
                         raise RuntimeError("coordinator network mismatch")
                     cursor.execute(
@@ -97,6 +97,8 @@ class Coordinator:
                         signed, tx_hash = previous[2:]
                     else:
                         node_isn = transport.current_isn(account)
+                        if node_isn < observed:
+                            raise RuntimeError("node ISN regressed; reconcile network state before new submission")
                         if not 0 <= node_isn <= MAX_ISN or not 0 <= persisted <= MAX_ISN:
                             raise RuntimeError("ISN exhausted or invalid; refusing wraparound")
                         isn = max(node_isn, persisted)
@@ -106,8 +108,8 @@ class Coordinator:
                         cursor.execute(
                             "INSERT INTO bridge_tx_submission(network_id,operation_id,account,isn,payload_hash,signed_tx,state) "
                             "VALUES(%s,%s,%s,%s,%s,%s,'SIGNED')", (self.network, operation_id, account, isn, fingerprint, signed))
-                        cursor.execute("UPDATE bridge_tx_account SET next_isn=%s WHERE network_id=%s AND account=%s",
-                                       (isn + 1, self.network, account))
+                        cursor.execute("UPDATE bridge_tx_account SET next_isn=%s,observed_isn=%s WHERE network_id=%s AND account=%s",
+                                       (isn + 1, node_isn, self.network, account))
                         tx_hash = None
                 connection.commit()
             except BaseException:

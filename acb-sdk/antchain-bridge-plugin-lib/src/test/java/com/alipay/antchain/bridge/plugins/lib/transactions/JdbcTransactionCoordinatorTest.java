@@ -116,4 +116,13 @@ public class JdbcTransactionCoordinatorTest {
         try { coordinator.submit("overflow", "account", PAYLOAD, node); fail(); }
         catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("ISN")); }
     }
+
+    @Test public void regressedNodeCounterRequiresReconciliation() throws Exception {
+        Node node = new Node();
+        coordinator.submit("first", "account", PAYLOAD, node);
+        node.nodeIsn = 180;
+        try { coordinator.submit("second", "account", PAYLOAD, node); fail(); }
+        catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("regressed")); }
+        assertEquals(1, node.composeCalls.get());
+    }
 }

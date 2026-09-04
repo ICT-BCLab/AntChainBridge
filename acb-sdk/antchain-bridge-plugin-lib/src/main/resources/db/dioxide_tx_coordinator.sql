@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS bridge_tx_account (
   account VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   checkpoint_hash VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
   next_isn BIGINT NOT NULL,
+  observed_isn BIGINT NOT NULL DEFAULT 0,
   updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   PRIMARY KEY (network_id, account)
 ) ENGINE=InnoDB;

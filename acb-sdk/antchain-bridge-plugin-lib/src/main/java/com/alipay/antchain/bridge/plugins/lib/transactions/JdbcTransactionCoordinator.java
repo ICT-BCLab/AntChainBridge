@@ -146,12 +146,14 @@ public final class JdbcTransactionCoordinator {
                         s.setString(1, network); s.setString(2, account); s.setString(3, checkpoint); s.executeUpdate();
                     }
                     long persisted;
+                    long observed;
                     try (PreparedStatement s = c.prepareStatement(
-                            "SELECT checkpoint_hash,next_isn FROM bridge_tx_account WHERE network_id=? AND account=? FOR UPDATE")) {
+                            "SELECT checkpoint_hash,next_isn,observed_isn FROM bridge_tx_account WHERE network_id=? AND account=? FOR UPDATE")) {
                         s.setString(1, network); s.setString(2, account);
                         try (ResultSet r = s.executeQuery()) {
                             if (!r.next() || !checkpoint.equals(r.getString(1))) { throw new IllegalStateException("coordinator network mismatch"); }
                             persisted = r.getLong(2);
+                            observed = r.getLong(3);
                         }
                     }
                     try (PreparedStatement s = c.prepareStatement(
@@ -170,7 +172,11 @@ public final class JdbcTransactionCoordinator {
                             }
                         }
                     }
-                    long isn = nextIsn(transport.currentIsn(account), persisted);
+                    long nodeIsn = transport.currentIsn(account);
+                    if (nodeIsn < observed) {
+                        throw new IllegalStateException("node ISN regressed; reconcile network state before new submission");
+                    }
+                    long isn = nextIsn(nodeIsn, persisted);
                     signed = transport.composeAndSign(isn);
                     if (signed == null || signed.length == 0) { throw new IllegalStateException("empty signed transaction"); }
                     try (PreparedStatement s = c.prepareStatement(
@@ -179,8 +185,8 @@ public final class JdbcTransactionCoordinator {
                         s.setLong(4, isn); s.setString(5, fingerprint); s.setBytes(6, signed); s.executeUpdate();
                     }
                     try (PreparedStatement s = c.prepareStatement(
-                            "UPDATE bridge_tx_account SET next_isn=? WHERE network_id=? AND account=?")) {
-                        s.setLong(1, isn + 1); s.setString(2, network); s.setString(3, account); s.executeUpdate();
+                            "UPDATE bridge_tx_account SET next_isn=?,observed_isn=? WHERE network_id=? AND account=?")) {
+                        s.setLong(1, isn + 1); s.setLong(2, nodeIsn); s.setString(3, network); s.setString(4, account); s.executeUpdate();
                     }
                     c.commit(); // Never move this below broadcast.
                 } catch (Exception e) {
