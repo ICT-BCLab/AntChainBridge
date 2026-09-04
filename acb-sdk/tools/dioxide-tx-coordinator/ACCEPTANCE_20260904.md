@@ -13,7 +13,8 @@ Dioxide ISN 修复已部署；**完整验收矩阵尚未全部通过**，独立�
 - 两插件交错分配：ISN 306=diox11、307=diox04、308=diox11、309=diox04。
 - 生产协调库总共 134 个 ISN（181–314）全部唯一、FINALIZED，无 ISN abort/UNKNOWN/FAILED。
 - Python 同一 operationId 再次调用复用原始哈希，数据库只有一条提交记录。
-- Ethereum→FISCO SDP V1/V2/V3 均成功，PTC 100%、监管四阶段完整。
+- Ethereum→FISCO SDP V1/V2/V3 均成功，PTC 100%、监管四阶段完整；通过独立只读 SDK 核对
+  三个 receipt 的接收合约事件，业务正文逐字节一致、各出现一次，目标状态为0（FISCO成功码）。
 - 两条 Dioxide 锚定及现有 Ethereum/FISCO/Mychain 锚定 RUNNING。Portal、Runner、Data API、
   Mychain 查询适配器和三条隧道 active；公网 Overview/Statistics/UCP/Dioxide 交易查询 HTTP 200。
 
