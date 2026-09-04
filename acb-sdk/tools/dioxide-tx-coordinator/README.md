@@ -51,6 +51,9 @@ python scripts/dioxide_send_message.py --operation-id test-20260904-001 \
 以上是示意参数，不应直接对真实业务合约执行。部署脚本也要求 operation-id，并为部署和各个绑定
 阶段使用独立标识；本次 ISN 修复不执行任何合约重部署。
 
+Python 的测试币准备、Dapp 创建也使用协调入口及独立阶段 ID。Dapp 等待失败会抛异常，
+不能把底层 SDK 的 false 返回值当作完成。首次部署前先确认相应脚本也使用同一版共享模块。
+
 - SIGNED：签名已经持久化，可能尚未广播，也可能广播后进程退出。
 - UNKNOWN：广播结果未知；只能查询或重新广播原始签名字节，不得换 ISN。
 - BROADCAST：已拿到哈希，原提交标识直接返回同一哈希。
@@ -69,6 +72,8 @@ Python 测试以 ISN_TEST_MYSQL=1 开启；JAVA_PROBE_JAVA 和 JAVA_PROBE_CLASSP
 
 覆盖账户分配、响应丢失、签名失败、同操作参数冲突、网络 checkpoint 改变、节点计数回退、数据库
 不可用、uint32 边界、查询 mailbox 竞争、跨语言恢复 Java 在签名落库后强制退出的记录。
+跨进程测试还覆盖签名前退出后的事务回滚，以及两个 Java、两个 Python 进程对同一查询
+mailbox 的 32 次写入/等待/读回，结果不能串线。所有 fixture 表只在本地 isn_test 库创建。
 两个 Dioxide 插件单独运行 DioxideClientFinalityTest，避免默认 BBC 集成测试误发真实链交易。
 插件构建加 -Dexec.skip=true，使用已提交 GCL 包装资源，本次不生成或变更链上合约代码。
 
@@ -87,3 +92,10 @@ ISN abort 分开记录。公开 API 结构、链账户、合约地址、节点�
 预留必须发生在并发主体共享的持久边界；RPC compose 不等于预留，线程锁不等于跨进程锁。
 重试的单位是已持久化的提交操作，不是重新签名的业务请求。最终确认、执行成功、业务成功是
 不同事实，不能因外层哈希存在或确认等待超时就推导出业务成功。
+
+Dioxide relay group 可能含其他业务的交易，必须保留 groupHash:数组下标，只遍历引用成员。
+组缓存可以共享，但选择成员时不能修改缓存本身；Fastjson JSONObject(Map) 使用原 Map，
+不是复制。回归测试通过真实 RPC JSON 检查一组中的两个有效成员，不受另一个失败成员影响。
+
+运维服务恢复也需要校验依赖：systemd 停止 Runner 可能连带停止 Backend，启动 Runner
+并不保证 Backend 自动恢复。每次切换后显式检查两个服务及公共查询接口。
