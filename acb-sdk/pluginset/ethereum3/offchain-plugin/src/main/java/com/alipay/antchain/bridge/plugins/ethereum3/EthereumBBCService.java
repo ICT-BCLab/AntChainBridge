@@ -290,8 +290,10 @@ public class EthereumBBCService extends AbstractBBCService {
         }
         if (ObjectUtil.isNotNull(this.bbcContext.getSdpContract())
             && StrUtil.isNotEmpty(this.bbcContext.getSdpContract().getContractAddress())) {
-            // If the contract has been pre-deployed and the contract address is configured in the configuration file,
-            // there is no need to redeploy.
+            if (!acbEthClient.ensureSdpMonitorRouting(
+                    this.bbcContext.getSdpContract().getContractAddress())) {
+                throw new RuntimeException("failed to upgrade SDP for V1/V2/V3 monitor routing");
+            }
             return;
         }
 
@@ -316,8 +318,10 @@ public class EthereumBBCService extends AbstractBBCService {
         }
         if (ObjectUtil.isNotNull(this.bbcContext.getMonitorContract())
                 && StrUtil.isNotEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
-            // If the contract has been pre-deployed and the contract address is configured in the configuration file,
-            // there is no need to redeploy.
+            if (!acbEthClient.ensureMonitorImplementation(
+                    this.bbcContext.getMonitorContract().getContractAddress())) {
+                throw new RuntimeException("failed to upgrade Monitor receive-side implementation");
+            }
             return;
         }
 
@@ -352,6 +356,20 @@ public class EthereumBBCService extends AbstractBBCService {
         }
         if (ObjectUtil.isNull(this.bbcContext.getAuthMessageContract())) {
             throw new RuntimeException("empty am contract in bbc context");
+        }
+
+        String currentProtocol = acbEthClient.getProtocolFromAuthMsg(
+                this.bbcContext.getAuthMessageContract().getContractAddress(),
+                protocolType
+        );
+        if (StrUtil.equalsIgnoreCase(currentProtocol, protocolAddress)) {
+            getBBCLogger().info(
+                    "skip setting protocol {} type {} on AM because it is already configured",
+                    protocolAddress,
+                    protocolType
+            );
+            this.bbcContext.getAuthMessageContract().setStatus(ContractStatusEnum.CONTRACT_READY);
+            return;
         }
 
         acbEthClient.setProtocolToAuthMsg(this.bbcContext.getAuthMessageContract().getContractAddress(), protocolAddress, protocolType);

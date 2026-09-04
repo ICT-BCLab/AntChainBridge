@@ -66,6 +66,42 @@ interface IMonitor {
 
     function sendUnorderedMonitorMessage(string calldata receiverDomain, bytes32 receiverID, bytes calldata message) external;
 
+    function sendMonitorMessageV2(
+        string calldata receiverDomain,
+        bytes32 receiverID,
+        address senderID,
+        bool atomic,
+        bytes calldata message
+    ) external returns (bytes32);
+
+    function sendUnorderedMonitorMessageV2(
+        string calldata receiverDomain,
+        bytes32 receiverID,
+        address senderID,
+        bool atomic,
+        bytes calldata message
+    ) external returns (bytes32);
+
+    function sendMonitorMessageV3(
+        string calldata receiverDomain,
+        bytes32 receiverID,
+        address senderID,
+        bool atomic,
+        bytes calldata message,
+        uint8 timeoutMeasure,
+        uint256 timeout
+    ) external returns (bytes32);
+
+    function sendUnorderedMonitorMessageV3(
+        string calldata receiverDomain,
+        bytes32 receiverID,
+        address senderID,
+        bool atomic,
+        bytes calldata message,
+        uint8 timeoutMeasure,
+        uint256 timeout
+    ) external returns (bytes32);
+
     function recvMonitorOrder(string calldata committeeId, string calldata signAlgo, bytes memory proof, bytes memory rawMonitorOrder) external;
 
     // 其他

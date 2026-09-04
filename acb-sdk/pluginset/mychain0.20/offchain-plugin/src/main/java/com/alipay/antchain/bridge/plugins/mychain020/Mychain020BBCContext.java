@@ -4,6 +4,7 @@ import java.io.IOException;
 
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
+import com.alibaba.fastjson.annotation.JSONField;
 import com.alipay.antchain.bridge.commons.bbc.AbstractBBCContext;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.AuthMessageContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.ContractStatusEnum;
@@ -26,16 +27,26 @@ public class Mychain020BBCContext extends AbstractBBCContext {
     private static final String EVM_CONTRACT_KEY = "evm";
     private static final String WASM_CONTRACT_KEY = "wasm";
 
+    @JSONField(serialize = false, deserialize = false)
     private AMContractClientEVM amContractClientEVM;
+    @JSONField(serialize = false, deserialize = false)
     private AMContractClientWASM amContractClientWASM;
+    @JSONField(serialize = false, deserialize = false)
     private AMContractClientTeeWASM amContractClientTeeWASM;
+    @JSONField(serialize = false, deserialize = false)
     private SDPContractClientEVM sdpContractClientEVM;
+    @JSONField(serialize = false, deserialize = false)
     private SDPContractClientWASM sdpContractClientWASM;
+    @JSONField(serialize = false, deserialize = false)
     private SDPContractClientTeeWASM sdpContractClientTeeWASM;
+    @JSONField(serialize = false, deserialize = false)
     private PtcContractEvm ptcContractEvm;
+    @JSONField(serialize = false, deserialize = false)
     private MonitorContractClientEVM monitorContractClientEVM;
+    @JSONField(serialize = false, deserialize = false)
     private MonitorVerifierContractEVM monitorVerifierContractEVM;
 
+    @JSONField(serialize = false, deserialize = false)
     private final Logger logger;
 
     // 可靠上链相关

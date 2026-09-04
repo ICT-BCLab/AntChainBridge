@@ -23,6 +23,10 @@ interface IPtcHub {
 
     function updatePTCTrustRoot(bytes calldata rawPtcTrustRoot) external;
 
+    function reconcileRootBcdnsCert(bytes calldata rawRootBcdnsCert) external;
+
+    function getImplementationVersion() external pure returns (uint32);
+
     function getPTCTrustRoot(bytes calldata ptcOwnerOid) external view returns (bytes memory);
 
     function hasPTCTrustRoot(bytes calldata ptcOwnerOid) external view returns (bool);

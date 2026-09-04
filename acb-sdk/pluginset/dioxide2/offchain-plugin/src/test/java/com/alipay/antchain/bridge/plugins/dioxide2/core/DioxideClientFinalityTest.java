@@ -1,5 +1,7 @@
 package com.alipay.antchain.bridge.plugins.dioxide2.core;
 
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.alipay.antchain.bridge.plugins.dioxide2.conf.DioxideTypes;
 import org.junit.Assert;
 import org.junit.Test;
@@ -8,6 +10,13 @@ import java.util.List;
 import java.util.Map;
 
 public class DioxideClientFinalityTest {
+
+    @Test
+    public void testContractVersionMatches() {
+        Assert.assertTrue(DioxideClient.contractVersionMatches("1043692781569", 1043692781569L));
+        Assert.assertFalse(DioxideClient.contractVersionMatches("1043692781569", 1043692781570L));
+        Assert.assertFalse(DioxideClient.contractVersionMatches("not-a-cid", 1043692781569L));
+    }
 
     @Test
     public void testIsTxFinalized() {
@@ -26,6 +35,12 @@ public class DioxideClientFinalityTest {
         Assert.assertTrue(DioxideClient.isTxFinalized(transactionWithState(
                 DioxideTypes.TxnConfirmState.TXN_ARCHIVED.name()
         )));
+        Assert.assertTrue(DioxideClient.isTxFinalized(transactionWithBlockState(
+                DioxideTypes.BlockState.DUS_FINALIZED.name()
+        )));
+        Assert.assertTrue(DioxideClient.isTxFinalized(transactionWithBlockState(
+                DioxideTypes.BlockState.DUS_ARCHIVED.name()
+        )));
     }
 
     @Test
@@ -43,6 +58,12 @@ public class DioxideClientFinalityTest {
         )));
         Assert.assertTrue(DioxideClient.isTxTerminalFailed(transactionWithState(
                 DioxideTypes.TxnConfirmState.TXN_EXPIRED.name()
+        )));
+        Assert.assertTrue(DioxideClient.isTxTerminalFailed(transactionWithBlockState(
+                DioxideTypes.BlockState.DUS_ARCHIVED_UNCLE.name()
+        )));
+        Assert.assertFalse(DioxideClient.isTxTerminalFailed(transactionWithBlockState(
+                DioxideTypes.BlockState.DUS_ARCHIVED.name()
         )));
     }
 
@@ -118,6 +139,59 @@ public class DioxideClientFinalityTest {
         );
     }
 
+    @Test
+    public void testFinalizedRelayGroupReportsEmbeddedInvocationFailure() {
+        JSONObject relayGroup = relayGroup(
+                DioxideTypes.TxnConfirmState.TXN_ARCHIVED.name(),
+                embeddedInvocation("AuthMsg.global.__relaylambda_8", "IVKRET_SUCCESS", List.of()),
+                embeddedInvocation("AuthMsg.global.__relaylambda_9", "IVKRET_EXCEPTION_THROWN", List.of())
+        );
+
+        DioxideClient.RelayEventInspection inspection = DioxideClient.inspectRelayEvents(relayGroup, "relay-group");
+
+        Assert.assertEquals(DioxideClient.RelayEventState.FAILED, inspection.state());
+        Assert.assertTrue(inspection.eventTargetTxHashes().isEmpty());
+        Assert.assertTrue(inspection.errorMessage().contains("IVKRET_EXCEPTION_THROWN"));
+        Assert.assertTrue(inspection.errorMessage().contains("AuthMsg.global.__relaylambda_9"));
+    }
+
+    @Test
+    public void testFinalizedRelayGroupReturnsProtocolEventTransactions() {
+        JSONObject relayGroup = relayGroup(
+                DioxideTypes.TxnConfirmState.TXN_ARCHIVED.name(),
+                embeddedInvocation("AuthMsg.global.__relaylambda_8", "IVKRET_SUCCESS", List.of()),
+                embeddedInvocation(
+                        "AuthMsg.global.__relaylambda_9",
+                        "IVKRET_SUCCESS",
+                        List.of("target-a:0", "target-b", "target-a:1")
+                )
+        );
+
+        DioxideClient.RelayEventInspection inspection = DioxideClient.inspectRelayEvents(relayGroup, "relay-group");
+
+        Assert.assertEquals(DioxideClient.RelayEventState.READY, inspection.state());
+        Assert.assertEquals(List.of("target-a", "target-b"), inspection.eventTargetTxHashes());
+        Assert.assertEquals("", inspection.errorMessage());
+    }
+
+    @Test
+    public void testMissingRelayEventsRemainPendingOnlyBeforeFinality() {
+        Assert.assertEquals(
+                DioxideClient.RelayEventState.PENDING,
+                DioxideClient.inspectRelayEvents(
+                        relayGroup(DioxideTypes.TxnConfirmState.TXN_CONFIRMED.name()),
+                        "relay-group"
+                ).state()
+        );
+        Assert.assertEquals(
+                DioxideClient.RelayEventState.FAILED,
+                DioxideClient.inspectRelayEvents(
+                        relayGroup(DioxideTypes.TxnConfirmState.TXN_ARCHIVED.name()),
+                        "relay-group"
+                ).state()
+        );
+    }
+
     private DioxideTransaction transactionWithState(String state) {
         return DioxideTransaction.builder().txHash("tx-hash").confirmState(state).build();
     }
@@ -130,10 +204,34 @@ public class DioxideClientFinalityTest {
                 .build();
     }
 
+    private DioxideTransaction transactionWithBlockState(String state) {
+        return DioxideTransaction.builder().state(state).build();
+    }
+
     private DioxideClient.TxFinalityResult evaluate(
             DioxideTransaction root,
             Map<String, DioxideTransaction> transactions
     ) {
         return DioxideClient.evaluateTxFinalityWithRelays(root, transactions::get);
+    }
+
+    private JSONObject relayGroup(String confirmState, JSONObject... embeddedInvocations) {
+        JSONObject relayGroup = new JSONObject();
+        relayGroup.put("Hash", "relay-group");
+        relayGroup.put("ConfirmState", confirmState);
+        JSONArray relays = new JSONArray();
+        relays.addAll(List.of(embeddedInvocations));
+        relayGroup.put("Relays", relays);
+        return relayGroup;
+    }
+
+    private JSONObject embeddedInvocation(String function, String status, List<String> relays) {
+        JSONObject invocation = new JSONObject();
+        invocation.put("Status", status);
+        invocation.put("Relays", relays);
+        JSONObject embedded = new JSONObject();
+        embedded.put("Function", function);
+        embedded.put("Invocation", invocation);
+        return embedded;
     }
 }

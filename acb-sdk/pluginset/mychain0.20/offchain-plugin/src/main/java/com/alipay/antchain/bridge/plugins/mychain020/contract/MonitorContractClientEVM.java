@@ -11,6 +11,8 @@ import com.alipay.antchain.bridge.plugins.mychain020.exceptions.CallContractExce
 import com.alipay.antchain.bridge.plugins.mychain020.sdk.Mychain020Client;
 import com.alipay.mychain.sdk.api.utils.Utils;
 import com.alipay.mychain.sdk.common.VMTypeEnum;
+import com.alipay.mychain.sdk.crypto.hash.Hash;
+import com.alipay.mychain.sdk.domain.account.Identity;
 import com.alipay.mychain.sdk.domain.transaction.TransactionReceipt;
 import com.alipay.mychain.sdk.errorcode.ErrorCode;
 import com.alipay.mychain.sdk.vm.EVMOutput;
@@ -24,10 +26,12 @@ import org.slf4j.Logger;
 @Setter
 public class MonitorContractClientEVM {
 
-    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 3;
+    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 6;
 
     private static final String MONITOR_EVM_CONTRACT_PREFIX = "MONITOR_EVM_CONTRACT_";
+    private static final String MONITOR_EVM_RUNTIME_PATH = "/contract/v1/solidity/Monitor.bin-runtime";
     private static final String GET_IMPLEMENTATION_VERSION_SIGN = "getImplementationVersion()";
+    private static final String GET_MONITOR_VERIFIER_SIGN = "getMonitorVerifier()";
     private static final String SET_SDP_ADDRESS_SIGN = "setSdpAddress(identity)";
     private static final String SET_MONITOR_VERIFIER_ADDRESS_SIGN = "setMonitorVerifierAddress(identity)";
     private static final String SET_MONITOR_CONTROL_SIGN = "setMonitorControl(uint32)";
@@ -42,6 +46,22 @@ public class MonitorContractClientEVM {
     public MonitorContractClientEVM(Mychain020Client mychain020Client, Logger logger) {
         this.mychain020Client = mychain020Client;
         this.logger = logger;
+    }
+
+    public String getContractAddress() {
+        return contractAddress;
+    }
+
+    public void setContractAddress(String contractAddress) {
+        this.contractAddress = contractAddress;
+    }
+
+    public ContractStatusEnum getStatus() {
+        return status;
+    }
+
+    public void setStatus(ContractStatusEnum status) {
+        this.status = status;
     }
 
     public boolean deployContract() {
@@ -89,9 +109,58 @@ public class MonitorContractClientEVM {
         }
     }
 
-    public void resetDeployment() {
-        this.contractAddress = null;
-        this.status = null;
+    /**
+     * Upgrade a legacy Monitor in place so that its identity, verifier,
+     * protocol wiring and policy state are preserved. Monitor V4 only appends
+     * receive-side entry points and does not change the existing storage
+     * layout. Monitor V5 additionally routes SDP V2/V3 request and ACK paths
+     * through the same monitor envelope used by V1, and exposes matching
+     * receive-side entry points for all three SDP versions. Monitor V6 replaces
+     * the compiler-sensitive assembly decoder so non-word-aligned business
+     * payloads are preserved byte-for-byte on Mychain.
+     */
+    public boolean ensureImplementationSupported() {
+        if (isImplementationVersionSupported()) {
+            return true;
+        }
+        if (StrUtil.isEmpty(this.contractAddress)) {
+            logger.error("cannot upgrade an empty monitor contract");
+            return false;
+        }
+
+        logger.info(
+                "Upgrade legacy Monitor {} with runtime {}",
+                this.contractAddress,
+                MONITOR_EVM_RUNTIME_PATH);
+        if (!mychain020Client.upgradeContract(
+                MONITOR_EVM_RUNTIME_PATH,
+                this.contractAddress,
+                VMTypeEnum.EVM)) {
+            logger.error("failed to upgrade legacy Monitor {}", this.contractAddress);
+            return false;
+        }
+
+        boolean supported = isImplementationVersionSupported();
+        if (!supported) {
+            logger.error("Monitor {} is still unsupported after upgrade", this.contractAddress);
+        }
+        return supported;
+    }
+
+    public Identity getMonitorVerifierIdentity() {
+        TransactionReceipt receipt = mychain020Client.localCallContract(
+                this.contractAddress,
+                new EVMParameter(GET_MONITOR_VERIFIER_SIGN));
+        if (ObjectUtil.isEmpty(receipt)
+                || receipt.getResult() != ErrorCode.SUCCESS.getErrorCode()
+                || ObjectUtil.isEmpty(receipt.getOutput())
+                || receipt.getOutput().length != 32) {
+            throw new CallContractException(
+                    this.contractAddress,
+                    "",
+                    "monitor verifier identity is unavailable");
+        }
+        return new Identity(new Hash(receipt.getOutput()));
     }
 
     public void setProtocol(String sdpContractName) {

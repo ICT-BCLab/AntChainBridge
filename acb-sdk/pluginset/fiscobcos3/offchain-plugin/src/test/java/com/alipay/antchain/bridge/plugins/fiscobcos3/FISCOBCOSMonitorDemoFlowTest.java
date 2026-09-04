@@ -72,10 +72,12 @@ public class FISCOBCOSMonitorDemoFlowTest {
     public void test03QueryReceiver() throws Exception {
         ReceiverContract receiver = ReceiverContract.load(
                 requiredProperty("fisco.demo.receiver"), service.getClient(), service.getKeyPair());
-        System.out.println("FISCO_LAST_ORDERED_MSG="
-                + new String(receiver.getLastMsg(), StandardCharsets.UTF_8));
-        System.out.println("FISCO_LAST_UNORDERED_MSG="
-                + new String(receiver.getLastUnorderedMsg(), StandardCharsets.UTF_8));
+        String expected = System.getProperty("fisco.demo.message", "fisco-monitor-demo");
+        String ordered = new String(receiver.getLastMsg(), StandardCharsets.UTF_8);
+        String unordered = new String(receiver.getLastUnorderedMsg(), StandardCharsets.UTF_8);
+        Assert.assertEquals("business contract received monitor envelope or padding", expected, ordered);
+        System.out.println("FISCO_LAST_ORDERED_MSG=" + ordered);
+        System.out.println("FISCO_LAST_UNORDERED_MSG=" + unordered);
     }
 
     @Test

@@ -598,6 +598,11 @@ public class EthereumBBCServiceTest {
                 ctx.getSdpContract().getContractAddress(),
                 "0");
 
+        // setup-bbccontracts is intentionally repeatable for in-place SDP/Monitor upgrades.
+        ethereumBBCService.setProtocol(
+                ctx.getSdpContract().getContractAddress(),
+                "0");
+
         String addr = AuthMsg.load(
                 ethereumBBCService.getBbcContext().getAuthMessageContract().getContractAddress(),
                 ethereumBBCService.getAcbEthClient().getWeb3j(),

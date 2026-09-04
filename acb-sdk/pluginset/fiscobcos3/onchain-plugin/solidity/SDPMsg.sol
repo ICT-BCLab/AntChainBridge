@@ -4,6 +4,7 @@ pragma solidity ^0.4.22;
 import "./interfaces/ISDPMessage.sol";
 import "./interfaces/IAuthMessage.sol";
 import "./interfaces/IContractUsingSDP.sol";
+import "./interfaces/IContractUsingMonitor.sol";
 import "./interfaces/IContractWithAcks.sol";
 import "./lib/sdp/SDPLib.sol";
 import "./lib/utils/Ownable.sol";
@@ -14,6 +15,10 @@ contract SDPMsg is ISDPMessage, Ownable {
 
     string constant RECV_UNORDERED_MSG_METHOD_SIGN = "recvUnorderedMessage(string,bytes32,bytes)";
     string constant RECV_ORDERED_MSG_METHOD_SIGN = "recvMessage(string,bytes32,bytes)";
+    string constant RECV_MONITOR_UNORDERED_MSG_METHOD_SIGN = "recvUnorderedMessageFromSDP(string,bytes32,address,bytes)";
+    string constant RECV_MONITOR_ORDERED_MSG_METHOD_SIGN = "recvMessageFromSDP(string,bytes32,address,bytes)";
+
+    uint32 constant MONITOR_ROUTING_VERSION = 2;
 
 
     uint8 constant SDP_V2_ATOMIC_FLAG_NONE_ATOMIC = 0;
@@ -67,6 +72,10 @@ contract SDPMsg is ISDPMessage, Ownable {
     function setMonitorContract(address newMonitorAddress) external onlyOwner {
         require(newMonitorAddress != address(0), "SDPMsg: invalid monitor contract");
         monitorAddress = newMonitorAddress;
+    }
+
+    function getMonitorRoutingVersion() external pure returns (uint32) {
+        return MONITOR_ROUTING_VERSION;
     }
 
     function getAmAddress() external view returns (address) {
@@ -251,16 +260,31 @@ contract SDPMsg is ISDPMessage, Ownable {
         string memory errMsg;
         address receiver = sdpMessage.getReceiverAddress();
 
-        res = receiver.call(abi.encodeWithSignature(
-            RECV_ORDERED_MSG_METHOD_SIGN,
-            senderDomain, senderID, sdpMessage.message));
+        if (monitorAddress == address(0)) {
+            res = receiver.call(abi.encodeWithSignature(
+                RECV_ORDERED_MSG_METHOD_SIGN,
+                senderDomain, senderID, sdpMessage.message));
+        } else {
+            res = monitorAddress.call(abi.encodeWithSignature(
+                RECV_MONITOR_ORDERED_MSG_METHOD_SIGN,
+                senderDomain, senderID, receiver, sdpMessage.message));
+        }
 
         emit receiveMessage(senderDomain, senderID, receiver, seqExpected, res, errMsg);
     }
 
     function _routeUnorderedMessage(string senderDomain, bytes32 senderID, SDPLib.SDPMessage memory sdpMessage) internal {
-        IContractUsingSDP(sdpMessage.getReceiverAddress())
-        .recvUnorderedMessage(senderDomain, senderID, sdpMessage.message);
+        address receiver = sdpMessage.getReceiverAddress();
+        if (monitorAddress == address(0)) {
+            IContractUsingSDP(receiver).recvUnorderedMessage(senderDomain, senderID, sdpMessage.message);
+        } else {
+            IContractUsingMonitor(monitorAddress).recvUnorderedMessageFromSDP(
+                senderDomain,
+                senderID,
+                receiver,
+                sdpMessage.message
+            );
+        }
     }
 
     function _processSDPv2(string senderDomain, bytes32 senderID, bytes memory pkg) internal {
@@ -324,9 +348,15 @@ contract SDPMsg is ISDPMessage, Ownable {
         string memory errMsg;
         address receiver = sdpMessage.getReceiverAddress();
 
-        res = receiver.call(abi.encodeWithSignature(
-            RECV_ORDERED_MSG_METHOD_SIGN,
-            senderDomain, senderID, sdpMessage.message));
+        if (monitorAddress == address(0)) {
+            res = receiver.call(abi.encodeWithSignature(
+                RECV_ORDERED_MSG_METHOD_SIGN,
+                senderDomain, senderID, sdpMessage.message));
+        } else {
+            res = monitorAddress.call(abi.encodeWithSignature(
+                RECV_MONITOR_ORDERED_MSG_METHOD_SIGN,
+                senderDomain, senderID, receiver, sdpMessage.message));
+        }
 
         return (res, errMsg);
     }
@@ -335,9 +365,16 @@ contract SDPMsg is ISDPMessage, Ownable {
         bool res = false;
         string memory errMsg;
 
-        res = sdpMessage.getReceiverAddress().call(abi.encodeWithSignature(
-            RECV_UNORDERED_MSG_METHOD_SIGN,
-            senderDomain, senderID, sdpMessage.message));
+        address receiver = sdpMessage.getReceiverAddress();
+        if (monitorAddress == address(0)) {
+            res = receiver.call(abi.encodeWithSignature(
+                RECV_UNORDERED_MSG_METHOD_SIGN,
+                senderDomain, senderID, sdpMessage.message));
+        } else {
+            res = monitorAddress.call(abi.encodeWithSignature(
+                RECV_MONITOR_UNORDERED_MSG_METHOD_SIGN,
+                senderDomain, senderID, receiver, sdpMessage.message));
+        }
 
         return (res, errMsg);
     }

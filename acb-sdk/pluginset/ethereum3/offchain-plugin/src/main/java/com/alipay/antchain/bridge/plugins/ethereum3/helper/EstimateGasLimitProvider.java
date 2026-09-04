@@ -30,6 +30,17 @@ import java.math.BigInteger;
 @Builder
 public class EstimateGasLimitProvider implements IGasLimitProvider {
 
+    /**
+     * eth_estimateGas is evaluated against the node's latest state. Several relayer
+     * transactions can be queued before that state advances, so an estimate that is
+     * exact for the first transaction may be too small for a later transaction in
+     * the same block. Keep a multiplicative margin in addition to the operator's
+     * configured fixed margin.
+     */
+    static final BigInteger ESTIMATE_SAFETY_NUMERATOR = BigInteger.valueOf(6L);
+
+    static final BigInteger ESTIMATE_SAFETY_DENOMINATOR = BigInteger.valueOf(5L);
+
     private Web3j web3j;
 
     private String fromAddress;
@@ -74,6 +85,20 @@ public class EstimateGasLimitProvider implements IGasLimitProvider {
             throw new RuntimeException(StrUtil.format("failed to estimate gas for {} : {}", contractFunc, ethEstimateGas.getError().getMessage()));
         }
 
-        return ethEstimateGas.getAmountUsed().add(BigInteger.valueOf(extraGasLimit));
+        return applySafetyMargin(ethEstimateGas.getAmountUsed(), extraGasLimit);
+    }
+
+    static BigInteger applySafetyMargin(BigInteger estimatedGas, long extraGasLimit) {
+        if (estimatedGas == null || estimatedGas.signum() < 0) {
+            throw new IllegalArgumentException("estimated gas must be a non-negative integer");
+        }
+        if (extraGasLimit < 0) {
+            throw new IllegalArgumentException("extra gas limit must be non-negative");
+        }
+        return estimatedGas
+                .multiply(ESTIMATE_SAFETY_NUMERATOR)
+                .add(ESTIMATE_SAFETY_DENOMINATOR.subtract(BigInteger.ONE))
+                .divide(ESTIMATE_SAFETY_DENOMINATOR)
+                .add(BigInteger.valueOf(extraGasLimit));
     }
 }

@@ -117,6 +117,8 @@ interface ISDPMessage is ISubProtocol {
      */
     function sendMessageV2(string calldata receiverDomain, identity receiverID, bool atomic, bytes calldata message) external returns (bytes32);
 
+    function sendMessageV2FromMonitor(string calldata receiverDomain, identity receiverID, identity senderID, bool atomic, bytes calldata message) external returns (bytes32);
+
     /**
      * @dev Smart contracts need to call this method to send orderly cross-chain messages in SDPv1.
      *
@@ -151,6 +153,8 @@ interface ISDPMessage is ISubProtocol {
      * @return the message id of SDP packet sent.
      */
     function sendUnorderedMessageV2(string calldata receiverDomain, identity receiverID, bool atomic, bytes calldata message) external returns (bytes32);
+
+    function sendUnorderedMessageV2FromMonitor(string calldata receiverDomain, identity receiverID, identity senderID, bool atomic, bytes calldata message) external returns (bytes32);
 
     /**
      * @dev Smart contracts call this method to send cross-chain messages out of order in SDPv1.
@@ -204,6 +208,8 @@ interface ISDPMessage is ISubProtocol {
      */
     function sendUnorderedMessageV3(string calldata receiverDomain, identity receiverID, bool atomic, bytes calldata message, uint8 timeoutMeasure, uint256 timeout) external returns (bytes32);
 
+    function sendUnorderedMessageV3FromMonitor(string calldata receiverDomain, identity receiverID, identity senderID, bool atomic, bytes calldata message, uint8 timeoutMeasure, uint256 timeout) external returns (bytes32);
+
     /**
      * @dev Smart contracts need to call this method to send orderly cross-chain messages in SDPv3.
      *
@@ -222,6 +228,8 @@ interface ISDPMessage is ISubProtocol {
      * @return The message id of SDP packet sent.
      */
     function sendMessageV3(string calldata receiverDomain, identity receiverID, bool atomic, bytes calldata message, uint8 timeoutMeasure, uint256 timeout) external returns (bytes32);
+
+    function sendMessageV3FromMonitor(string calldata receiverDomain, identity receiverID, identity senderID, bool atomic, bytes calldata message, uint8 timeoutMeasure, uint256 timeout) external returns (bytes32);
 
     /**
      * @dev Calling this function can submit a notification message of an off-chain exception directly on-chain.

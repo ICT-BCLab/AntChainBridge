@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.UUID;
 
 import cn.hutool.core.util.HexUtil;
+import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.ContractStatusEnum;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.SDPContract;
@@ -16,6 +17,7 @@ import com.alipay.mychain.sdk.api.utils.Utils;
 import com.alipay.mychain.sdk.common.VMTypeEnum;
 import com.alipay.mychain.sdk.crypto.hash.Hash;
 import com.alipay.mychain.sdk.domain.transaction.TransactionReceipt;
+import com.alipay.mychain.sdk.errorcode.ErrorCode;
 import com.alipay.mychain.sdk.vm.EVMOutput;
 import com.alipay.mychain.sdk.vm.EVMParameter;
 import lombok.Getter;
@@ -29,14 +31,20 @@ public class SDPContractClientEVM extends SDPContract implements AbstractSDPCont
 
     private static final String SDP_EVM_CONTRACT_PREFIX = "SDP_EVM_CONTRACT_";
 
+    private static final String SDP_EVM_RUNTIME_PATH = "/contract/v1/solidity/SDPMsg.bin-runtime";
+    public static final int SUPPORTED_MONITOR_ROUTING_VERSION = 4;
+
     private static final String SET_AM_CONTRACT_AND_DOMAIN_SIGN = "SetAmContractAndDomain(identity,string)";
     private static final String SET_MONITOR_CONTRACT_SIGN = "setMonitorContract(identity)";
+    private static final String GET_MONITOR_ROUTING_VERSION_SIGN = "getMonitorRoutingVersion()";
     private static final String RECV_OFF_CHAIN_EXCEPTION_SIGN = "recvOffChainException(bytes32,bytes)";
     private static final String UPDATE_VERIFIED_INFO_SIGN = "updateVerifiedInfo(string,bytes32,uint64,uint64)";
     private static final String QUERY_VALIDATED_BLOCK_STATE_BY_DOMAIN_SIGN = "queryValidatedBlockStateByDomain(string)";
     private static final String QUERY_SDP_SEQ_SIGN = "querySDPMessageSeq(string,bytes32,string,bytes32)";
 
     private static final String BLOCK_STATE_CLS = "(uint16,string,bytes32,uint256,uint64)";
+
+    private static final long LEGACY_METHOD_NOT_FOUND_RESULT = 10201L;
 
     private Mychain020Client mychain020Client;
 
@@ -47,6 +55,14 @@ public class SDPContractClientEVM extends SDPContract implements AbstractSDPCont
     public SDPContractClientEVM(Mychain020Client mychain020Client, Logger logger) {
         this.mychain020Client = mychain020Client;
         this.logger = logger;
+    }
+
+    public String getLocalDomain() {
+        return localDomain;
+    }
+
+    public void setLocalDomain(String localDomain) {
+        this.localDomain = localDomain;
     }
 
     public void setMonitorContract(String monitorContractName) {
@@ -60,6 +76,73 @@ public class SDPContractClientEVM extends SDPContract implements AbstractSDPCont
                     "failed to set monitor contract {} into sdp {}",
                     monitorContractName,
                     this.getContractAddress()));
+        }
+    }
+
+    /**
+     * Upgrade an SDP contract deployed before regulatory monitor support was
+     * added. The monitor address is appended after every legacy storage field
+     * in the regulatory contract, so the existing domain, sequence and block
+     * state data remain at their original slots.
+     */
+    public boolean ensureMonitorSupport() {
+        if (isMonitorSupported()) {
+            return true;
+        }
+        if (StrUtil.isEmpty(this.getContractAddress())) {
+            logger.error("cannot upgrade an empty sdp contract");
+            return false;
+        }
+
+        logger.info(
+                "Upgrade legacy SDP {} with monitor-enabled runtime {}",
+                this.getContractAddress(),
+                SDP_EVM_RUNTIME_PATH);
+        if (!mychain020Client.upgradeContract(
+                SDP_EVM_RUNTIME_PATH,
+                this.getContractAddress(),
+                VMTypeEnum.EVM)) {
+            logger.error("failed to upgrade legacy sdp {}", this.getContractAddress());
+            return false;
+        }
+
+        boolean supported = isMonitorSupported();
+        if (!supported) {
+            logger.error("sdp {} still lacks monitor support after upgrade", this.getContractAddress());
+        }
+        return supported;
+    }
+
+    public boolean isMonitorSupported() {
+        if (StrUtil.isEmpty(this.getContractAddress())) {
+            return false;
+        }
+
+        try {
+            TransactionReceipt receipt = mychain020Client.localCallContract(
+                    this.getContractAddress(),
+                    new EVMParameter(GET_MONITOR_ROUTING_VERSION_SIGN));
+            if (ObjectUtil.isEmpty(receipt)) {
+                throw new IllegalStateException("empty sdp capability probe receipt");
+            }
+            if (receipt.getResult() == LEGACY_METHOD_NOT_FOUND_RESULT) {
+                return false;
+            }
+            if (receipt.getResult() != ErrorCode.SUCCESS.getErrorCode()
+                    || ObjectUtil.isEmpty(receipt.getOutput())) {
+                throw new IllegalStateException(
+                        StrUtil.format(
+                                "unexpected sdp capability probe result: {}",
+                                receipt.getResult()));
+            }
+            BigInteger version = new EVMOutput(Hex.toHexString(receipt.getOutput())).getUint();
+            return BigInteger.valueOf(SUPPORTED_MONITOR_ROUTING_VERSION).equals(version);
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    StrUtil.format(
+                            "failed to probe monitor support on sdp {}",
+                            this.getContractAddress()),
+                    e);
         }
     }
 

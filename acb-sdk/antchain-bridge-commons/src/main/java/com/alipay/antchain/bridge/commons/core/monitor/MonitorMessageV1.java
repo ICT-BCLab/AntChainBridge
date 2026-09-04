@@ -15,11 +15,35 @@ public class MonitorMessageV1 extends AbstractMonitorMessage {
 
     @Override
     public void decode(byte[] rawMessage) {
-        int offset = rawMessage.length;
+        if (rawMessage == null || rawMessage.length < 68) {
+            throw new AntChainBridgeCommonsException(
+                    CommonsErrorCodeEnum.MONITOR_MESSAGE_DECODE_ERROR,
+                    "monitor V1 envelope is shorter than its fixed fields"
+            );
+        }
 
-        offset = extractMonitorType(rawMessage, offset);
-        offset = extractMonitorMsg(rawMessage, offset);
-        extractPayload(rawMessage, offset);
+        try {
+            int offset = rawMessage.length;
+            offset = extractMonitorType(rawMessage, offset);
+            if (getMonitorType() != MONITOR_CLOSE
+                    && getMonitorType() != MONITOR_OPEN
+                    && getMonitorType() != MONITOR_ROLLBACK) {
+                throw new IllegalArgumentException("invalid monitor V1 type: " + getMonitorType());
+            }
+            offset = extractMonitorMsg(rawMessage, offset);
+            offset = extractPayload(rawMessage, offset);
+            if (offset != 0) {
+                throw new IllegalArgumentException("trailing data in monitor V1 envelope: " + offset);
+            }
+        } catch (AntChainBridgeCommonsException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new AntChainBridgeCommonsException(
+                    CommonsErrorCodeEnum.MONITOR_MESSAGE_DECODE_ERROR,
+                    "malformed monitor V1 envelope",
+                    e
+            );
+        }
     }
 
     public int extractMonitorType(byte[] rawMessage, int offset) {
@@ -49,7 +73,7 @@ public class MonitorMessageV1 extends AbstractMonitorMessage {
 
         // return offset;
         CoderResult<byte[]> result = EvmCoderUtil.parseVarBytes(rawMessage, offset);
-        this.setMonitorMsg(new String(result.getResult()));
+        this.setMonitorMsg(new String(result.getResult(), StandardCharsets.UTF_8));
         return result.getOffset();
     }
 

@@ -17,12 +17,16 @@
 package com.alipay.antchain.bridge.ptc.committee;
 
 import java.io.ByteArrayInputStream;
+import java.lang.reflect.Method;
 import java.math.BigInteger;
 import java.net.InetSocketAddress;
 import java.security.PrivateKey;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.ListUtil;
@@ -51,6 +55,7 @@ import com.alipay.antchain.bridge.ptc.committee.types.basic.EndorseBlockStateRes
 import com.alipay.antchain.bridge.ptc.committee.types.basic.NodePublicKeyEntry;
 import com.alipay.antchain.bridge.ptc.committee.types.network.CommitteeNetworkInfo;
 import com.alipay.antchain.bridge.ptc.committee.types.network.nodeclient.Node;
+import com.alipay.antchain.bridge.ptc.committee.types.network.nodeclient.NodeVerifyCrossChainMessageResult;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.CommitteeEndorseRoot;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.NodeEndorseInfo;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.OptionalEndorsePolicy;
@@ -552,6 +557,58 @@ public class CommitteePTCServiceTest {
         CommitteeEndorseProof endorseProof = CommitteeEndorseProof.decode(vcs.getPtcProof());
         assertEquals(COMMITTEE_ID, endorseProof.getCommitteeId());
         assertEquals(1, endorseProof.getSigs().size());
+    }
+
+    @Test
+    @SneakyThrows
+    public void testCollectValidatedConsensusStateSkipsFailedOptionalFuture() {
+        CommitteePTCService ptcService = new CommitteePTCService();
+        CompletableFuture<ValidatedConsensusState> failedOptional = new CompletableFuture<>();
+        failedOptional.completeExceptionally(new RuntimeException("optional node is behind"));
+
+        Method collector = CommitteePTCService.class.getDeclaredMethod(
+                "collectValidatedConsensusStateResults",
+                java.util.List.class
+        );
+        collector.setAccessible(true);
+        ValidatedConsensusState result = (ValidatedConsensusState) collector.invoke(
+                ptcService,
+                Arrays.<Future<ValidatedConsensusState>>asList(
+                        CompletableFuture.completedFuture(currVcs),
+                        failedOptional
+                )
+        );
+
+        assertArrayEquals(currVcs.getEncodedToSign(), result.getEncodedToSign());
+        assertEquals(1, CommitteeEndorseProof.decode(result.getPtcProof()).getSigs().size());
+    }
+
+    @Test
+    @SneakyThrows
+    @SuppressWarnings("unchecked")
+    public void testCollectNodeVerifyResultsSkipsFailedOptionalFuture() {
+        CommitteePTCService ptcService = new CommitteePTCService();
+        NodeVerifyCrossChainMessageResult requiredResult =
+                new NodeVerifyCrossChainMessageResult(null, "approved", "");
+        CompletableFuture<NodeVerifyCrossChainMessageResult> failedOptional = new CompletableFuture<>();
+        failedOptional.completeExceptionally(new RuntimeException("optional node has not indexed this state"));
+
+        Method collector = CommitteePTCService.class.getDeclaredMethod(
+                "collectNodeVerifyResults",
+                java.util.List.class
+        );
+        collector.setAccessible(true);
+        java.util.List<NodeVerifyCrossChainMessageResult> results =
+                (java.util.List<NodeVerifyCrossChainMessageResult>) collector.invoke(
+                        ptcService,
+                        Arrays.<Future<NodeVerifyCrossChainMessageResult>>asList(
+                                CompletableFuture.completedFuture(requiredResult),
+                                failedOptional
+                        )
+                );
+
+        assertEquals(1, results.size());
+        assertSame(requiredResult, results.get(0));
     }
 
     @Test

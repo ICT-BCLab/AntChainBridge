@@ -41,6 +41,7 @@ import com.alipay.antchain.bridge.plugins.mychain020.sdk.Mychain020Client;
 import com.alipay.mychain.sdk.api.utils.Utils;
 import com.alipay.mychain.sdk.common.VMTypeEnum;
 import com.alipay.mychain.sdk.domain.transaction.TransactionReceipt;
+import com.alipay.mychain.sdk.errorcode.ErrorCode;
 import com.alipay.mychain.sdk.message.transaction.TransactionReceiptResponse;
 import com.alipay.mychain.sdk.vm.EVMOutput;
 import com.alipay.mychain.sdk.vm.EVMParameter;
@@ -51,6 +52,16 @@ import org.slf4j.Logger;
 public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
 
     private static final String PTC_HUB_EVM_CONTRACT_PREFIX = "PTC_HUB_EVM_CONTRACT_";
+
+    private static final String PTC_HUB_EVM_RUNTIME_PATH = "/contract/v1/solidity/PtcHub.bin-runtime";
+
+    private static final String GET_MONITOR_VERIFIER_SIGN = "getMonitorVerifier()";
+
+    private static final String GET_IMPLEMENTATION_VERSION_SIGN = "getImplementationVersion()";
+
+    private static final BigInteger ROOT_RECONCILIATION_IMPLEMENTATION_VERSION = BigInteger.valueOf(2L);
+
+    private static final long LEGACY_METHOD_NOT_FOUND_RESULT = 10201L;
 
     private Mychain020Client mychain020Client;
 
@@ -122,6 +133,65 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
                 ptcTrustRoot.getPtcCredentialSubject().getApplicant().toHex(), result.getTxId());
     }
 
+    public boolean reconcileRootBcdnsCert(String bcdnsRootCertPem) {
+        if (!ensureRootReconciliationSupport()) {
+            return false;
+        }
+        AbstractCrossChainCertificate bcdnsRootCert =
+                CrossChainCertificateUtil.readCrossChainCertificateFromPem(bcdnsRootCertPem.getBytes());
+        if (bcdnsRootCert.getType() != CrossChainCertificateTypeEnum.BCDNS_TRUST_ROOT_CERTIFICATE) {
+            throw new IllegalArgumentException("PTC hub requires a BCDNS trust root certificate");
+        }
+
+        EVMParameter parameters = new EVMParameter("reconcileRootBcdnsCert(bytes)");
+        parameters.addBytes(bcdnsRootCert.encode());
+        SendResponseResult result = mychain020Client.callContract(this.getContractAddress(), parameters, true);
+        if (!result.isSuccess()) {
+            throw new CallContractException(getContractAddress(), result.getTxId(), result.getErrorMessage());
+        }
+        logger.info("Reconciled PTC hub {} with the configured BCDNS root in tx {}",
+                getContractAddress(), result.getTxId());
+        return true;
+    }
+
+    public boolean ensureRootReconciliationSupport() {
+        if (StrUtil.isEmpty(this.getContractAddress())) {
+            return false;
+        }
+        BigInteger version = queryImplementationVersion();
+        if (version.compareTo(ROOT_RECONCILIATION_IMPLEMENTATION_VERSION) >= 0) {
+            return true;
+        }
+
+        logger.info("Upgrade legacy PTC hub {} for BCDNS root reconciliation", getContractAddress());
+        if (!mychain020Client.upgradeContract(
+                PTC_HUB_EVM_RUNTIME_PATH,
+                getContractAddress(),
+                VMTypeEnum.EVM)) {
+            logger.error("failed to upgrade PTC hub {} for BCDNS root reconciliation", getContractAddress());
+            return false;
+        }
+        return queryImplementationVersion().compareTo(ROOT_RECONCILIATION_IMPLEMENTATION_VERSION) >= 0;
+    }
+
+    private BigInteger queryImplementationVersion() {
+        TransactionReceipt receipt = mychain020Client.localCallContract(
+                this.getContractAddress(),
+                new EVMParameter(GET_IMPLEMENTATION_VERSION_SIGN));
+        if (ObjectUtil.isEmpty(receipt)) {
+            throw new IllegalStateException("empty PTC hub implementation-version receipt");
+        }
+        if (receipt.getResult() == LEGACY_METHOD_NOT_FOUND_RESULT) {
+            return BigInteger.ZERO;
+        }
+        if (receipt.getResult() != ErrorCode.SUCCESS.getErrorCode()
+                || ObjectUtil.isEmpty(receipt.getOutput())) {
+            throw new IllegalStateException(
+                    StrUtil.format("unexpected PTC hub implementation-version result: {}", receipt.getResult()));
+        }
+        return new BigInteger(1, receipt.getOutput());
+    }
+
     public void setCommitteeVerifier(String committeeVerifierName) {
         EVMParameter parameters = new EVMParameter("addPtcVerifier(identity)");
         parameters.addIdentity(Utils.getIdentityByName(committeeVerifierName, mychain020Client.getConfig().getMychainHashType()));
@@ -147,6 +217,75 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
         }
 
         logger.info("Set monitor verifier {} with tx {} successfully!", monitorVerifierName, result.getTxId());
+    }
+
+    /**
+     * Upgrade a PTC Hub deployed before monitor support was introduced while
+     * preserving the contract identity and its existing trust data.
+     *
+     * <p>The regulatory PTC Hub appends only {@code monitorVerifierAddr} to the
+     * legacy storage layout. Mychain's update-contract operation replaces the
+     * runtime code at the existing identity, so the BCDNS certificate, PTC
+     * trust roots, verify anchors and TpBTAs remain available.</p>
+     */
+    public boolean ensureMonitorVerifierSupport() {
+        if (isMonitorVerifierSupported()) {
+            return true;
+        }
+        if (StrUtil.isEmpty(this.getContractAddress())) {
+            logger.error("cannot upgrade an empty ptc hub contract");
+            return false;
+        }
+
+        logger.info(
+                "Upgrade legacy PTC hub {} with monitor-enabled runtime {}",
+                this.getContractAddress(),
+                PTC_HUB_EVM_RUNTIME_PATH);
+        if (!mychain020Client.upgradeContract(
+                PTC_HUB_EVM_RUNTIME_PATH,
+                this.getContractAddress(),
+                VMTypeEnum.EVM)) {
+            logger.error("failed to upgrade legacy ptc hub {}", this.getContractAddress());
+            return false;
+        }
+
+        boolean supported = isMonitorVerifierSupported();
+        if (!supported) {
+            logger.error("ptc hub {} still lacks monitor support after upgrade", this.getContractAddress());
+        }
+        return supported;
+    }
+
+    public boolean isMonitorVerifierSupported() {
+        if (StrUtil.isEmpty(this.getContractAddress())) {
+            return false;
+        }
+
+        try {
+            TransactionReceipt receipt = mychain020Client.localCallContract(
+                    this.getContractAddress(),
+                    new EVMParameter(GET_MONITOR_VERIFIER_SIGN));
+            if (ObjectUtil.isEmpty(receipt)) {
+                throw new IllegalStateException("empty ptc hub capability probe receipt");
+            }
+            if (receipt.getResult() == LEGACY_METHOD_NOT_FOUND_RESULT) {
+                return false;
+            }
+            if (receipt.getResult() != ErrorCode.SUCCESS.getErrorCode()
+                    || ObjectUtil.isEmpty(receipt.getOutput())) {
+                throw new IllegalStateException(
+                        StrUtil.format(
+                                "unexpected ptc hub capability probe result: {}",
+                                receipt.getResult()));
+            }
+            return true;
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    StrUtil.format(
+                            "failed to probe monitor support on ptc hub {}",
+                            this.getContractAddress()),
+                    e);
+        }
     }
 
     public String getCommitteeVerifier() {

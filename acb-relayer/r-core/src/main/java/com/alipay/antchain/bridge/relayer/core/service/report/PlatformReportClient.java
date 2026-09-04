@@ -3,6 +3,7 @@ package com.alipay.antchain.bridge.relayer.core.service.report;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.regex.Pattern;
 import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
 
@@ -31,6 +32,10 @@ import org.springframework.web.client.RestTemplate;
 @Slf4j
 @Component
 public class PlatformReportClient {
+
+    private static final Pattern BARE_32_BYTE_HEX = Pattern.compile("^[0-9a-fA-F]{64}$");
+
+    private static final Pattern PREFIXED_32_BYTE_HEX = Pattern.compile("^0[xX][0-9a-fA-F]{64}$");
 
     @Value("${relayer.platform_report.enabled:true}")
     private boolean enabled;
@@ -103,7 +108,7 @@ public class PlatformReportClient {
         body.put("ucpId", ucpId);
         body.put("targetChainProduct", message.getReceiverBlockchainProduct());
         body.put("targetBlockchainId", message.getReceiverBlockchainId());
-        body.put("txHash", result.getTxId());
+        body.put("txHash", normalizeTargetTxHashForReport(result.getTxId()));
         body.put("submittedAt", formatTimestamp(result.getTxTimestamp()));
         if (ObjectUtil.isNotNull(result.getRawTx())) {
             body.put("rawTx", HexUtil.encodeHexStr(result.getRawTx()));
@@ -163,12 +168,30 @@ public class PlatformReportClient {
     ) {
         JSONObject body = new JSONObject(true);
         body.put("ucpId", ucpId);
-        body.put("txHash", txHash);
+        body.put("txHash", normalizeTargetTxHashForReport(txHash));
         body.put("executedAt", formatTimestamp(timestamp));
         body.put("success", success);
         body.put("timeout", timeout);
         body.put("errorMessage", StrUtil.nullToEmpty(errorMessage));
         post("/api/cc-relayer/ucps/" + ucpId + "/target-chain-execution", ucpId, body);
+    }
+
+    /**
+     * Normalise fixed-width hexadecimal transaction hashes at the regulatory reporting boundary.
+     * Chain-native hashes kept by the relayer are intentionally not changed: Mychain requires the
+     * unprefixed value for node queries, while Dioxide uses a non-hexadecimal native hash format.
+     */
+    static String normalizeTargetTxHashForReport(String txHash) {
+        if (StrUtil.isEmpty(txHash)) {
+            return txHash;
+        }
+        if (BARE_32_BYTE_HEX.matcher(txHash).matches()) {
+            return "0x" + txHash;
+        }
+        if (PREFIXED_32_BYTE_HEX.matcher(txHash).matches()) {
+            return "0x" + txHash.substring(2);
+        }
+        return txHash;
     }
 
     private void post(String path, String ucpId, JSONObject body) {
