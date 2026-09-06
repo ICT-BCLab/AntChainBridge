@@ -16,6 +16,16 @@ import pymysql
 MAX_ISN = 0xFFFFFFFF
 
 
+def signed_expiry(signed, isn):
+    if len(signed) < 16 or int.from_bytes(signed[8:12], "little") != isn:
+        raise RuntimeError("signed header does not match reservation")
+    timestamp = int.from_bytes(signed[2:8], "little")
+    if not timestamp:
+        raise RuntimeError("invalid signed timestamp")
+    minutes = (int.from_bytes(signed[12:14], "little") & 511) + 1
+    return timestamp + minutes * 60000
+
+
 def config_file(filename=None):
     filename = filename or os.environ.get("DIOXIDE_TX_COORDINATOR_CONFIG") or "/etc/antchain-bridge/dioxide-tx.properties"
     if not filename:
@@ -97,19 +107,38 @@ class Coordinator:
                         signed, tx_hash = previous[2:]
                     else:
                         node_isn = transport.current_isn(account)
-                        if node_isn < observed:
-                            raise RuntimeError("node ISN regressed; reconcile network state before new submission")
                         if not 0 <= node_isn <= MAX_ISN or not 0 <= persisted <= MAX_ISN:
                             raise RuntimeError("ISN exhausted or invalid; refusing wraparound")
-                        isn = max(node_isn, persisted)
+                        cursor.execute(
+                            "SELECT g.id,g.isn,g.witness_height,g.witness_hash,p.signed_tx,p.state "
+                            "FROM bridge_tx_expired_slot g JOIN bridge_tx_submission p ON p.network_id=g.network_id "
+                            "AND p.operation_id=g.expired_operation_id AND p.account=g.account AND p.isn=g.isn "
+                            "WHERE g.network_id=%s AND g.account=%s AND g.claimed_operation_id IS NULL AND g.isn>=%s "
+                            "ORDER BY g.isn LIMIT 1 FOR UPDATE", (self.network, account, node_isn))
+                        expired = cursor.fetchone()
+                        if expired:
+                            _, isn, height, witness_hash, old_signed, old_state = expired
+                            if isn >= persisted or old_state not in {"SIGNED", "UNKNOWN", "BROADCAST"}:
+                                raise RuntimeError("invalid expired reservation grant")
+                            if transport.checkpoint_timestamp(height, witness_hash) <= signed_expiry(old_signed, isn):
+                                raise RuntimeError("reservation has not expired at the verified checkpoint")
+                        else:
+                            if node_isn < observed:
+                                raise RuntimeError("node ISN regressed; reconcile network state before new submission")
+                            isn = max(node_isn, persisted)
                         signed = transport.compose_and_sign(isn)
                         if not signed:
                             raise RuntimeError("empty signed transaction")
                         cursor.execute(
                             "INSERT INTO bridge_tx_submission(network_id,operation_id,account,isn,payload_hash,signed_tx,state) "
                             "VALUES(%s,%s,%s,%s,%s,%s,'SIGNED')", (self.network, operation_id, account, isn, fingerprint, signed))
+                        if expired:
+                            cursor.execute("UPDATE bridge_tx_expired_slot SET claimed_operation_id=%s "
+                                           "WHERE id=%s AND claimed_operation_id IS NULL", (operation_id, expired[0]))
+                            if cursor.rowcount != 1:
+                                raise RuntimeError("expired reservation already claimed")
                         cursor.execute("UPDATE bridge_tx_account SET next_isn=%s,observed_isn=%s WHERE network_id=%s AND account=%s",
-                                       (isn + 1, node_isn, self.network, account))
+                                       (max(persisted, isn + 1), node_isn, self.network, account))
                         tx_hash = None
                 connection.commit()
             except BaseException:
@@ -185,6 +214,12 @@ class CoordinatedDioxClient:
 
             def current_isn(self, account):
                 return int(client.make_request("dx.isn", {"address": account})["ISN"])
+
+            def checkpoint_timestamp(self, height, expected_hash):
+                witness = client.make_request("dx.consensus_header", {"query_type": 0, "height": height})
+                if witness["Hash"] != expected_hash:
+                    raise RuntimeError("expired reservation witness changed")
+                return int(witness["Timestamp"])
 
             def compose_and_sign(self, allocated):
                 unsigned = client.make_request("tx.compose", dict(params, isn=allocated))

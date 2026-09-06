@@ -21,7 +21,22 @@ CREATE TABLE IF NOT EXISTS bridge_tx_submission (
   created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
   updated_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
   PRIMARY KEY (network_id, operation_id),
-  UNIQUE KEY uq_bridge_tx_isn (network_id, account, isn),
+  KEY ix_bridge_tx_isn (network_id, account, isn),
   KEY ix_bridge_tx_hash (network_id, tx_hash),
   KEY ix_bridge_tx_pending (network_id, state)
+) ENGINE=InnoDB;
+CREATE TABLE IF NOT EXISTS bridge_tx_expired_slot (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  network_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  account VARCHAR(160) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  isn BIGINT NOT NULL,
+  expired_operation_id VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  witness_height BIGINT NOT NULL,
+  witness_hash VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  claimed_operation_id VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NULL,
+  unclaimed_isn BIGINT GENERATED ALWAYS AS (CASE WHEN claimed_operation_id IS NULL THEN isn ELSE NULL END) STORED,
+  created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE KEY uq_bridge_expired_operation (network_id, expired_operation_id),
+  UNIQUE KEY uq_bridge_unclaimed_isn (network_id, account, unclaimed_isn),
+  UNIQUE KEY uq_bridge_claimed_operation (network_id, claimed_operation_id)
 ) ENGINE=InnoDB;

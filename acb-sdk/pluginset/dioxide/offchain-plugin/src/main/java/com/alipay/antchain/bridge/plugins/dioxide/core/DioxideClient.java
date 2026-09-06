@@ -1178,6 +1178,13 @@ public class DioxideClient {
                     public String checkpoint() {
                         return getConsensusHeaderByHeight(coordinatorCheckpointHeight).getString("Hash");
                     }
+                    public long checkpointTimestamp(long height, String expectedHash) {
+                        JSONObject witness = getConsensusHeaderByHeight(height);
+                        if (!expectedHash.equals(witness.getString("Hash"))) {
+                            throw new IllegalStateException("expired reservation witness changed");
+                        }
+                        return witness.getLongValue("Timestamp");
+                    }
                     public long currentIsn(String address) {
                         JSONObject ret = checkIfErrorResponse(makeRequest("dx.isn", JSON.toJSONString(orderedMap("address", address))));
                         Long isn = ret.getLong("ISN");

@@ -30,6 +30,11 @@ public class JdbcTransactionCoordinatorTest {
         volatile boolean loseResponse;
         volatile String checkpoint = "checkpoint";
         long nodeIsn = 181;
+        long witnessTime = 70000;
+        public long checkpointTimestamp(long height, String expectedHash) {
+            if (!checkpoint.equals(expectedHash)) { throw new IllegalStateException("witness changed"); }
+            return witnessTime;
+        }
         public String checkpoint() { return checkpoint; }
         public long currentIsn(String account) { return nodeIsn; }
         public byte[] composeAndSign(long isn) throws Exception {
@@ -144,5 +149,58 @@ public class JdbcTransactionCoordinatorTest {
                     .submit("op", "account", PAYLOAD, new Node()));
             assertTrue(consulted.get());
         } finally { java.nio.file.Files.deleteIfExists(password); }
+    }
+
+    private void grantExpired(Node node) throws Exception {
+        coordinator.submit("expired-intent", "account", PAYLOAD, node);
+        byte[] old = new byte[16];
+        old[2] = (byte) 0xe8; old[3] = 3; // timestamp 1000 ms, TTL one minute
+        old[8] = (byte) 181;
+        try (Connection c = connections.open()) {
+            try (PreparedStatement s = c.prepareStatement("UPDATE bridge_tx_submission SET signed_tx=? WHERE network_id=? AND operation_id='expired-intent'")) {
+                s.setBytes(1, old); s.setString(2, network); s.executeUpdate();
+            }
+            try (PreparedStatement s = c.prepareStatement("INSERT INTO bridge_tx_expired_slot(network_id,account,isn,expired_operation_id,witness_height,witness_hash) VALUES(?,'account',181,'expired-intent',10,'checkpoint')")) {
+                s.setString(1, network); s.executeUpdate();
+            }
+        }
+    }
+
+    @Test public void expiredGrantPreservesHistoryAndHighWaterWhileServingConcurrentNewIntents() throws Exception {
+        Node node = new Node(); grantExpired(node);
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        try {
+            List<Future<String>> futures = new ArrayList<>();
+            for (int i = 0; i < 16; i++) {
+                final String op = "new-" + i;
+                futures.add(pool.submit(() -> coordinator.submit(op, "account", PAYLOAD, node)));
+            }
+            Set<String> values = new HashSet<>();
+            for (Future<String> f : futures) { values.add(f.get(30, TimeUnit.SECONDS)); }
+            assertEquals(16, values.size());
+            assertTrue(values.contains("tx-181")); assertTrue(values.contains("tx-196"));
+            assertEquals("tx-181", coordinator.submit("expired-intent", "account", PAYLOAD, node));
+            try (Connection c = connections.open(); Statement s = c.createStatement()) {
+                try (ResultSet r = s.executeQuery("SELECT next_isn FROM bridge_tx_account WHERE network_id='" + network + "'")) {
+                    assertTrue(r.next()); assertEquals(197, r.getLong(1));
+                }
+                try (ResultSet r = s.executeQuery("SELECT COUNT(*) FROM bridge_tx_submission WHERE network_id='" + network + "'")) {
+                    assertTrue(r.next()); assertEquals(17, r.getInt(1));
+                }
+            }
+        } finally { pool.shutdownNow(); }
+    }
+
+    @Test public void stillValidWitnessAndSigningFailureDoNotConsumeGrant() throws Exception {
+        Node node = new Node(); grantExpired(node);
+        node.witnessTime = 61000;
+        try { coordinator.submit("new", "account", PAYLOAD, node); fail(); }
+        catch (IllegalStateException expected) { assertTrue(expected.getMessage().contains("expired")); }
+        assertEquals(1, node.composeCalls.get());
+        node.witnessTime = 70000; node.failSign = true;
+        try { coordinator.submit("new", "account", PAYLOAD, node); fail(); } catch (Exception expected) { }
+        node.failSign = false;
+        assertEquals("tx-181", coordinator.submit("new", "account", PAYLOAD, node));
+        assertEquals("tx-182", coordinator.submit("another", "account", PAYLOAD, node));
     }
 }

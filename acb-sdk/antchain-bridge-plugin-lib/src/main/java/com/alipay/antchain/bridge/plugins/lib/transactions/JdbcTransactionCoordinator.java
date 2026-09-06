@@ -19,6 +19,9 @@ public final class JdbcTransactionCoordinator {
 
     public interface Transport {
         String checkpoint() throws Exception;
+        default long checkpointTimestamp(long height, String hash) throws Exception {
+            throw new IllegalStateException("expired reservation witnesses are unsupported by this transport");
+        }
         long currentIsn(String account) throws Exception;
         byte[] composeAndSign(long isn) throws Exception;
         String broadcast(byte[] signed) throws Exception;
@@ -86,6 +89,40 @@ public final class JdbcTransactionCoordinator {
             throw new IllegalStateException("ISN exhausted or invalid; refusing wraparound");
         }
         return Math.max(node, persisted);
+    }
+
+    public static long signedExpiry(byte[] signed, long isn) {
+        if (signed == null || signed.length < 16) { throw new IllegalStateException("invalid signed header"); }
+        long timestamp = 0, encodedIsn = 0;
+        for (int i = 0; i < 6; i++) { timestamp |= (signed[2 + i] & 255L) << (8 * i); }
+        for (int i = 0; i < 4; i++) { encodedIsn |= (signed[8 + i] & 255L) << (8 * i); }
+        if (encodedIsn != isn || timestamp == 0) { throw new IllegalStateException("signed header does not match reservation"); }
+        long minutes = (((signed[12] & 255) | ((signed[13] & 255) << 8)) & 511) + 1;
+        return timestamp + minutes * 60000L;
+    }
+
+    /** Only explicit, witnessed expiry grants can allocate below the high-water counter. */
+    private long[] expiredSlot(Connection c, String account, long node, long persisted, Transport transport) throws Exception {
+        try (PreparedStatement s = c.prepareStatement(
+                "SELECT g.id,g.isn,g.witness_height,g.witness_hash,p.signed_tx,p.state " +
+                "FROM bridge_tx_expired_slot g JOIN bridge_tx_submission p ON p.network_id=g.network_id " +
+                "AND p.operation_id=g.expired_operation_id AND p.account=g.account AND p.isn=g.isn " +
+                "WHERE g.network_id=? AND g.account=? AND g.claimed_operation_id IS NULL AND g.isn>=? " +
+                "ORDER BY g.isn LIMIT 1 FOR UPDATE")) {
+            s.setString(1, network); s.setString(2, account); s.setLong(3, node);
+            try (ResultSet r = s.executeQuery()) {
+                if (!r.next()) { return null; }
+                long isn = r.getLong(2);
+                if (isn >= persisted || !("SIGNED".equals(r.getString(6)) || "UNKNOWN".equals(r.getString(6)) || "BROADCAST".equals(r.getString(6)))) {
+                    throw new IllegalStateException("invalid expired reservation grant");
+                }
+                long witnessTime = transport.checkpointTimestamp(r.getLong(3), r.getString(4));
+                if (witnessTime <= signedExpiry(r.getBytes(5), isn)) {
+                    throw new IllegalStateException("reservation has not expired at the verified checkpoint");
+                }
+                return new long[]{r.getLong(1), isn};
+            }
+        }
     }
 
     private static void require(String value, int limit, String field) {
@@ -177,10 +214,12 @@ public final class JdbcTransactionCoordinator {
                         }
                     }
                     long nodeIsn = transport.currentIsn(account);
-                    if (nodeIsn < observed) {
+                    nextIsn(nodeIsn, persisted); // Validate uint32 bounds before any recovery allocation.
+                    long[] expired = expiredSlot(c, account, nodeIsn, persisted, transport);
+                    if (nodeIsn < observed && expired == null) {
                         throw new IllegalStateException("node ISN regressed; reconcile network state before new submission");
                     }
-                    long isn = nextIsn(nodeIsn, persisted);
+                    long isn = expired == null ? nextIsn(nodeIsn, persisted) : expired[1];
                     signed = transport.composeAndSign(isn);
                     if (signed == null || signed.length == 0) { throw new IllegalStateException("empty signed transaction"); }
                     try (PreparedStatement s = c.prepareStatement(
@@ -188,9 +227,15 @@ public final class JdbcTransactionCoordinator {
                         s.setString(1, network); s.setString(2, operationId); s.setString(3, account);
                         s.setLong(4, isn); s.setString(5, fingerprint); s.setBytes(6, signed); s.executeUpdate();
                     }
+                    if (expired != null) {
+                        try (PreparedStatement s = c.prepareStatement("UPDATE bridge_tx_expired_slot SET claimed_operation_id=? WHERE id=? AND claimed_operation_id IS NULL")) {
+                            s.setString(1, operationId); s.setLong(2, expired[0]);
+                            if (s.executeUpdate() != 1) { throw new IllegalStateException("expired reservation already claimed"); }
+                        }
+                    }
                     try (PreparedStatement s = c.prepareStatement(
                             "UPDATE bridge_tx_account SET next_isn=?,observed_isn=? WHERE network_id=? AND account=?")) {
-                        s.setLong(1, isn + 1); s.setLong(2, nodeIsn); s.setString(3, network); s.setString(4, account); s.executeUpdate();
+                        s.setLong(1, Math.max(persisted, isn + 1)); s.setLong(2, nodeIsn); s.setString(3, network); s.setString(4, account); s.executeUpdate();
                     }
                     c.commit(); // Never move this below broadcast.
                 } catch (Exception e) {
