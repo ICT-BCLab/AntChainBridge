@@ -344,6 +344,16 @@ public class CommitteePTCService implements IPTCService {
             ValidatedConsensusState validatedConsensusState,
             UniformCrosschainPacket ucp
     ) {
+        return verifyCrossChainMessageWithResult(tpbta, validatedConsensusState, ucp, "");
+    }
+
+    @Override
+    public PTCVerifyCrossChainMessageResult verifyCrossChainMessageWithResult(
+            ThirdPartyBlockchainTrustAnchor tpbta,
+            ValidatedConsensusState validatedConsensusState,
+            UniformCrosschainPacket ucp,
+            String ucpId
+    ) {
         try {
 
             // 为dioxide链定制的逻辑，支持在无实际监管逻辑和PTC逻辑的情形下将跨链信息传递给外部监管系统
@@ -361,7 +371,7 @@ public class CommitteePTCService implements IPTCService {
 
                 // "Dioxide"这个product继续通过tpbta中特殊的CrossChainLane来传递
                 NodeVerifyCrossChainMessageResult nodeResult = monitorNode.getNodeClient()
-                        .verifyCrossChainMessageWithResult(tpbta.getCrossChainLane(), ucp);
+                        .verifyCrossChainMessageWithResult(tpbta.getCrossChainLane(), ucp, ucpId);
                 return new PTCVerifyCrossChainMessageResult(
                         new ThirdPartyProof(),
                         nodeResult.getRegulationStatus(),
@@ -390,7 +400,7 @@ public class CommitteePTCService implements IPTCService {
                             ).map(
                                     entry -> (Callable<NodeVerifyCrossChainMessageResult>) () -> {
                                         log.debug("Verify crosschain msg with node {} {}", entry.getKey(), entry.getValue().getEndpointInfo().getEndpoint().getUrl());
-                                        return entry.getValue().getNodeClient().verifyCrossChainMessageWithResult(tpbta.getCrossChainLane(), ucp);
+                                        return entry.getValue().getNodeClient().verifyCrossChainMessageWithResult(tpbta.getCrossChainLane(), ucp, ucpId);
                                     }
                             ).collect(Collectors.toList())
             );

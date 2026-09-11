@@ -336,11 +336,12 @@ public class MonitorNodeServiceImpl extends CommitteeNodeServiceGrpc.CommitteeNo
             if (ObjectUtil.isNull(crossChainLane)) {
                 throw new InvalidRequestException("crossChainLane is null");
             }
+            String ucpId = request.getUcpId();
 
             // 为dioxide链定制的逻辑，支持在无实际监管逻辑和PTC逻辑的情形下将跨链信息传递给外部监管系统
             if (Objects.equals(crossChainLane.getSenderDomain().getDomain(), "dioxide2")) {
                 log.info("receive crosschain message from Dioxide, relay to monitor system directly without verification");
-                MonitorNodeVerifyResult verifyResult = endorserService.relayUcpToMonitorSystem(ucp);
+                MonitorNodeVerifyResult verifyResult = endorserService.relayUcpToMonitorSystem(ucp, ucpId);
                 responseObserver.onNext(
                         Response.newBuilder()
                                 .setCode(0)
@@ -372,11 +373,11 @@ public class MonitorNodeServiceImpl extends CommitteeNodeServiceGrpc.CommitteeNo
                     verifyResult = MonitorNodeVerifyResult.approved(endorserService.verifyUcp(crossChainLane, ucp));
                 } else if (monitorMessage.getMonitorType() == MonitorTypeEnum.MONITOR_OPEN.getCode()) {
                     log.info("crosschain message: need monitor");
-                    verifyResult = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp);
+                    verifyResult = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp, ucpId);
                 } else {
                     // 不监管 把跨链消息发给监管系统即可
                     log.info("crosschain message: don't need monitor");
-                    MonitorNodeVerifyResult relayResult = endorserService.relayUcpToMonitorSystem(ucp);
+                    MonitorNodeVerifyResult relayResult = endorserService.relayUcpToMonitorSystem(ucp, ucpId);
                     verifyResult = new MonitorNodeVerifyResult(
                             endorserService.verifyUcp(crossChainLane, ucp),
                             relayResult.getRegulationStatus(),

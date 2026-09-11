@@ -17,6 +17,7 @@
 package com.alipay.antchain.bridge.ptc.committee.monitor.node.service;
 
 import java.math.BigInteger;
+import java.util.function.Function;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.ListUtil;
@@ -39,8 +40,10 @@ import com.alipay.antchain.bridge.commons.utils.crypto.SignAlgoEnum;
 import com.alipay.antchain.bridge.plugins.spi.ptc.IHeteroChainDataVerifierService;
 import com.alipay.antchain.bridge.plugins.spi.ptc.core.VerifyResult;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.TestBase;
+import com.alipay.antchain.bridge.ptc.committee.monitor.node.client.MonitorSystemGrpcClientManager;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.BtaWrapper;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.DomainSpaceCertWrapper;
+import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.MonitorNodeVerifyResult;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.TpBtaWrapper;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.ValidatedConsensusStateWrapper;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.dal.repository.interfaces.IBCDNSRepository;
@@ -54,9 +57,11 @@ import com.alipay.antchain.bridge.ptc.committee.types.tpbta.CommitteeEndorseRoot
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.NodeEndorseInfo;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.OptionalEndorsePolicy;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.VerifyBtaExtension;
+import com.alipay.antchain.bridge.ptc.committee.monitor.system.grpc.*;
 import jakarta.annotation.Resource;
 import org.junit.Assert;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.mock.mockito.MockBean;
 
@@ -211,6 +216,9 @@ public class EndorserServiceTest extends TestBase {
     @MockBean
     private IHcdvsPluginService hcdvsPluginService;
 
+    @MockBean
+    private MonitorSystemGrpcClientManager monitorSystemGrpcClientManager;
+
     @Resource
     private AbstractCrossChainCertificate ptcCrossChainCert;
 
@@ -354,6 +362,155 @@ public class EndorserServiceTest extends TestBase {
                         ).getEncodedToSign()
                 )
         );
+    }
+
+    @Test
+    public void testForwardUcpIdToMonitorSystem() {
+        String ucpId = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub stub =
+                mock(MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub.class);
+        when(stub.relayUcpToMonitorSystem(any())).thenReturn(
+                MonitorSystemResponse.newBuilder().setCode(0).build()
+        );
+        when(stub.verifyCrossChainMessageInMonitorSystem(any())).thenReturn(
+                MonitorSystemResponse.newBuilder()
+                        .setCode(0)
+                        .setVerifyCrossChainMessageInMonitorSystemResp(
+                                VerifyCrossChainMessageInMonitorSystemResponse.newBuilder()
+                                        .setResult(0)
+                                        .setMsg("ok")
+                        ).build()
+        );
+        when(monitorSystemGrpcClientManager.withStub(any())).thenAnswer(invocation -> {
+            Function<MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub, ?> action = invocation.getArgument(0);
+            return action.apply(stub);
+        });
+
+        when(endorseServiceRepository.getExactTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
+
+        endorserService.relayUcpToMonitorSystem(ucp, ucpId);
+        ArgumentCaptor<RelayUcpToMonitorSystemRequest> relayCaptor =
+                ArgumentCaptor.forClass(RelayUcpToMonitorSystemRequest.class);
+        verify(stub).relayUcpToMonitorSystem(relayCaptor.capture());
+        Assert.assertEquals(ucpId, relayCaptor.getValue().getUcpId());
+        Assert.assertArrayEquals(ucp.encode(), relayCaptor.getValue().getRawUcp().toByteArray());
+
+        endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp, ucpId);
+        ArgumentCaptor<VerifyCrossChainMessageInMonitorSystemRequest> verifyCaptor =
+                ArgumentCaptor.forClass(VerifyCrossChainMessageInMonitorSystemRequest.class);
+        verify(stub).verifyCrossChainMessageInMonitorSystem(verifyCaptor.capture());
+        Assert.assertEquals(ucpId, verifyCaptor.getValue().getUcpId());
+        Assert.assertArrayEquals(ucp.encode(), verifyCaptor.getValue().getRawUcp().toByteArray());
+
+        clearInvocations(stub);
+        endorserService.relayUcpToMonitorSystem(ucp);
+        verify(stub).relayUcpToMonitorSystem(relayCaptor.capture());
+        Assert.assertEquals("", relayCaptor.getValue().getUcpId());
+    }
+
+    @Test
+    public void testVerifyMonitorSystemResponseContract() {
+        MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub stub = prepareMonitorSystemStub();
+        when(endorseServiceRepository.getExactTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
+
+        when(stub.verifyCrossChainMessageInMonitorSystem(any())).thenReturn(
+                verifyResponse(0, "ok")
+        );
+        MonitorNodeVerifyResult result = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp, "ucp-id");
+        Assert.assertEquals(MonitorNodeVerifyResult.STATUS_APPROVED, result.getRegulationStatus());
+        Assert.assertFalse(ArrayUtil.isEmpty(result.getNodeProof().getSig()));
+
+        when(stub.verifyCrossChainMessageInMonitorSystem(any())).thenReturn(
+                verifyResponse(1, "matched regulation rule")
+        );
+        result = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp, "ucp-id");
+        Assert.assertEquals(MonitorNodeVerifyResult.STATUS_REJECTED, result.getRegulationStatus());
+        Assert.assertEquals("matched regulation rule", result.getRegulationReason());
+        Assert.assertArrayEquals(new byte[65], result.getNodeProof().getSig());
+
+        for (int code : new int[]{400, 500, 503}) {
+            when(stub.verifyCrossChainMessageInMonitorSystem(any())).thenReturn(
+                    MonitorSystemResponse.newBuilder()
+                            .setCode(code)
+                            .setErrorMsg("monitor error " + code)
+                            .build()
+            );
+            result = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp, "ucp-id");
+            Assert.assertEquals(MonitorNodeVerifyResult.STATUS_ERROR, result.getRegulationStatus());
+            Assert.assertTrue(result.getRegulationReason().contains(String.valueOf(code)));
+            Assert.assertTrue(result.getRegulationReason().contains("monitor error " + code));
+            Assert.assertArrayEquals(new byte[65], result.getNodeProof().getSig());
+        }
+
+        when(stub.verifyCrossChainMessageInMonitorSystem(any())).thenReturn(
+                MonitorSystemResponse.newBuilder().setCode(0).build()
+        );
+        result = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp, "ucp-id");
+        Assert.assertEquals(MonitorNodeVerifyResult.STATUS_ERROR, result.getRegulationStatus());
+        Assert.assertTrue(result.getRegulationReason().contains("without verify response"));
+
+        when(stub.verifyCrossChainMessageInMonitorSystem(any())).thenReturn(
+                verifyResponse(2, "unknown result")
+        );
+        result = endorserService.verifyUcpWithMonitorSystem(crossChainLane, ucp, "ucp-id");
+        Assert.assertEquals(MonitorNodeVerifyResult.STATUS_ERROR, result.getRegulationStatus());
+        Assert.assertTrue(result.getRegulationReason().contains("unexpected result 2"));
+        Assert.assertArrayEquals(new byte[65], result.getNodeProof().getSig());
+    }
+
+    @Test
+    public void testRelayMonitorSystemResponseContract() {
+        MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub stub = prepareMonitorSystemStub();
+
+        when(stub.relayUcpToMonitorSystem(any())).thenReturn(
+                MonitorSystemResponse.newBuilder().setCode(0).build()
+        );
+        MonitorNodeVerifyResult result = endorserService.relayUcpToMonitorSystem(ucp, "ucp-id");
+        Assert.assertEquals(MonitorNodeVerifyResult.STATUS_APPROVED, result.getRegulationStatus());
+
+        when(stub.relayUcpToMonitorSystem(any())).thenReturn(
+                MonitorSystemResponse.newBuilder()
+                        .setCode(500)
+                        .setErrorMsg("relay failed")
+                        .build()
+        );
+        result = endorserService.relayUcpToMonitorSystem(ucp, "ucp-id");
+        Assert.assertEquals(MonitorNodeVerifyResult.STATUS_ERROR, result.getRegulationStatus());
+        Assert.assertTrue(result.getRegulationReason().contains("500"));
+        Assert.assertTrue(result.getRegulationReason().contains("relay failed"));
+
+        when(stub.relayUcpToMonitorSystem(any())).thenReturn(null);
+        result = endorserService.relayUcpToMonitorSystem(ucp, "ucp-id");
+        Assert.assertEquals(MonitorNodeVerifyResult.STATUS_ERROR, result.getRegulationStatus());
+        Assert.assertTrue(result.getRegulationReason().contains("null response"));
+
+        doThrow(new RuntimeException("transport failed"))
+                .when(monitorSystemGrpcClientManager).withStub(any());
+        result = endorserService.relayUcpToMonitorSystem(ucp, "ucp-id");
+        Assert.assertEquals(MonitorNodeVerifyResult.STATUS_ERROR, result.getRegulationStatus());
+        Assert.assertEquals("transport failed", result.getRegulationReason());
+    }
+
+    private MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub prepareMonitorSystemStub() {
+        MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub stub =
+                mock(MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub.class);
+        when(monitorSystemGrpcClientManager.withStub(any())).thenAnswer(invocation -> {
+            Function<MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub, ?> action = invocation.getArgument(0);
+            return action.apply(stub);
+        });
+        return stub;
+    }
+
+    private MonitorSystemResponse verifyResponse(int result, String msg) {
+        return MonitorSystemResponse.newBuilder()
+                .setCode(0)
+                .setVerifyCrossChainMessageInMonitorSystemResp(
+                        VerifyCrossChainMessageInMonitorSystemResponse.newBuilder()
+                                .setResult(result)
+                                .setMsg(msg)
+                ).build();
     }
 
     @Test

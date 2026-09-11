@@ -37,6 +37,8 @@ sudo ./bin/stop.sh
 systemd模式会把服务文件安装到`/etc/systemd/system/simple-monitor-system.service`。
 后台模式没有交互式终端，监管验证结果保持默认的成功状态；前台直接运行Jar时仍可输入`success`或`fail`切换结果。
 
+前台模式还支持输入`500`或`503`，用于模拟监管系统内部错误和暂时不可用。`verifyCrossChainMessageInMonitorSystem`会先校验`rawUcp`，无法解析时返回`code=400`且不填充判定响应；`relayUcpToMonitorSystem`始终返回`code=0`且不填充判定响应。
+
 ## MonitorSystemClient
 
 仅用于测试MonitorSystemServer功能是否正常。

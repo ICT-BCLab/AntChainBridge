@@ -164,10 +164,20 @@ public class GrpcNodeClient implements INodeClient {
             CrossChainLane crossChainLane,
             UniformCrosschainPacket packet
     ) {
+        return verifyCrossChainMessageWithResult(crossChainLane, packet, "");
+    }
+
+    @Override
+    public NodeVerifyCrossChainMessageResult verifyCrossChainMessageWithResult(
+            CrossChainLane crossChainLane,
+            UniformCrosschainPacket packet,
+            String ucpId
+    ) {
         Response response = stub.verifyCrossChainMessage(
                 VerifyCrossChainMessageRequest.newBuilder()
                         .setRawUcp(ByteString.copyFrom(packet.encode()))
                         .setCrossChainLane(ByteString.copyFrom(crossChainLane.encode()))
+                        .setUcpId(StrUtil.nullToEmpty(ucpId))
                         .build()
         );
         if (ObjectUtil.isNull(response)) {

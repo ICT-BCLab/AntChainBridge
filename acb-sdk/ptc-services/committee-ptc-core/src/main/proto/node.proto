@@ -93,6 +93,7 @@ message CommitConsensusStateResponse {
 message VerifyCrossChainMessageRequest {
   bytes crossChainLane = 1;
   bytes rawUcp = 2;
+  string ucpId = 3;
 }
 
 message VerifyCrossChainMessageResponse {

@@ -118,7 +118,8 @@ public class UniformCrosschainPacketValidator {
                 PTCVerifyCrossChainMessageResult verifyResult = ptcService.verifyCrossChainMessageWithResult(
                         tpBtaDO.getTpbta(),
                         vcs,
-                        ucpContext.getUcp()
+                        ucpContext.getUcp(),
+                        ucpContext.getUcpId()
                 );
                 ThirdPartyProof tpProof = verifyResult.getThirdPartyProof();
                 if (ObjectUtil.isNull(tpProof)) {
@@ -148,7 +149,8 @@ public class UniformCrosschainPacketValidator {
                 PTCVerifyCrossChainMessageResult verifyResult = ptcService.verifyCrossChainMessageWithResult(
                         tpBtaOnlyRepresentDioxide,
                         new ValidatedConsensusStateV1(),
-                        ucpContext.getUcp()
+                        ucpContext.getUcp(),
+                        ucpContext.getUcpId()
                 );
                 platformReportClient.reportRegulation(
                         ucpContext.getUcpId(),
