@@ -21,9 +21,32 @@ ALTER TABLE bridge_tx_account
 ALTER TABLE bridge_tx_submission
   MODIFY COLUMN state VARCHAR(24) NOT NULL,
   MODIFY COLUMN last_error VARCHAR(512) NULL,
-  ADD COLUMN active_attempt_no INT NOT NULL DEFAULT 1 AFTER state,
-  DROP INDEX uq_bridge_tx_isn,
-  ADD KEY ix_bridge_tx_isn (network_id, account, isn);
+  ADD COLUMN active_attempt_no INT NOT NULL DEFAULT 1 AFTER state;
+
+-- Early v1 installations used a unique ISN index. Later hotfixes already
+-- replaced it with ix_bridge_tx_isn. Normalize either layout without assuming
+-- which one is present.
+SET @drop_old_unique = IF(
+  EXISTS(SELECT 1 FROM information_schema.statistics
+         WHERE table_schema=DATABASE() AND table_name='bridge_tx_submission'
+           AND index_name='uq_bridge_tx_isn'),
+  'ALTER TABLE bridge_tx_submission DROP INDEX uq_bridge_tx_isn',
+  'SELECT 1'
+);
+PREPARE bridge_tx_migration_stmt FROM @drop_old_unique;
+EXECUTE bridge_tx_migration_stmt;
+DEALLOCATE PREPARE bridge_tx_migration_stmt;
+
+SET @add_v2_isn_index = IF(
+  EXISTS(SELECT 1 FROM information_schema.statistics
+         WHERE table_schema=DATABASE() AND table_name='bridge_tx_submission'
+           AND index_name='ix_bridge_tx_isn'),
+  'SELECT 1',
+  'ALTER TABLE bridge_tx_submission ADD KEY ix_bridge_tx_isn (network_id, account, isn)'
+);
+PREPARE bridge_tx_migration_stmt FROM @add_v2_isn_index;
+EXECUTE bridge_tx_migration_stmt;
+DEALLOCATE PREPARE bridge_tx_migration_stmt;
 
 CREATE TABLE bridge_tx_attempt (
   network_id VARCHAR(96) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
