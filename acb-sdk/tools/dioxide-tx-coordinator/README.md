@@ -10,8 +10,10 @@ Dioxide `tx.compose` 默认读取当前 ISN，并不预留。消息会话锁与�
 Ed25519 地址带类型后缀与裸地址使用同一个协调键。不能用域名、插件类型或 RPC URL 分别计数。
 每次新分配核对已归档区块 checkpoint，以及节点 ISN 已观察值，节点回退时停止新分配。
 
-数据库行锁与命名锁保护预留、签名保存和广播；等待链上确认不占账户锁。签名数据在广播前提交，
-因此断电、RPC 响应丢失、JVM 重启都不会使同一 operationId 换号重签。数据库不可用时禁止降级。
+数据库行锁与命名锁保护预留、签名保存和广播；等待链上 ISN 接受不占数据库事务锁。签名数据和
+由签名字节确定性计算的交易哈希在广播前提交。RPC 响应丢失后先查询 `dx.isn`：若节点 ISN 已前进，
+直接恢复该哈希；若未前进，才重播原始签名字节。因此断电、RPC 响应丢失、JVM 重启都不会使同一
+operationId 换号重签。数据库不可用时禁止降级。
 已签名记录从不删除或回退；uint32 最大值之后必须停止，由运维核查，不能回绕。
 
 Relayer 传入的 submissionId 为 UCP + 目标域 + relay-am 的稳定摘要，与可能全零的 messageId
@@ -20,9 +22,10 @@ Relayer 传入的 submissionId 为 UCP + 目标域 + relay-am 的稳定摘要，
 
 ## 安装与配置
 
-1. 在共享运维数据库安装 `antchain-bridge-plugin-lib/src/main/resources/db/dioxide_tx_coordinator.sql`。
-   新增 bridge_tx_account、bridge_tx_submission，不改 Relayer 核心表。运行账号仅需这两表的
-   SELECT/INSERT/UPDATE；DDL 由运维执行。
+1. 新安装使用 `antchain-bridge-plugin-lib/src/main/resources/db/dioxide_tx_coordinator.sql`。已有 v1
+   数据库在停止所有 Dioxide 写入并备份后，只运行一次 `db/dioxide_tx_coordinator_v1_to_v2.sql`。
+   v2 使用 bridge_tx_account、bridge_tx_submission、bridge_tx_attempt 三张表；运行账号仅需这些表
+   的 SELECT/INSERT/UPDATE，DDL 由运维执行。
 2. 用已核实的归档区块设置 networkId、checkpointHeight、checkpointHash。所有同网络实例必须一致；
    恢复旧快照或更换网络后禁止直接更换 namespace 绕过旧未决记录，应先对账。
 3. 参照 dioxide-tx.properties.example 创建 root-only 配置、密码文件，均为 0600。
@@ -54,8 +57,9 @@ python scripts/dioxide_send_message.py --operation-id test-20260904-001 \
 Python 的测试币准备、Dapp 创建也使用协调入口及独立阶段 ID。Dapp 等待失败会抛异常，
 不能把底层 SDK 的 false 返回值当作完成。首次部署前先确认相应脚本也使用同一版共享模块。
 
-- SIGNED：签名已经持久化，可能尚未广播，也可能广播后进程退出。
-- UNKNOWN：广播结果未知；只能查询或重新广播原始签名字节，不得换 ISN。
+- SIGNED：签名和可恢复交易哈希已经持久化，可能尚未广播，也可能广播后进程退出。
+- UNKNOWN：广播结果未知；先查询链上 ISN，确认未接受时才重播原始签名字节，不得换 ISN。
+- REJECTED：节点明确拒绝且链上 ISN 未前进；同一 operationId 可用相同 ISN 创建新 attempt。
 - BROADCAST：已拿到哈希，原提交标识直接返回同一哈希。
 - FINALIZED/FAILED：来自完整链上执行结果，不能将失败冒充成功。
 
