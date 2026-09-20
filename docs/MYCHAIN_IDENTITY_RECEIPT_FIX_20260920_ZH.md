@@ -2,7 +2,7 @@
 
 2026-09-20 已修复并部署独立发送、回执查询工具。故障来自合约 Identity 被当作名称再次哈希；
 源链交易校验失败，未进入跨链流程。修复后的新消息源链执行成功，监管批准，eth04 业务正文精确接收一次。
-最终确认仍在等待 eth04 的 finalized 区块覆盖目标交易，下文分别记录执行和确认结果。
+17:47:27，eth04 的 finalized 区块覆盖目标交易，Relayer 返回 SUCCESS，监管四阶段全部完整。
 
 ## 根因与修改
 
@@ -70,7 +70,7 @@ attempt_file="$release/替换为本次业务请求唯一编号.attempt"
 
 ## 验收记录
 
-- **本地逻辑：** Java 8 编译通过；真实 SDK JSON 解码的 9 项回执回归通过。
+- **代码验证：** 服务器 Java 8 编译通过；真实 SDK JSON 解码的 9 项回执回归通过。
 - **现场前置检查：** 正确 Identity 返回 EVM；错误再哈希 Identity 返回空。发送工具的有效 Identity 与预期一致。
 - **旧请求：** `b99c1080…deb1d`、`b2037b87…b4144` 在源链无成功回执、Relayer 无对应 UCP；历史记录保留。
   截图哈希用修复后工具查询为 `NOT_FOUND / FOUND=False`。
@@ -80,7 +80,9 @@ attempt_file="$release/替换为本次业务请求唯一编号.attempt"
   `PROVED`、监管 `APPROVED`。
 - **新目标交易：** `0xb66ca82b73cd97c019f172f5731c7a046fb20f5a3948074deb73f8b355f7eb0f`，
   块高 `1690034`，原生 receipt status=1；源域、源身份、无序类型与正文完全匹配的业务事件恰好 1 条。
-- **最终确认：** 待 finalized 覆盖块高 `1690034`，再验收 Relayer 终态和监管第四阶段；不以已执行代替最终确认。
+- **最终确认：** 17:47:27，finalized=`1690048` 已覆盖目标块 `1690034`；Relayer `SUCCESS`，
+  监管 `APPROVED / TARGET_EXECUTED`，`relayerReceived/regulationFinished/targetSubmitted/targetExecuted`
+  均为 true。此前的处理中是等待现有最终性策略，本次没有降低确认门限。
 - **重复防护：** 同一尝试文件再次调用在提交前返回 `FileAlreadyExistsException`，没有广播，原尝试内容不变。
 - **公网接口：** `/api/overview` 返回 HTTP 200，严格 TLS 校验成功。
 
