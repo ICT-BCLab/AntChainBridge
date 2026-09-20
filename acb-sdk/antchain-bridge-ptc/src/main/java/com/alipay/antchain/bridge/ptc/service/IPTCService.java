@@ -66,6 +66,15 @@ public interface IPTCService {
         );
     }
 
+    default PTCVerifyCrossChainMessageResult verifyCrossChainMessageWithResult(
+            ThirdPartyBlockchainTrustAnchor tpbta,
+            ValidatedConsensusState validatedConsensusState,
+            UniformCrosschainPacket ucp,
+            String ucpId
+    ) {
+        return verifyCrossChainMessageWithResult(tpbta, validatedConsensusState, ucp);
+    }
+
     Set<String> querySupportedBlockchainProducts();
 
     BlockState queryCurrVerifiedBlockState(ThirdPartyBlockchainTrustAnchor tpbta);

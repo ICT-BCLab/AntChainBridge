@@ -41,6 +41,7 @@ import com.alipay.antchain.bridge.ptc.committee.grpc.*;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.TestBase;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.BtaWrapper;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.DomainSpaceCertWrapper;
+import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.MonitorNodeVerifyResult;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.TpBtaWrapper;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.ValidatedConsensusStateWrapper;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.dal.repository.interfaces.IBCDNSRepository;
@@ -64,10 +65,14 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class MonitorNodeServiceTest extends TestBase {
@@ -488,6 +493,53 @@ public class MonitorNodeServiceTest extends TestBase {
                         ).getEncodedToSign()
                 )
         );
+    }
+
+    @Test
+    @SneakyThrows
+    public void testForwardUcpIdToEndorserService() {
+        String ucpId = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        IEndorserService mockEndorserService = mock(IEndorserService.class);
+        MonitorNodeServiceImpl service = new MonitorNodeServiceImpl();
+        ReflectionTestUtils.setField(service, "endorserService", mockEndorserService);
+        CommitteeNodeProof proof = CommitteeNodeProof.builder()
+                .nodeId("monitor-node")
+                .signAlgo(SignAlgoEnum.KECCAK256_WITH_SECP256K1)
+                .signature(new byte[65])
+                .build();
+        when(mockEndorserService.verifyUcpWithMonitorSystem(any(), any(), eq(ucpId)))
+                .thenReturn(MonitorNodeVerifyResult.approved(proof));
+
+        StreamRecorder<Response> verifyResponseObserver = StreamRecorder.create();
+        service.verifyCrossChainMessage(
+                VerifyCrossChainMessageRequest.newBuilder()
+                        .setCrossChainLane(ByteString.copyFrom(crossChainLane.encode()))
+                        .setRawUcp(ByteString.copyFrom(ucp.encode()))
+                        .setUcpId(ucpId)
+                        .build(),
+                verifyResponseObserver
+        );
+
+        Assert.assertTrue(verifyResponseObserver.awaitCompletion(5, TimeUnit.SECONDS));
+        Assert.assertEquals(0, verifyResponseObserver.getValues().getFirst().getCode());
+        verify(mockEndorserService).verifyUcpWithMonitorSystem(any(), any(), eq(ucpId));
+
+        reset(mockEndorserService);
+        when(mockEndorserService.relayUcpToMonitorSystem(any(), eq("")))
+                .thenReturn(MonitorNodeVerifyResult.approved(proof));
+        CrossChainLane dioxideLane = new CrossChainLane(new CrossChainDomain("dioxide2"));
+        StreamRecorder<Response> relayResponseObserver = StreamRecorder.create();
+        service.verifyCrossChainMessage(
+                VerifyCrossChainMessageRequest.newBuilder()
+                        .setCrossChainLane(ByteString.copyFrom(dioxideLane.encode()))
+                        .setRawUcp(ByteString.copyFrom(ucp.encode()))
+                        .build(),
+                relayResponseObserver
+        );
+
+        Assert.assertTrue(relayResponseObserver.awaitCompletion(5, TimeUnit.SECONDS));
+        Assert.assertEquals(0, relayResponseObserver.getValues().getFirst().getCode());
+        verify(mockEndorserService).relayUcpToMonitorSystem(any(), eq(""));
     }
 
     @Test

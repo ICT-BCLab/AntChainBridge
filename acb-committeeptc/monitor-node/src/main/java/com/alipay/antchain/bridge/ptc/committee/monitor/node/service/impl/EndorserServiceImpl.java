@@ -303,6 +303,15 @@ public class EndorserServiceImpl implements IEndorserService {
 
     @Override
     public MonitorNodeVerifyResult verifyUcpWithMonitorSystem(CrossChainLane crossChainLane, UniformCrosschainPacket ucp) {
+        return verifyUcpWithMonitorSystem(crossChainLane, ucp, "");
+    }
+
+    @Override
+    public MonitorNodeVerifyResult verifyUcpWithMonitorSystem(
+            CrossChainLane crossChainLane,
+            UniformCrosschainPacket ucp,
+            String ucpId
+    ) {
 
         var tpbta = endorseServiceRepository.getExactTpBta(crossChainLane);
         if (ObjectUtil.isNull(tpbta)) {
@@ -325,6 +334,7 @@ public class EndorserServiceImpl implements IEndorserService {
                     stub -> stub.verifyCrossChainMessageInMonitorSystem(
                             VerifyCrossChainMessageInMonitorSystemRequest.newBuilder()
                                     .setRawUcp(ByteString.copyFrom(ucp.encode()))
+                                    .setUcpId(StrUtil.nullToEmpty(ucpId))
                                     .build()
                     )
             );
@@ -340,11 +350,21 @@ public class EndorserServiceImpl implements IEndorserService {
         if (responseFromMonitorSystem.getCode() != 0) {
             return MonitorNodeVerifyResult.error(
                     emptySignatureProof(),
-                    String.format("[MonitorSystemGRpcClient] verifyCrossChainMessageInMonitorSystem request failed: %s",
-                            responseFromMonitorSystem.getErrorMsg())
+                    String.format("[MonitorSystemGRpcClient] verifyCrossChainMessageInMonitorSystem request failed " +
+                                    "(code: %d): %s",
+                            responseFromMonitorSystem.getCode(), responseFromMonitorSystem.getErrorMsg())
             );
         }
-        if (responseFromMonitorSystem.getVerifyCrossChainMessageInMonitorSystemResp().getResult() == 0) {
+        if (!responseFromMonitorSystem.hasVerifyCrossChainMessageInMonitorSystemResp()) {
+            return MonitorNodeVerifyResult.error(
+                    emptySignatureProof(),
+                    "[MonitorSystemGRpcClient] verifyCrossChainMessageInMonitorSystem returned code 0 without verify response"
+            );
+        }
+
+        VerifyCrossChainMessageInMonitorSystemResponse verifyResponse =
+                responseFromMonitorSystem.getVerifyCrossChainMessageInMonitorSystemResp();
+        if (verifyResponse.getResult() == 0) {
             // 监管通过 流程正常
 //            log.info("verify ucp with monitor system for domain {}: success", bta.getDomain());
             log.info("verify ucp with monitor system for domain {}: success", crossChainLane.getSenderDomain().getDomain());
@@ -360,7 +380,7 @@ public class EndorserServiceImpl implements IEndorserService {
                             ).getEncodedToSign()
                     )).build();
             return MonitorNodeVerifyResult.approved(proof);
-        } else {
+        } else if (verifyResponse.getResult() == 1) {
             // [监管回滚的v1版本逻辑]
             // 监管未通过 直接向监管合约发送回滚交易 并且不跑出异常 而是返回一个签名
             // 目前是返回一个正确的签名, 保证在监管不通过时系统的稳定运行; 在8~9月开发的最终版本中会返回一个空签名, 实现完整的逻辑
@@ -406,22 +426,35 @@ public class EndorserServiceImpl implements IEndorserService {
             // 返回一个ethereum格式(65字节)的空签名 由目的链的监管合约验证签名时识别为监管失败 构造监管回滚消息
             return MonitorNodeVerifyResult.rejected(
                     emptySignatureProof(),
-                    responseFromMonitorSystem.getVerifyCrossChainMessageInMonitorSystemResp().getMsg()
+                    verifyResponse.getMsg()
             );
 
             // throw new InvalidCrossChainMessageException("[monitor system] illegal crosschain message(block hash: {}): {}",
             //         ucp.getSrcMessage().getProvableData().getBlockHashHex(), responseFromMonitorSystem.getVerifyCrossChainMessageInMonitorSystemResp().getMsg());
         }
+
+        return MonitorNodeVerifyResult.error(
+                emptySignatureProof(),
+                String.format("[MonitorSystemGRpcClient] verifyCrossChainMessageInMonitorSystem returned " +
+                                "unexpected result %d: %s",
+                        verifyResponse.getResult(), verifyResponse.getMsg())
+        );
     }
 
     @Override
     public MonitorNodeVerifyResult relayUcpToMonitorSystem(UniformCrosschainPacket ucp) {
+        return relayUcpToMonitorSystem(ucp, "");
+    }
+
+    @Override
+    public MonitorNodeVerifyResult relayUcpToMonitorSystem(UniformCrosschainPacket ucp, String ucpId) {
         MonitorSystemResponse responseFromMonitorSystem;
         try {
             responseFromMonitorSystem = monitorSystemGrpcClientManager.withStub(
                     stub -> stub.relayUcpToMonitorSystem(
                             RelayUcpToMonitorSystemRequest.newBuilder()
                                     .setRawUcp(ByteString.copyFrom(ucp.encode()))
+                                    .setUcpId(StrUtil.nullToEmpty(ucpId))
                                     .build()
                     )
             );
@@ -436,8 +469,8 @@ public class EndorserServiceImpl implements IEndorserService {
         if (responseFromMonitorSystem.getCode() != 0) {
             return MonitorNodeVerifyResult.error(
                     emptySignatureProof(),
-                    String.format("[MonitorSystemGRpcClient] relayUcpToMonitorSystem request failed: %s",
-                            responseFromMonitorSystem.getErrorMsg())
+                    String.format("[MonitorSystemGRpcClient] relayUcpToMonitorSystem request failed (code: %d): %s",
+                            responseFromMonitorSystem.getCode(), responseFromMonitorSystem.getErrorMsg())
             );
         }
 

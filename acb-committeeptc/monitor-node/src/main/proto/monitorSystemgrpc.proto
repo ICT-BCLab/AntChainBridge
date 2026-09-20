@@ -22,11 +22,13 @@ message Empty {}
 // 监管节点作为客户端向监管系统请求验证ucp的合法性(VerifyCrossChainMessage方法中调用)
 message VerifyCrossChainMessageInMonitorSystemRequest {
   bytes rawUcp = 1;
+  string ucpId = 2;
 }
 
 // 接收无需监管的跨链消息，并转发给课题四监管系统供其分析(VerifyCrossChainMessage方法中调用)
 message RelayUcpToMonitorSystemRequest {
   bytes rawUcp = 1;
+  string ucpId = 2;
 }
 
 message MonitorSystemResponse {

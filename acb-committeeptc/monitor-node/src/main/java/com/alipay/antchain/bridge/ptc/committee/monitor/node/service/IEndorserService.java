@@ -44,7 +44,19 @@ public interface IEndorserService {
 
     MonitorNodeVerifyResult verifyUcpWithMonitorSystem(CrossChainLane crossChainLane, UniformCrosschainPacket ucp);
 
+    default MonitorNodeVerifyResult verifyUcpWithMonitorSystem(
+            CrossChainLane crossChainLane,
+            UniformCrosschainPacket ucp,
+            String ucpId
+    ) {
+        return verifyUcpWithMonitorSystem(crossChainLane, ucp);
+    }
+
     MonitorNodeVerifyResult relayUcpToMonitorSystem(UniformCrosschainPacket ucp);
+
+    default MonitorNodeVerifyResult relayUcpToMonitorSystem(UniformCrosschainPacket ucp, String ucpId) {
+        return relayUcpToMonitorSystem(ucp);
+    }
 
     EndorseBlockStateResp endorseBlockState(CrossChainLane crossChainLane, String receiverDomain, BigInteger height);
 }

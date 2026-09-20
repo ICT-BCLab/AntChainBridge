@@ -65,6 +65,7 @@ import com.alipay.antchain.bridge.ptc.types.PTCVerifyCrossChainMessageResult;
 import com.google.protobuf.ByteString;
 import lombok.SneakyThrows;
 import org.junit.*;
+import org.mockito.ArgumentCaptor;
 import org.mockito.MockedStatic;
 
 import static org.junit.Assert.*;
@@ -615,6 +616,7 @@ public class CommitteePTCServiceTest {
     public void testVerifyCrossChainMessage() {
         CommitteePTCService ptcService = new CommitteePTCService();
         ptcService.startup(SERVICE_CONF.getBytes());
+        String ucpId = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
         CommitteeNodeProof nodeProof = CommitteeNodeProof.builder()
                 .nodeId("node1")
@@ -637,9 +639,16 @@ public class CommitteePTCServiceTest {
                         ).build()
         );
 
+        clearInvocations(mockStubNode1);
         PTCVerifyCrossChainMessageResult verifyResult =
-                ptcService.verifyCrossChainMessageWithResult(tpbta, currVcs, ucp);
+                ptcService.verifyCrossChainMessageWithResult(tpbta, currVcs, ucp, ucpId);
         ThirdPartyProof tpProof = verifyResult.getThirdPartyProof();
+
+        ArgumentCaptor<VerifyCrossChainMessageRequest> requestCaptor =
+                ArgumentCaptor.forClass(VerifyCrossChainMessageRequest.class);
+        verify(mockStubNode1).verifyCrossChainMessage(requestCaptor.capture());
+        assertEquals(ucpId, requestCaptor.getValue().getUcpId());
+        assertArrayEquals(ucp.encode(), requestCaptor.getValue().getRawUcp().toByteArray());
 
         assertEquals(tpbta.getCrossChainLane().getLaneKey(), tpProof.getTpbtaCrossChainLane().getLaneKey());
         assertEquals("approved", verifyResult.getRegulationStatus());
@@ -647,6 +656,11 @@ public class CommitteePTCServiceTest {
         CommitteeEndorseProof endorseProof = CommitteeEndorseProof.decode(tpProof.getRawProof());
         assertEquals(COMMITTEE_ID, endorseProof.getCommitteeId());
         assertEquals(1, endorseProof.getSigs().size());
+
+        clearInvocations(mockStubNode1);
+        ptcService.verifyCrossChainMessageWithResult(tpbta, currVcs, ucp);
+        verify(mockStubNode1).verifyCrossChainMessage(requestCaptor.capture());
+        assertEquals("", requestCaptor.getValue().getUcpId());
     }
 
     @Test
