@@ -1325,7 +1325,20 @@ public class DioxideClient {
     @SneakyThrows
     private String sendRawTransaction(String signed_txn, boolean sync) {
         String rawResp = makeRequest("tx.send", JSON.toJSONString(orderedMap("txdata", signed_txn)));
-        JSONObject resp = checkIfErrorResponse(rawResp);
+        if (Objects.isNull(rawResp)) {
+            throw new RuntimeException("[tx.send] get null response from dioxide");
+        }
+        RpcResponse rpcResponse = JSON.parseObject(rawResp, RpcResponse.class);
+        if (!rpcResponse.isSuccess()) {
+            throw new JdbcTransactionCoordinator.NodeRejectedException(
+                    rpcResponse.getErr() == null ? -1 : rpcResponse.getErr(),
+                    rpcResponse.getFailResponse()
+            );
+        }
+        JSONObject resp = rpcResponse.getSuccessResponse();
+        if (Objects.isNull(resp)) {
+            throw new RuntimeException("[tx.send] get malformed success response from dioxide");
+        }
         String txHash = resp.getString("Hash");
         if (sync) {
             if (!waitForTransactionConfirmed(txHash, DEFAULT_TIMEOUT)) {

@@ -14,6 +14,37 @@ from urllib.parse import urlsplit
 import pymysql
 
 MAX_ISN = 0xFFFFFFFF
+SCHEMA_VERSION = 2
+COMPONENT = "dioxide-coordinator"
+RETRYABLE = {"REJECTED", "FAILED", "EXPIRED", "FORKED", "ABANDONED"}
+UNCERTAIN = {"SIGNED", "UNKNOWN"}
+
+
+class NodeRejectedError(RuntimeError):
+    """A valid tx.send response explicitly rejected the signed transaction."""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+class ReconciliationRequiredError(RuntimeError):
+    pass
+
+
+def dioxide_transaction_hash(signed):
+    digest = hashlib.sha256(signed).digest()
+    alphabet = "0123456789abcdefghjkmnpqrstvwxyz"
+    output = []
+    for group in range((len(digest) * 8 + 4) // 5):
+        value = 0
+        for offset in range(5):
+            bit = group * 5 + offset
+            value <<= 1
+            if bit < len(digest) * 8:
+                value |= (digest[bit // 8] >> (7 - bit % 8)) & 1
+        output.append(alphabet[value])
+    return "".join(output)
 
 
 def config_file(filename=None):
@@ -35,6 +66,10 @@ class Coordinator:
         self.checkpoint = config["checkpointHash"]
         self._validate(self.network, 96)
         self._validate(self.checkpoint, 128)
+        self.acceptance_wait = int(config.get("acceptanceWaitMillis", "20000")) / 1000
+        self.acceptance_poll = int(config.get("acceptancePollMillis", "500")) / 1000
+        if self.acceptance_wait < 0 or self.acceptance_poll <= 0:
+            raise ValueError("invalid coordinator acceptance polling settings")
         if connect is None:
             uri = urlsplit(config["jdbcUrl"].removeprefix("jdbc:"))
             password = Path(config["passwordFile"]).read_text().strip()
@@ -56,6 +91,10 @@ class Coordinator:
         connection = self.connect()
         try:
             with connection.cursor() as cursor:
+                cursor.execute("SELECT schema_version FROM bridge_tx_schema_version WHERE component=%s", (COMPONENT,))
+                row = cursor.fetchone()
+                if not row or row[0] != SCHEMA_VERSION:
+                    raise RuntimeError(f"Dioxide coordinator schema v{SCHEMA_VERSION} is required")
                 cursor.execute("SELECT GET_LOCK(%s,20)", (name,))
                 if cursor.fetchone()[0] != 1:
                     raise TimeoutError("coordinator lock timeout")
@@ -66,6 +105,139 @@ class Coordinator:
                     cursor.execute("SELECT RELEASE_LOCK(%s)", (name,))
             finally:
                 connection.close()
+
+    @staticmethod
+    def _checked_isn(value):
+        value = int(value)
+        if not 0 <= value <= MAX_ISN + 1:
+            raise RuntimeError("ISN exhausted or invalid; refusing wraparound")
+        return value
+
+    def _reconcile(self, cursor, account, row, node_isn):
+        observed, state, active_operation, active_attempt, active_isn = row
+        if state == "RECONCILE_REQUIRED":
+            raise ReconciliationRequiredError("Dioxide account requires reconciliation before submission")
+        if active_operation is None:
+            if node_isn < observed:
+                cursor.execute(
+                    "UPDATE bridge_tx_account SET allocation_state='RECONCILE_REQUIRED',last_error=%s "
+                    "WHERE network_id=%s AND account=%s",
+                    (f"node ISN regressed from {observed} to {node_isn}", self.network, account))
+                raise ReconciliationRequiredError("node ISN regressed; reconcile network state before new submission")
+            cursor.execute("UPDATE bridge_tx_account SET next_isn=%s,observed_isn=%s WHERE network_id=%s AND account=%s",
+                           (node_isn, node_isn, self.network, account))
+            return
+        if active_attempt is None or active_isn is None:
+            cursor.execute(
+                "UPDATE bridge_tx_account SET allocation_state='RECONCILE_REQUIRED',last_error=%s "
+                "WHERE network_id=%s AND account=%s",
+                ("incomplete active reservation", self.network, account))
+            raise ReconciliationRequiredError("incomplete Dioxide account reservation")
+        if node_isn < active_isn:
+            cursor.execute(
+                "UPDATE bridge_tx_account SET allocation_state='RECONCILE_REQUIRED',last_error=%s "
+                "WHERE network_id=%s AND account=%s",
+                ("node ISN regressed below active reservation", self.network, account))
+            raise ReconciliationRequiredError("node ISN regressed below active Dioxide reservation")
+        if node_isn == active_isn:
+            cursor.execute("UPDATE bridge_tx_account SET next_isn=%s,observed_isn=%s WHERE network_id=%s AND account=%s",
+                           (node_isn, node_isn, self.network, account))
+            return
+        cursor.execute(
+            "UPDATE bridge_tx_attempt SET state=IF(state IN ('SIGNED','BROADCAST','UNKNOWN'),'ACCEPTED',state) "
+            "WHERE network_id=%s AND operation_id=%s AND attempt_no=%s",
+            (self.network, active_operation, active_attempt))
+        cursor.execute(
+            "UPDATE bridge_tx_submission SET state=IF(state IN ('SIGNED','BROADCAST','UNKNOWN'),'ACCEPTED',state) "
+            "WHERE network_id=%s AND operation_id=%s", (self.network, active_operation))
+        cursor.execute(
+            "UPDATE bridge_tx_account SET next_isn=%s,observed_isn=%s,allocation_state='READY',"
+            "active_operation_id=NULL,active_attempt_no=NULL,active_isn=NULL,last_error=NULL "
+            "WHERE network_id=%s AND account=%s", (node_isn, node_isn, self.network, account))
+
+    def _reconcile_observation(self, connection, account, node_isn):
+        connection.begin()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT observed_isn,allocation_state,active_operation_id,active_attempt_no,active_isn "
+                    "FROM bridge_tx_account WHERE network_id=%s AND account=%s FOR UPDATE",
+                    (self.network, account))
+                self._reconcile(cursor, account, cursor.fetchone(), node_isn)
+            connection.commit()
+        except ReconciliationRequiredError:
+            connection.commit()
+            raise
+        except BaseException:
+            connection.rollback()
+            raise
+
+    def _broadcast(self, connection, operation_id, account, attempt, transport):
+        attempt_no, isn, signed, expected_hash, _state = attempt
+        try:
+            returned_hash = transport.broadcast(signed)
+            if not returned_hash:
+                raise RuntimeError("broadcast returned no hash")
+            if returned_hash != expected_hash:
+                raise RuntimeError("node returned a transaction hash different from the signed bytes")
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE bridge_tx_attempt SET tx_hash=%s,state='BROADCAST',node_error_code=NULL,last_error=NULL "
+                    "WHERE network_id=%s AND operation_id=%s AND attempt_no=%s",
+                    (returned_hash, self.network, operation_id, attempt_no))
+                cursor.execute(
+                    "UPDATE bridge_tx_submission SET tx_hash=%s,state='BROADCAST',last_error=NULL "
+                    "WHERE network_id=%s AND operation_id=%s",
+                    (returned_hash, self.network, operation_id))
+        except NodeRejectedError as error:
+            node_isn = self._checked_isn(transport.current_isn(account))
+            if node_isn > isn:
+                self._reconcile_observation(connection, account, node_isn)
+                return expected_hash
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE bridge_tx_attempt SET state='REJECTED',node_error_code=%s,last_error=%s "
+                    "WHERE network_id=%s AND operation_id=%s AND attempt_no=%s",
+                    (error.code, str(error)[:512], self.network, operation_id, attempt_no))
+                cursor.execute(
+                    "UPDATE bridge_tx_submission SET state='REJECTED',last_error=%s "
+                    "WHERE network_id=%s AND operation_id=%s",
+                    (str(error)[:512], self.network, operation_id))
+            raise
+        except Exception as error:
+            try:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE bridge_tx_attempt SET state='UNKNOWN',last_error=%s "
+                        "WHERE network_id=%s AND operation_id=%s AND attempt_no=%s",
+                        (type(error).__name__, self.network, operation_id, attempt_no))
+                    cursor.execute(
+                        "UPDATE bridge_tx_submission SET state='UNKNOWN',last_error=%s "
+                        "WHERE network_id=%s AND operation_id=%s",
+                        (type(error).__name__, self.network, operation_id))
+            except Exception:
+                pass
+            raise
+
+        deadline = time.monotonic() + self.acceptance_wait
+        while True:
+            try:
+                node_isn = self._checked_isn(transport.current_isn(account))
+                self._reconcile_observation(connection, account, node_isn)
+                if node_isn > isn:
+                    break
+            except Exception as error:
+                try:
+                    with connection.cursor() as cursor:
+                        cursor.execute("UPDATE bridge_tx_account SET last_error=%s WHERE network_id=%s AND account=%s",
+                                       (("acceptance check: " + type(error).__name__)[:512], self.network, account))
+                except Exception:
+                    pass
+                break
+            if self.acceptance_wait == 0 or time.monotonic() >= deadline:
+                break
+            time.sleep(min(self.acceptance_poll, max(0.001, deadline - time.monotonic())))
+        return returned_hash
 
     def submit(self, operation_id, account, payload, transport):
         if account.lower().endswith(":ed25519"):
@@ -82,64 +254,86 @@ class Coordinator:
                     cursor.execute(
                         "INSERT INTO bridge_tx_account(network_id,account,checkpoint_hash,next_isn) VALUES(%s,%s,%s,0) "
                         "ON DUPLICATE KEY UPDATE account=VALUES(account)", (self.network, account, self.checkpoint))
-                    cursor.execute("SELECT checkpoint_hash,next_isn,observed_isn FROM bridge_tx_account WHERE network_id=%s AND account=%s FOR UPDATE",
+                    cursor.execute("SELECT checkpoint_hash,observed_isn,allocation_state,active_operation_id,active_attempt_no,active_isn "
+                                   "FROM bridge_tx_account WHERE network_id=%s AND account=%s FOR UPDATE",
                                    (self.network, account))
-                    checkpoint, persisted, observed = cursor.fetchone()
+                    checkpoint, observed, allocation_state, active_operation, active_attempt, active_isn = cursor.fetchone()
                     if checkpoint != self.checkpoint:
                         raise RuntimeError("coordinator network mismatch")
                     cursor.execute(
-                        "SELECT account,payload_hash,signed_tx,tx_hash FROM bridge_tx_submission WHERE network_id=%s AND operation_id=%s FOR UPDATE",
+                        "SELECT account,payload_hash,active_attempt_no FROM bridge_tx_submission "
+                        "WHERE network_id=%s AND operation_id=%s FOR UPDATE",
                         (self.network, operation_id))
                     previous = cursor.fetchone()
+                    if previous and (previous[0] != account or previous[1] != fingerprint):
+                        raise RuntimeError("submission identity reused with different account or payload")
+
+                    node_isn = self._checked_isn(transport.current_isn(account))
+                    self._reconcile(cursor, account,
+                                    (observed, allocation_state, active_operation, active_attempt, active_isn), node_isn)
+                    cursor.execute(
+                        "SELECT active_operation_id,active_attempt_no,active_isn FROM bridge_tx_account "
+                        "WHERE network_id=%s AND account=%s", (self.network, account))
+                    active_operation, active_attempt, active_isn = cursor.fetchone()
+                    if active_operation is not None and active_operation != operation_id:
+                        raise RuntimeError(f"Dioxide account ISN {active_isn} is owned by operation {active_operation}")
+
                     if previous:
-                        if previous[0] != account or previous[1] != fingerprint:
-                            raise RuntimeError("submission identity reused with different account or payload")
-                        signed, tx_hash = previous[2:]
-                    else:
-                        node_isn = transport.current_isn(account)
-                        if node_isn < observed:
-                            raise RuntimeError("node ISN regressed; reconcile network state before new submission")
-                        if not 0 <= node_isn <= MAX_ISN or not 0 <= persisted <= MAX_ISN:
-                            raise RuntimeError("ISN exhausted or invalid; refusing wraparound")
-                        isn = max(node_isn, persisted)
-                        signed = transport.compose_and_sign(isn)
-                        if not signed:
-                            raise RuntimeError("empty signed transaction")
                         cursor.execute(
-                            "INSERT INTO bridge_tx_submission(network_id,operation_id,account,isn,payload_hash,signed_tx,state) "
-                            "VALUES(%s,%s,%s,%s,%s,%s,'SIGNED')", (self.network, operation_id, account, isn, fingerprint, signed))
-                        cursor.execute("UPDATE bridge_tx_account SET next_isn=%s,observed_isn=%s WHERE network_id=%s AND account=%s",
-                                       (isn + 1, node_isn, self.network, account))
-                        tx_hash = None
+                            "SELECT attempt_no,isn,signed_tx,tx_hash,state FROM bridge_tx_attempt "
+                            "WHERE network_id=%s AND operation_id=%s AND attempt_no=%s FOR UPDATE",
+                            (self.network, operation_id, previous[2]))
+                        attempt = cursor.fetchone()
+                        if not attempt:
+                            raise RuntimeError("coordinator submission has no attempt journal")
+                        if active_operation is not None and attempt[4] in UNCERTAIN:
+                            connection.commit()
+                            return self._broadcast(connection, operation_id, account, attempt, transport)
+                        if attempt[4] not in RETRYABLE:
+                            if not attempt[3]:
+                                raise RuntimeError("accepted Dioxide submission has no transaction hash")
+                            connection.commit()
+                            return attempt[3]
+
+                    if node_isn > MAX_ISN:
+                        raise RuntimeError("ISN exhausted or invalid; refusing wraparound")
+                    attempt_no = 1 if previous is None else previous[2] + 1
+                    signed = transport.compose_and_sign(node_isn)
+                    if not signed:
+                        raise RuntimeError("empty signed transaction")
+                    hash_method = getattr(transport, "transaction_hash", dioxide_transaction_hash)
+                    tx_hash = hash_method(signed)
+                    cursor.execute(
+                        "INSERT INTO bridge_tx_attempt(network_id,operation_id,attempt_no,account,isn,payload_hash,signed_tx,tx_hash,state) "
+                        "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,'SIGNED')",
+                        (self.network, operation_id, attempt_no, account, node_isn, fingerprint, signed, tx_hash))
+                    cursor.execute(
+                        "INSERT INTO bridge_tx_submission(network_id,operation_id,account,isn,payload_hash,signed_tx,tx_hash,state,active_attempt_no) "
+                        "VALUES(%s,%s,%s,%s,%s,%s,%s,'SIGNED',%s) ON DUPLICATE KEY UPDATE isn=VALUES(isn),"
+                        "signed_tx=VALUES(signed_tx),tx_hash=VALUES(tx_hash),state='SIGNED',"
+                        "active_attempt_no=VALUES(active_attempt_no),last_error=NULL",
+                        (self.network, operation_id, account, node_isn, fingerprint, signed, tx_hash, attempt_no))
+                    cursor.execute(
+                        "UPDATE bridge_tx_account SET next_isn=%s,observed_isn=%s,allocation_state='BLOCKED',"
+                        "active_operation_id=%s,active_attempt_no=%s,active_isn=%s,last_error=NULL "
+                        "WHERE network_id=%s AND account=%s",
+                        (node_isn, node_isn, operation_id, attempt_no, node_isn, self.network, account))
+                    attempt = (attempt_no, node_isn, signed, tx_hash, "SIGNED")
                 connection.commit()
+            except ReconciliationRequiredError:
+                connection.commit()
+                raise
             except BaseException:
                 connection.rollback()
                 raise
-            if tx_hash:
-                return tx_hash
-            try:
-                tx_hash = transport.broadcast(signed)
-                if not tx_hash:
-                    raise RuntimeError("broadcast returned no hash")
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "UPDATE bridge_tx_submission SET tx_hash=%s,state='BROADCAST',last_error=NULL WHERE network_id=%s AND operation_id=%s",
-                        (tx_hash, self.network, operation_id))
-                return tx_hash
-            except Exception as error:
-                try:
-                    with connection.cursor() as cursor:
-                        cursor.execute(
-                            "UPDATE bridge_tx_submission SET state='UNKNOWN',last_error=%s WHERE network_id=%s AND operation_id=%s AND tx_hash IS NULL",
-                            (type(error).__name__, self.network, operation_id))
-                except Exception:
-                    pass  # SIGNED also preserves the exact recovery bytes.
-                raise
+            return self._broadcast(connection, operation_id, account, attempt, transport)
 
     def record_outcome(self, tx_hash, success):
         connection = self.connect()
         try:
             with connection.cursor() as cursor:
+                cursor.execute("UPDATE bridge_tx_attempt SET state=%s WHERE network_id=%s AND tx_hash=%s",
+                               ("FINALIZED" if success else "FAILED", self.network, tx_hash))
                 cursor.execute("UPDATE bridge_tx_submission SET state=%s WHERE network_id=%s AND tx_hash=%s",
                                ("FINALIZED" if success else "FAILED", self.network, tx_hash))
         finally:
