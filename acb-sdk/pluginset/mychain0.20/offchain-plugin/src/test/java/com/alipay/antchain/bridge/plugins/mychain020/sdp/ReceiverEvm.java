@@ -24,10 +24,26 @@ public class ReceiverEvm extends AbstractDemoReceiverContract {
     private static final String RUNTIME_BYTE_CODE_RESOURCE_PATH = "/contracts/demo_v2/receiver.bin-runtime";
 
     public ReceiverEvm(String domainName, Mychain020Client mychain020Client, String sdpContractName) {
+        this(domainName, mychain020Client, sdpContractName, null);
+    }
+
+    /**
+     * Attach to an already deployed receiver when {@code existingContractName}
+     * is present; otherwise deploy one uniquely named receiver.
+     */
+    public ReceiverEvm(
+            String domainName,
+            Mychain020Client mychain020Client,
+            String sdpContractName,
+            String existingContractName) {
         this.setDomain(domainName);
         this.setMychain020Client(mychain020Client);
-        this.setContractName("ReceiverEvm_" + UUID.randomUUID());
         this.setSdpContractName(sdpContractName);
+        if (existingContractName != null && !existingContractName.trim().isEmpty()) {
+            this.setContractName(existingContractName);
+            return;
+        }
+        this.setContractName("ReceiverEvm_" + UUID.randomUUID());
         if (!deployOrUpgradeContract()) {
             throw new RuntimeException("Failed to setup ReceiverEvm.");
         }

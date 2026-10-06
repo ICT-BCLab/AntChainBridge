@@ -17,6 +17,7 @@
 package com.alipay.antchain.bridge.ptc.committee.monitor.node.server;
 
 import java.math.BigInteger;
+import java.util.function.Function;
 import java.util.concurrent.TimeUnit;
 
 import cn.hutool.core.bean.BeanUtil;
@@ -39,6 +40,7 @@ import com.alipay.antchain.bridge.plugins.spi.ptc.IHeteroChainDataVerifierServic
 import com.alipay.antchain.bridge.plugins.spi.ptc.core.VerifyResult;
 import com.alipay.antchain.bridge.ptc.committee.grpc.*;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.TestBase;
+import com.alipay.antchain.bridge.ptc.committee.monitor.node.client.MonitorSystemGrpcClientManager;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.BtaWrapper;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.DomainSpaceCertWrapper;
 import com.alipay.antchain.bridge.ptc.committee.monitor.node.commons.models.MonitorNodeVerifyResult;
@@ -57,6 +59,7 @@ import com.alipay.antchain.bridge.ptc.committee.types.tpbta.CommitteeEndorseRoot
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.NodeEndorseInfo;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.OptionalEndorsePolicy;
 import com.alipay.antchain.bridge.ptc.committee.types.tpbta.VerifyBtaExtension;
+import com.alipay.antchain.bridge.ptc.committee.monitor.system.grpc.*;
 import com.google.protobuf.ByteString;
 import io.grpc.internal.testing.StreamRecorder;
 import jakarta.annotation.Resource;
@@ -68,6 +71,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -129,7 +133,7 @@ public class MonitorNodeServiceTest extends TestBase {
 
         bta = new BlockchainTrustAnchorV1();
         bta.setBcOwnerPublicKey(RAW_NODE_PTC_PUBLIC_KEY);
-        bta.setDomain(new CrossChainDomain("ether.com"));
+        bta.setDomain(new CrossChainDomain("antchain.com"));
         bta.setSubjectIdentity("test".getBytes());
         bta.setBcOwnerSigAlgo(SignAlgoEnum.KECCAK256_WITH_SECP256K1);
         bta.setPtcOid(NODE_PTC_CERT.getCredentialSubjectInstance().getApplicant());
@@ -231,6 +235,9 @@ public class MonitorNodeServiceTest extends TestBase {
 
     @MockBean
     private IHcdvsPluginService hcdvsPluginService;
+
+    @MockBean
+    private MonitorSystemGrpcClientManager monitorSystemGrpcClientManager;
 
     @Resource
     private AbstractCrossChainCertificate ptcCrossChainCert;
@@ -361,7 +368,7 @@ public class MonitorNodeServiceTest extends TestBase {
         var hcdvs = mock(IHeteroChainDataVerifierService.class);
         when(hcdvs.verifyAnchorConsensusState(any(), any())).thenReturn(VerifyResult.builder().success(true).build());
         when(endorseServiceRepository.getMatchedTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
-        when(endorseServiceRepository.getBta(anyString())).thenReturn(new BtaWrapper(bta));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
         when(hcdvsPluginService.getHCDVSService(anyString())).thenReturn(hcdvs);
 
         var vcs = BeanUtil.copyProperties(anchorState, ValidatedConsensusStateV1.class);
@@ -410,8 +417,8 @@ public class MonitorNodeServiceTest extends TestBase {
         var hcdvs = mock(IHeteroChainDataVerifierService.class);
         when(hcdvs.verifyConsensusState(any(), any())).thenReturn(VerifyResult.builder().success(true).build());
         when(endorseServiceRepository.getMatchedTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
-        when(endorseServiceRepository.getBta(anyString())).thenReturn(new BtaWrapper(bta));
-        when(endorseServiceRepository.getValidatedConsensusState(anyString(), anyString())).thenReturn(new ValidatedConsensusStateWrapper(vcs));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
+        when(endorseServiceRepository.getValidatedConsensusState(anyString(), any(BigInteger.class))).thenReturn(new ValidatedConsensusStateWrapper(vcs));
         when(hcdvsPluginService.getHCDVSService(anyString())).thenReturn(hcdvs);
 
         StreamRecorder<Response> responseObserver = StreamRecorder.create();
@@ -451,9 +458,24 @@ public class MonitorNodeServiceTest extends TestBase {
         when(hcdvs.verifyCrossChainMessage(any(), any())).thenReturn(VerifyResult.builder().success(true).build());
         when(hcdvs.parseMessageFromLedgerData(any())).thenReturn(ucp.getSrcMessage().getMessage());
         when(endorseServiceRepository.getExactTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
-        when(endorseServiceRepository.getBta(anyString())).thenReturn(new BtaWrapper(bta));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
         when(endorseServiceRepository.getValidatedConsensusState(anyString(), anyString())).thenReturn(new ValidatedConsensusStateWrapper(currVcs));
         when(hcdvsPluginService.getHCDVSService(anyString())).thenReturn(hcdvs);
+        MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub monitorStub =
+                mock(MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub.class);
+        when(monitorStub.verifyCrossChainMessageInMonitorSystem(any())).thenReturn(
+                MonitorSystemResponse.newBuilder()
+                        .setCode(0)
+                        .setVerifyCrossChainMessageInMonitorSystemResp(
+                                VerifyCrossChainMessageInMonitorSystemResponse.newBuilder()
+                                        .setResult(0)
+                                        .setMsg("ok")
+                        ).build()
+        );
+        when(monitorSystemGrpcClientManager.withStub(any())).thenAnswer(invocation -> {
+            Function<MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub, ?> action = invocation.getArgument(0);
+            return action.apply(monitorStub);
+        });
 
         StreamRecorder<Response> responseObserver = StreamRecorder.create();
         committeeNodeService.verifyCrossChainMessage(
@@ -525,9 +547,9 @@ public class MonitorNodeServiceTest extends TestBase {
         verify(mockEndorserService).verifyUcpWithMonitorSystem(any(), any(), eq(ucpId));
 
         reset(mockEndorserService);
-        when(mockEndorserService.relayUcpToMonitorSystem(any(), eq("")))
+        when(mockEndorserService.verifyUcpWithMonitorSystem(any(), any(), eq("")))
                 .thenReturn(MonitorNodeVerifyResult.approved(proof));
-        CrossChainLane dioxideLane = new CrossChainLane(new CrossChainDomain("dioxide2"));
+        CrossChainLane dioxideLane = new CrossChainLane(new CrossChainDomain("diox.web3.03"));
         StreamRecorder<Response> relayResponseObserver = StreamRecorder.create();
         service.verifyCrossChainMessage(
                 VerifyCrossChainMessageRequest.newBuilder()
@@ -539,7 +561,7 @@ public class MonitorNodeServiceTest extends TestBase {
 
         Assert.assertTrue(relayResponseObserver.awaitCompletion(5, TimeUnit.SECONDS));
         Assert.assertEquals(0, relayResponseObserver.getValues().getFirst().getCode());
-        verify(mockEndorserService).relayUcpToMonitorSystem(any(), eq(""));
+        verify(mockEndorserService).verifyUcpWithMonitorSystem(any(), any(), eq(""));
     }
 
     @Test

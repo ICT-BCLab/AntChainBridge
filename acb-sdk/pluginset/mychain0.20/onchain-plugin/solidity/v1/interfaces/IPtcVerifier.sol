@@ -10,5 +10,11 @@ interface IPtcVerifier {
 
     function verifyTpProof(TpBta memory tpBta, ThirdPartyProof memory tpProof) external returns (bool);
 
+    function verifyTpProof(
+        TpBta memory tpBta,
+        ThirdPartyProof memory tpProof,
+        identity monitorVerifierAddress
+    ) external returns (bool);
+
     function myPtcType() external returns (PTCTypeEnum);
 }

@@ -129,6 +129,37 @@ contract SDPMsg implements ISDPMessage.SDPMessageInterface, ISubProtocol.SubProt
         }
     }
 
+    @global function sendMessageFromMonitor(array<uint8> receiverDomain, array<uint8> receiverID, array<uint8> message, uint64 senderID) public export {
+        __debug.assert(__transaction.get_sender() == monitorAddress);
+
+        SDPLib.SDPMessage sdpMessage;
+        sdpMessage.receiverDomain = Utils.bytesCopy(receiverDomain);
+        sdpMessage.receiver = Utils.bytesCopy(receiverID);
+        sdpMessage.message = Utils.bytesCopy(message);
+
+        hash seqKey = SDPLib.getSendingSeqID(receiverDomain, senderID, receiverID);
+        sdpMessage.sequence = sendSeq[seqKey];
+        sendSeq[seqKey]++;
+
+        array<uint8> rawMsg = SDPLib.encodeSDPMsgV1(sdpMessage);
+        IAuthMessage.AuthMessageInterface am = IAuthMessage.AuthMessageInterface(amContractId);
+        am.recvFromProtocol(senderID, rawMsg);
+    }
+
+    @global function sendUnorderedMessageFromMonitor(array<uint8> receiverDomain, array<uint8> receiverID, array<uint8> message, uint64 senderID) public export {
+        __debug.assert(__transaction.get_sender() == monitorAddress);
+
+        SDPLib.SDPMessage sdpMessage;
+        sdpMessage.receiverDomain = Utils.bytesCopy(receiverDomain);
+        sdpMessage.receiver = Utils.bytesCopy(receiverID);
+        sdpMessage.message = Utils.bytesCopy(message);
+        sdpMessage.sequence = UNORDERED_SEQUENCE;
+
+        array<uint8> rawMsg = SDPLib.encodeSDPMsgV1(sdpMessage);
+        IAuthMessage.AuthMessageInterface am = IAuthMessage.AuthMessageInterface(amContractId);
+        am.recvFromProtocol(senderID, rawMsg);
+    }
+
     @global function recvMessage(array<uint8> senderDomain, array<uint8> senderID, array<uint8> pkg) public export {
         __debug.assert(__transaction.get_sender() == amAddress);
         // only SDPv1 now

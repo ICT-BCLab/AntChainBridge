@@ -1,5 +1,6 @@
 import IAuthMessage;
 import ISubProtocol;
+import IPtcHub;
 import AMLib;
 import Utils;
 
@@ -14,6 +15,8 @@ contract AuthMsg implements IAuthMessage.AuthMessageInterface {
 
     @global address owner;
     @global address relayer;
+    @global uint64 ptcHubId;
+    @global address ptcHubAddress;
 
     @global map<address, SubProtocol> subProtocols;
     @global map<uint32, address> protocolRoutes;
@@ -33,6 +36,14 @@ contract AuthMsg implements IAuthMessage.AuthMessageInterface {
         __debug.assert(__transaction.get_sender() == owner);
         relay@global (^_relayer){
             relayer = _relayer;
+        }
+    }
+
+    @address function setPtcHub(uint64 _ptcHubId, address _ptcHubAddress) public export {
+        __debug.assert(__transaction.get_sender() == owner);
+        relay@global (^_ptcHubId, ^_ptcHubAddress) {
+            ptcHubId = _ptcHubId;
+            ptcHubAddress = _ptcHubAddress;
         }
     }
 
@@ -114,6 +125,10 @@ contract AuthMsg implements IAuthMessage.AuthMessageInterface {
 
         // 4. 调用上层协议（SDPMsg）的 recvMessage, 触发接收事件
         relay@global (^msg, ^dr) {
+            __debug.assert(ptcHubId != 0u64);
+            IPtcHub.PtcHubInterface ptcHub = IPtcHub.PtcHubInterface(ptcHubId);
+            ptcHub.verifyProof(dr.rawTpProof);
+
             uint64 protocolID = protocolIDs[msg.protocolType];
             ISubProtocol.SubProtocolInterface sdp = ISubProtocol.SubProtocolInterface(protocolID);
             sdp.recvMessage(dr.senderDomain, msg.author, msg.body);

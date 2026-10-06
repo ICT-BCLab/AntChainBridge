@@ -18,6 +18,7 @@ import com.alipay.mychain.sdk.domain.account.Identity;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.InOrder;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
@@ -25,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -63,7 +65,12 @@ public class Mychain020MonitorBBCServiceTest {
         when(mychain020Client.getPrimary()).thenReturn("mychain-monitor-test");
         when(mychain020Client.isTeeChain()).thenReturn(false);
         when(mychain020Client.getConfig()).thenReturn(mychain020Config);
-        when(ptcContractEvm.ensureMonitorVerifierSupport()).thenReturn(true);
+        when(ptcContractEvm.ensureCommitteeVerifierMonitorSupport()).thenReturn(true);
+        when(ptcContractEvm.ensureMonitorProofRoutingSupport()).thenReturn(true);
+        when(monitorVerifierContractEVM.deployContract()).thenReturn(true);
+        when(monitorVerifierContractEVM.ensureImplementationSupported()).thenReturn(true);
+        when(monitorContractClientEVM.deployContract()).thenReturn(true);
+        when(monitorContractClientEVM.ensureImplementationSupported()).thenReturn(true);
         when(sdpContractClientEVM.ensureMonitorSupport()).thenReturn(true);
 
         context.setMonitorContractClientEVM(monitorContractClientEVM);
@@ -98,6 +105,7 @@ public class Mychain020MonitorBBCServiceTest {
         verify(sdpContractClientEVM).ensureMonitorSupport();
         verify(monitorContractClientEVM).setProtocol(SDP_CONTRACT);
         verify(sdpContractClientEVM).setMonitorContract(MONITOR_CONTRACT);
+
         Assert.assertNotNull(context.getMonitorContract());
         Assert.assertEquals(MONITOR_CONTRACT, context.getMonitorContract().getContractAddress());
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, context.getMonitorContract().getStatus());
@@ -112,8 +120,7 @@ public class Mychain020MonitorBBCServiceTest {
 
     @Test
     public void setupMonitorContractShouldUpgradeLegacyMonitorContracts() {
-        when(monitorContractClientEVM.getContractAddress())
-                .thenReturn("legacy_monitor_contract", MONITOR_CONTRACT);
+        when(monitorContractClientEVM.getContractAddress()).thenReturn(MONITOR_CONTRACT);
         when(monitorContractClientEVM.ensureImplementationSupported()).thenReturn(true);
         when(monitorVerifierContractEVM.deployContract()).thenReturn(true);
         when(monitorContractClientEVM.deployContract()).thenReturn(true);
@@ -125,7 +132,8 @@ public class Mychain020MonitorBBCServiceTest {
         service.setupMonitorContract();
 
         verify(monitorContractClientEVM).ensureImplementationSupported();
-        verify(ptcContractEvm).ensureMonitorVerifierSupport();
+        verify(ptcContractEvm).ensureCommitteeVerifierMonitorSupport();
+        verify(ptcContractEvm).ensureMonitorProofRoutingSupport();
         verify(monitorVerifierContractEVM).deployContract();
         verify(monitorContractClientEVM).deployContract();
         verify(monitorContractClientEVM).setMonitorVerifier(MONITOR_VERIFIER_CONTRACT);
@@ -133,6 +141,17 @@ public class Mychain020MonitorBBCServiceTest {
         verify(ptcContractEvm).setMonitorVerifier(MONITOR_VERIFIER_CONTRACT);
         verify(monitorContractClientEVM).setProtocol(SDP_CONTRACT);
         verify(sdpContractClientEVM).setMonitorContract(MONITOR_CONTRACT);
+
+        InOrder upgradeOrder = inOrder(
+                monitorVerifierContractEVM,
+                ptcContractEvm,
+                monitorContractClientEVM,
+                sdpContractClientEVM);
+        upgradeOrder.verify(monitorVerifierContractEVM).ensureImplementationSupported();
+        upgradeOrder.verify(ptcContractEvm).ensureCommitteeVerifierMonitorSupport();
+        upgradeOrder.verify(ptcContractEvm).ensureMonitorProofRoutingSupport();
+        upgradeOrder.verify(monitorContractClientEVM).ensureImplementationSupported();
+        upgradeOrder.verify(sdpContractClientEVM).ensureMonitorSupport();
     }
 
     @Test
@@ -150,16 +169,48 @@ public class Mychain020MonitorBBCServiceTest {
         verify(monitorContractClientEVM, times(1)).deployContract();
     }
 
+    @Test
+    public void setupMonitorContractShouldRecoverAndUpgradeVerifierByIdentity() {
+        Identity verifierIdentity = mock(Identity.class);
+        when(verifierIdentity.hexStrValue()).thenReturn("01");
+        when(monitorContractClientEVM.getContractAddress()).thenReturn(MONITOR_CONTRACT);
+        when(monitorVerifierContractEVM.getContractAddress()).thenReturn("");
+        when(monitorContractClientEVM.getMonitorVerifierIdentity()).thenReturn(verifierIdentity);
+        when(monitorVerifierContractEVM.ensureImplementationSupported(verifierIdentity)).thenReturn(true);
+        when(monitorContractClientEVM.getStatus()).thenReturn(ContractStatusEnum.CONTRACT_DEPLOYED);
+
+        service.setupMonitorContract();
+
+        verify(monitorVerifierContractEVM, never()).deployContract();
+        verify(monitorVerifierContractEVM).ensureImplementationSupported(verifierIdentity);
+        verify(monitorContractClientEVM).setMonitorVerifier(verifierIdentity);
+        Assert.assertNull(mychain020Config.getMonitorVerifierContractName());
+    }
+
     @Test(expected = RuntimeException.class)
-    public void setupMonitorContractShouldStopBeforeDeployWhenPtcUpgradeFails() {
+    public void setupMonitorContractShouldNotReplaceUnrecoverableVerifier() {
+        when(monitorContractClientEVM.getContractAddress()).thenReturn(MONITOR_CONTRACT);
+        when(monitorVerifierContractEVM.getContractAddress()).thenReturn("");
+        when(monitorContractClientEVM.getMonitorVerifierIdentity()).thenReturn(null);
         when(ptcContractEvm.getContractAddress()).thenReturn(PTC_HUB_CONTRACT);
-        when(ptcContractEvm.ensureMonitorVerifierSupport()).thenReturn(false);
 
         try {
             service.setupMonitorContract();
         } finally {
-            verify(ptcContractEvm).ensureMonitorVerifierSupport();
             verify(monitorVerifierContractEVM, never()).deployContract();
+            verify(monitorContractClientEVM, never()).deployContract();
+        }
+    }
+
+    @Test(expected = RuntimeException.class)
+    public void setupMonitorContractShouldStopBeforeDeployWhenPtcUpgradeFails() {
+        when(ptcContractEvm.getContractAddress()).thenReturn(PTC_HUB_CONTRACT);
+        when(ptcContractEvm.ensureCommitteeVerifierMonitorSupport()).thenReturn(false);
+
+        try {
+            service.setupMonitorContract();
+        } finally {
+            verify(ptcContractEvm).ensureCommitteeVerifierMonitorSupport();
             verify(monitorContractClientEVM, never()).deployContract();
         }
     }
@@ -173,8 +224,8 @@ public class Mychain020MonitorBBCServiceTest {
             service.setupMonitorContract();
         } finally {
             verify(sdpContractClientEVM).ensureMonitorSupport();
-            verify(monitorVerifierContractEVM, never()).deployContract();
-            verify(monitorContractClientEVM, never()).deployContract();
+            verify(monitorVerifierContractEVM).deployContract();
+            verify(monitorContractClientEVM).deployContract();
         }
     }
 

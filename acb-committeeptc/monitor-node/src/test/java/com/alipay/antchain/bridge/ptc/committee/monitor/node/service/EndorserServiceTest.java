@@ -93,7 +93,7 @@ public class EndorserServiceTest extends TestBase {
         var policy = new OptionalEndorsePolicy();
         policy.setThreshold(new OptionalEndorsePolicy.Threshold(OptionalEndorsePolicy.OperatorEnum.GREATER_THAN, -1));
         var nodeEndorseInfo = new NodeEndorseInfo();
-        nodeEndorseInfo.setNodeId("node1");
+        nodeEndorseInfo.setNodeId("monitor-node");
         nodeEndorseInfo.setRequired(true);
         var nodePubkeyEntry = new NodePublicKeyEntry("default", ((X509PubkeyInfoObjectIdentity) oid).getPublicKey());
         nodeEndorseInfo.setPublicKey(nodePubkeyEntry);
@@ -288,7 +288,7 @@ public class EndorserServiceTest extends TestBase {
         var hcdvs = mock(IHeteroChainDataVerifierService.class);
         when(hcdvs.verifyAnchorConsensusState(any(), any())).thenReturn(VerifyResult.builder().success(true).build());
         when(endorseServiceRepository.getMatchedTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
-        when(endorseServiceRepository.getBta(anyString())).thenReturn(new BtaWrapper(bta));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
         when(hcdvsPluginService.getHCDVSService(anyString())).thenReturn(hcdvs);
 
         var vcs = BeanUtil.copyProperties(anchorState, ValidatedConsensusStateV1.class);
@@ -320,8 +320,8 @@ public class EndorserServiceTest extends TestBase {
         var hcdvs = mock(IHeteroChainDataVerifierService.class);
         when(hcdvs.verifyConsensusState(any(), any())).thenReturn(VerifyResult.builder().success(true).build());
         when(endorseServiceRepository.getMatchedTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
-        when(endorseServiceRepository.getBta(anyString())).thenReturn(new BtaWrapper(bta));
-        when(endorseServiceRepository.getValidatedConsensusState(anyString(), anyString())).thenReturn(new ValidatedConsensusStateWrapper(vcs));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
+        when(endorseServiceRepository.getValidatedConsensusState(anyString(), any(BigInteger.class))).thenReturn(new ValidatedConsensusStateWrapper(vcs));
         when(hcdvsPluginService.getHCDVSService(anyString())).thenReturn(hcdvs);
 
         var vcsSigned = endorserService.commitConsensusState(crossChainLane, currState);
@@ -344,7 +344,7 @@ public class EndorserServiceTest extends TestBase {
         when(hcdvs.verifyCrossChainMessage(any(), any())).thenReturn(VerifyResult.builder().success(true).build());
         when(hcdvs.parseMessageFromLedgerData(any())).thenReturn(ucp.getSrcMessage().getMessage());
         when(endorseServiceRepository.getExactTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
-        when(endorseServiceRepository.getBta(anyString())).thenReturn(new BtaWrapper(bta));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
         when(endorseServiceRepository.getValidatedConsensusState(anyString(), anyString())).thenReturn(new ValidatedConsensusStateWrapper(currVcs));
         when(hcdvsPluginService.getHCDVSService(anyString())).thenReturn(hcdvs);
 
@@ -362,6 +362,31 @@ public class EndorserServiceTest extends TestBase {
                         ).getEncodedToSign()
                 )
         );
+    }
+
+    @Test
+    public void testDioxide2VerifyUcpSignsWithoutHcdvs() {
+        BlockchainTrustAnchorV1 dioxideBta = BeanUtil.copyProperties(bta, BlockchainTrustAnchorV1.class);
+        dioxideBta.setSubjectProduct("dioxide2");
+        when(endorseServiceRepository.getExactTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(dioxideBta));
+
+        CommitteeNodeProof nodeProof = endorserService.verifyUcp(crossChainLane, ucp);
+
+        Assert.assertTrue(
+                new TpBtaWrapper(tpbta).getEndorseRoot().check(
+                        CommitteeEndorseProof.builder()
+                                .committeeId(committeeId)
+                                .sigs(ListUtil.toList(nodeProof))
+                                .build(),
+                        ThirdPartyProof.create(
+                                tpbta.getTpbtaVersion(),
+                                ucp.getSrcMessage().getMessage(),
+                                crossChainLane
+                        ).getEncodedToSign()
+                )
+        );
+        verify(hcdvsPluginService, never()).getHCDVSService(anyString());
     }
 
     @Test
@@ -386,8 +411,10 @@ public class EndorserServiceTest extends TestBase {
             return action.apply(stub);
         });
 
+        BlockchainTrustAnchorV1 dioxideBta = BeanUtil.copyProperties(bta, BlockchainTrustAnchorV1.class);
+        dioxideBta.setSubjectProduct("dioxide2");
         when(endorseServiceRepository.getExactTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
-        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(dioxideBta));
 
         endorserService.relayUcpToMonitorSystem(ucp, ucpId);
         ArgumentCaptor<RelayUcpToMonitorSystemRequest> relayCaptor =
@@ -412,8 +439,10 @@ public class EndorserServiceTest extends TestBase {
     @Test
     public void testVerifyMonitorSystemResponseContract() {
         MonitorSystemServiceGrpc.MonitorSystemServiceBlockingStub stub = prepareMonitorSystemStub();
+        BlockchainTrustAnchorV1 dioxideBta = BeanUtil.copyProperties(bta, BlockchainTrustAnchorV1.class);
+        dioxideBta.setSubjectProduct("dioxide2");
         when(endorseServiceRepository.getExactTpBta(any())).thenReturn(new TpBtaWrapper(tpbta));
-        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(bta));
+        when(endorseServiceRepository.getBta(anyString(), anyInt())).thenReturn(new BtaWrapper(dioxideBta));
 
         when(stub.verifyCrossChainMessageInMonitorSystem(any())).thenReturn(
                 verifyResponse(0, "ok")

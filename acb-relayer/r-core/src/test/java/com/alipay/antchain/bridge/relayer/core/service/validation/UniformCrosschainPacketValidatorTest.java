@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -52,7 +53,6 @@ public class UniformCrosschainPacketValidatorTest {
         setField(validator, "blockchainRepository", mock(IBlockchainRepository.class));
         setField(validator, "ptcManager", ptcManager);
         setField(validator, "platformReportClient", mock(PlatformReportClient.class));
-        setField(validator, "ptcId", "ptc01");
     }
 
     @Test
@@ -87,18 +87,32 @@ public class UniformCrosschainPacketValidatorTest {
     @Test
     public void testPassUcpIdToPtcForDioxideUcp() {
         UniformCrosschainPacketContext context = buildContext("dioxide2");
+        CrossChainLane lane = new CrossChainLane(new CrossChainDomain("diox.web3.03"));
+        context.setTpbtaLaneKey(lane.getLaneKey());
+        context.setTpbtaVersion(1);
+
+        TpBtaDO tpBtaDO = mock(TpBtaDO.class);
+        ThirdPartyBlockchainTrustAnchor tpbta = mock(ThirdPartyBlockchainTrustAnchor.class);
+        when(tpBtaDO.getPtcServiceId()).thenReturn("ptc01");
+        when(tpBtaDO.getTpbta()).thenReturn(tpbta);
+        when(ptcManager.getExactTpBta(any(), eq(1))).thenReturn(tpBtaDO);
         when(ptcManager.getPtcService("ptc01")).thenReturn(ptcService);
-        when(ptcService.verifyCrossChainMessageWithResult(any(), any(), any(), eq(UCP_ID)))
-                .thenReturn(new PTCVerifyCrossChainMessageResult(new ThirdPartyProof(), "approved", ""));
+        PtcFeatureDescriptor featureDescriptor = new PtcFeatureDescriptor();
+        featureDescriptor.enableStorage();
+        when(ptcService.getPtcFeatureDescriptor()).thenReturn(featureDescriptor);
+        ThirdPartyProof proof = new ThirdPartyProof();
+        when(ptcService.verifyCrossChainMessageWithResult(eq(tpbta), isNull(), any(), eq(UCP_ID)))
+                .thenReturn(new PTCVerifyCrossChainMessageResult(proof, "approved", ""));
 
         validator.doProcess(context);
 
-        verify(ptcService).verifyCrossChainMessageWithResult(
-                any(ThirdPartyBlockchainTrustAnchor.class),
-                any(),
+        verify(ptcService, times(1)).verifyCrossChainMessageWithResult(
+                eq(tpbta),
+                isNull(),
                 eq(context.getUcp()),
                 eq(UCP_ID)
         );
+        verify(crossChainMessageRepository).putTpProof(UCP_ID, proof);
     }
 
     private static UniformCrosschainPacketContext buildContext(String product) {

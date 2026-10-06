@@ -18,6 +18,7 @@ import com.alipay.antchain.bridge.commons.core.am.AuthMessageFactory;
 import com.alipay.antchain.bridge.commons.core.am.IAuthMessage;
 import com.alipay.antchain.bridge.commons.core.base.CrossChainMessage;
 import com.alipay.antchain.bridge.commons.core.base.CrossChainMessageReceipt;
+import com.alipay.antchain.bridge.commons.core.base.ConsensusState;
 import com.alipay.antchain.bridge.commons.core.sdp.ISDPMessage;
 import com.alipay.antchain.bridge.commons.core.sdp.SDPMessageFactory;
 import com.alipay.antchain.bridge.commons.core.monitor.IMonitorMessage;
@@ -30,16 +31,20 @@ import com.alipay.antchain.bridge.commons.core.base.CrossChainDomain;
 import com.alipay.antchain.bridge.commons.utils.codec.tlv.TLVTypeEnum;
 import com.alipay.antchain.bridge.commons.utils.codec.tlv.TLVUtils;
 import com.alipay.antchain.bridge.commons.utils.codec.tlv.annotation.TLVField;
+import com.alipay.antchain.bridge.commons.utils.crypto.SignAlgoEnum;
 import com.alipay.antchain.bridge.plugins.dioxide2.conf.DioxideConfig;
 import com.alipay.antchain.bridge.plugins.dioxide2.conf.DioxideTypes;
 import com.alipay.antchain.bridge.plugins.dioxide2.core.*;
 import com.alipay.antchain.bridge.plugins.dioxide2.gcl.Contracts;
 import com.alipay.antchain.bridge.plugins.spi.bbc.AbstractBBCService;
+import com.alipay.antchain.bridge.ptc.committee.types.basic.CommitteeEndorseProof;
+import com.alipay.antchain.bridge.ptc.committee.types.basic.CommitteeNodeProof;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.SneakyThrows;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.slf4j.Logger;
@@ -48,6 +53,7 @@ import java.beans.Transient;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Base64;
@@ -226,6 +232,41 @@ public class DioxideBBCServiceTest {
     }
 
     @Test
+    public void testReadConsensusState() {
+        dioxideBBCService.startup(mockValidCtx());
+        long height = dioxideBBCService.queryLatestHeight();
+        DioxideTransactionBlock block = dioxideBBCService.getDioxideClient()
+                .getTransactionBlockInGlobalShardByHeight(height);
+
+        ConsensusState state = dioxideBBCService.readConsensusState(BigInteger.valueOf(height));
+
+        Assert.assertEquals(BigInteger.valueOf(block.getHeight()), state.getHeight());
+        Assert.assertArrayEquals(block.getHash().getBytes(StandardCharsets.UTF_8), state.getHash());
+        Assert.assertArrayEquals(
+                StrUtil.nullToEmpty(block.getPrev()).getBytes(StandardCharsets.UTF_8),
+                state.getParentHash()
+        );
+        Assert.assertEquals(block.getTimestamp().longValue(), state.getStateTimestamp());
+        Assert.assertTrue(state.getStateData().length > 0);
+    }
+
+    @Test
+    public void testMonitorControlAcceptsEthereumValues() {
+        setupBbc();
+        dioxideBBCService.setMonitorControl(1);
+        dioxideBBCService.setMonitorControl(2);
+        dioxideBBCService.setMonitorControl(3);
+        dioxideBBCService.setMonitorControl(2);
+
+        try {
+            dioxideBBCService.setMonitorControl(4);
+            Assert.fail("unsupported monitor control must be rejected");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue(expected.getMessage().contains("unsupported monitor control"));
+        }
+    }
+
+    @Test
     public void testSetupAuthMessageContract() {
         AbstractBBCContext mockValidCtx = mockValidCtx();
         dioxideBBCService.startup(mockValidCtx);
@@ -260,6 +301,70 @@ public class DioxideBBCServiceTest {
         AbstractBBCContext ctx = dioxideBBCService.getContext();
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getMonitorContract().getStatus());
         log.info("monitor contract cid: {}", ctx.getMonitorContract().getContractAddress());
+    }
+
+    @Test
+    public void testSetupPtcContractAndRawStorageRoundTrip() {
+        AbstractBBCContext mockValidCtx = mockValidCtx();
+        dioxideBBCService.startup(mockValidCtx);
+
+        dioxideBBCService.setupAuthMessageContract();
+        dioxideBBCService.setupMonitorContract();
+        dioxideBBCService.setupPTCContract();
+
+        AbstractBBCContext ctx = dioxideBBCService.getContext();
+        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, ctx.getPtcContract().getStatus());
+
+        String ptcHubCid = ctx.getPtcContract().getContractAddress();
+        dioxideBBCService.setPtcContract(ptcHubCid);
+        dioxideBBCService.setPtcHubInMonitorVerifier(ptcHubCid);
+        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getAuthMessageContract().getStatus());
+        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getMonitorContract().getStatus());
+
+        byte[] ownerOid = new byte[]{1, 2, 3};
+        byte[] rawTrustRoot = new byte[]{4, 5, 6, 7};
+        byte[] version = new byte[]{8};
+        byte[] rawAnchor = new byte[]{9, 10};
+        byte[] lane = new byte[]{11, 12, 13};
+        byte[] rawTpBta = new byte[]{14, 15, 16};
+
+        DioxideClient client = dioxideBBCService.getDioxideClient();
+        client.savePtcTrustRoot(ownerOid, rawTrustRoot);
+        client.savePtcVerifyAnchor(ownerOid, version, rawAnchor);
+        client.saveTpBta(lane, version, rawTpBta);
+
+        Assert.assertArrayEquals(rawTrustRoot, client.queryPtcTrustRoot(ownerOid));
+        Assert.assertArrayEquals(rawAnchor, client.queryPtcVerifyAnchor(ownerOid, version));
+        Assert.assertArrayEquals(rawTpBta, client.queryTpBta(lane, version));
+        Assert.assertTrue(client.hasPtcTrustRoot(ownerOid));
+        Assert.assertTrue(client.hasPtcVerifyAnchor(ownerOid, version));
+        Assert.assertTrue(client.hasTpBta(lane, version));
+        Assert.assertNull(client.queryPtcTrustRoot(new byte[]{99}));
+    }
+
+    @Test
+    public void testReadPtcStorageFromExistingDapp() {
+        String dappName = System.getProperty("dioxide.test.existing.dapp");
+        Assume.assumeTrue(StrUtil.isNotEmpty(dappName));
+
+        DioxideConfig config = new DioxideConfig();
+        config.setRpcUrl(RPC_URL);
+        config.setWsRpc(WS_RPC);
+        config.setPrivateKey(BBC_DIO_PRIVATE_KEY);
+        config.setDappName(dappName);
+
+        DioxideClient client = new DioxideClient(config, log);
+        try {
+            byte[] ownerOid = new byte[]{1, 2, 3};
+            byte[] version = new byte[]{8};
+            byte[] lane = new byte[]{11, 12, 13};
+            Assert.assertArrayEquals(new byte[]{4, 5, 6, 7}, client.queryPtcTrustRoot(ownerOid));
+            Assert.assertArrayEquals(new byte[]{9, 10}, client.queryPtcVerifyAnchor(ownerOid, version));
+            Assert.assertArrayEquals(new byte[]{14, 15, 16}, client.queryTpBta(lane, version));
+            Assert.assertNull(client.queryPtcTrustRoot(new byte[]{99}));
+        } finally {
+            client.shutdown();
+        }
     }
 
     @Test
@@ -366,7 +471,7 @@ public class DioxideBBCServiceTest {
 
         // check contract status
         ctx = dioxideBBCService.getContext();
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, ctx.getAuthMessageContract().getStatus());
+        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getAuthMessageContract().getStatus());
     }
 
     @Test
@@ -475,31 +580,130 @@ public class DioxideBBCServiceTest {
     public void testRelayAuthMessageAndReadCrossChainMessageReceipt() throws Exception {
         setupBbc();
 
-        // relay am msg
-        CrossChainMessageReceipt receipt = dioxideBBCService.relayAuthMessage(getRawMsgFromRelayer());
+        // A non-zero monitor signature approves the inbound message.
+        CrossChainMessageReceipt receipt = dioxideBBCService.relayAuthMessage(
+                getRawMsgFromRelayer(), "test-approved-" + random_dapp_name
+        );
         Assert.assertFalse(receipt.isConfirmed());
         Assert.assertTrue(receipt.isSuccessful());
         Assert.assertTrue(StrUtil.isNotEmpty(receipt.getTxhash()));
-
-        // wait for the entire relay chain to be finalized
-        while (true) {
-            try {
-                Thread.sleep(2000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-
-            CrossChainMessageReceipt receipt1 = dioxideBBCService.readCrossChainMessageReceipt(receipt.getTxhash());
-            if (receipt1.isConfirmed() && receipt1.isSuccessful()) {
-                break;
-            }
-        }
+        awaitSuccessfulReceipt(receipt.getTxhash());
 
         // check variable status in dapp
         JSONObject resp3 = dioxideBBCService.getDioxideClient().getContractState(dioxideBBCService.getConfig().getDappName(), APP_CONTRACT, DioxideTypes.Scope.Global, "");
         int[] receiveUnorderedMsg = resp3.getJSONObject("State").getJSONArray("last_uo_msg").toJavaObject(int[].class);
         log.info("receiveUnorderedMsg:\n{}", receiveUnorderedMsg);
         Assert.assertArrayEquals(receiveUnorderedMsg, toIntArray(TEST_MESSAGE.getBytes(StandardCharsets.UTF_8)));
+
+        // Committee proof ordering is not stable. A monitor proof followed by
+        // an ordinary proof must be accepted as well.
+        byte[] monitorFirstPayload = "monitor-first-message".getBytes(StandardCharsets.UTF_8);
+        CrossChainMessageReceipt monitorFirst = dioxideBBCService.relayAuthMessage(
+                getRawMsgFromRelayer(new byte[]{1}, monitorFirstPayload, -1, true),
+                "test-monitor-first-" + random_dapp_name
+        );
+        awaitSuccessfulReceipt(monitorFirst.getTxhash());
+        byte[] expectedUnorderedPayload = new byte[TEST_MESSAGE.getBytes(StandardCharsets.UTF_8).length
+                + monitorFirstPayload.length];
+        System.arraycopy(
+                TEST_MESSAGE.getBytes(StandardCharsets.UTF_8),
+                0,
+                expectedUnorderedPayload,
+                0,
+                TEST_MESSAGE.getBytes(StandardCharsets.UTF_8).length
+        );
+        System.arraycopy(
+                monitorFirstPayload,
+                0,
+                expectedUnorderedPayload,
+                TEST_MESSAGE.getBytes(StandardCharsets.UTF_8).length,
+                monitorFirstPayload.length
+        );
+        JSONObject stateAfterMonitorFirst = dioxideBBCService.getDioxideClient().getContractState(
+                dioxideBBCService.getConfig().getDappName(), APP_CONTRACT, DioxideTypes.Scope.Global, ""
+        );
+        Assert.assertArrayEquals(
+                toIntArray(expectedUnorderedPayload),
+                stateAfterMonitorFirst.getJSONObject("State").getJSONArray("last_uo_msg").toJavaObject(int[].class)
+        );
+
+        // A 65-byte all-zero signature must not reach the target DApp and must emit a rollback message.
+        byte[] blockedPayload = "blocked-message".getBytes(StandardCharsets.UTF_8);
+        CrossChainMessageReceipt rejected = dioxideBBCService.relayAuthMessage(
+                getRawMsgFromRelayer(new byte[65], blockedPayload),
+                "test-rejected-" + random_dapp_name
+        );
+        awaitSuccessfulReceipt(rejected.getTxhash());
+
+        JSONObject stateAfterReject = dioxideBBCService.getDioxideClient().getContractState(
+                dioxideBBCService.getConfig().getDappName(), APP_CONTRACT, DioxideTypes.Scope.Global, ""
+        );
+        int[] lastDelivered = stateAfterReject.getJSONObject("State")
+                .getJSONArray("last_uo_msg").toJavaObject(int[].class);
+        Assert.assertArrayEquals(toIntArray(expectedUnorderedPayload), lastDelivered);
+        assertRollbackMessage(rejected.getTxhash(), blockedPayload);
+
+        byte[] orderedApprovedPayload = "ordered-approved".getBytes(StandardCharsets.UTF_8);
+        CrossChainMessageReceipt orderedApproved = dioxideBBCService.relayAuthMessage(
+                getRawMsgFromRelayer(new byte[]{1}, orderedApprovedPayload, 0),
+                "test-ordered-approved-" + random_dapp_name
+        );
+        awaitSuccessfulReceipt(orderedApproved.getTxhash());
+        JSONObject orderedState = dioxideBBCService.getDioxideClient().getContractState(
+                dioxideBBCService.getConfig().getDappName(), APP_CONTRACT, DioxideTypes.Scope.Global, ""
+        );
+        Assert.assertArrayEquals(
+                toIntArray(orderedApprovedPayload),
+                orderedState.getJSONObject("State").getJSONArray("last_msg").toJavaObject(int[].class)
+        );
+
+        byte[] orderedBlockedPayload = "ordered-blocked".getBytes(StandardCharsets.UTF_8);
+        CrossChainMessageReceipt orderedRejected = dioxideBBCService.relayAuthMessage(
+                getRawMsgFromRelayer(new byte[65], orderedBlockedPayload, 1),
+                "test-ordered-rejected-" + random_dapp_name
+        );
+        awaitSuccessfulReceipt(orderedRejected.getTxhash());
+        JSONObject orderedStateAfterReject = dioxideBBCService.getDioxideClient().getContractState(
+                dioxideBBCService.getConfig().getDappName(), APP_CONTRACT, DioxideTypes.Scope.Global, ""
+        );
+        Assert.assertArrayEquals(
+                toIntArray(orderedApprovedPayload),
+                orderedStateAfterReject.getJSONObject("State").getJSONArray("last_msg").toJavaObject(int[].class)
+        );
+        assertRollbackMessage(orderedRejected.getTxhash(), orderedBlockedPayload);
+    }
+
+    private void assertRollbackMessage(String txHash, byte[] expectedPayload) {
+        long rejectedHeight = dioxideBBCService.getDioxideClient()
+                .getTransactionByHash(txHash).getHeight();
+        long latestHeight = dioxideBBCService.getDioxideClient().queryLatestHeight();
+        List<CrossChainMessage> rollbackMessages = ListUtil.toList();
+        for (long height = Math.max(0, rejectedHeight - 5);
+             height <= Math.min(latestHeight, rejectedHeight + 29);
+             height++) {
+            rollbackMessages.addAll(dioxideBBCService.readCrossChainMessagesByHeight(height));
+        }
+        Assert.assertFalse("no rollback auth message emitted", rollbackMessages.isEmpty());
+        CrossChainMessage rollback = rollbackMessages.getLast();
+        IAuthMessage rollbackAm = AuthMessageFactory.createAuthMessage(rollback.getMessage());
+        ISDPMessage rollbackSdp = SDPMessageFactory.createSDPMessage(rollbackAm.getPayload());
+        IMonitorMessage rollbackMonitor = MonitorMessageFactory.createMonitorMessage(rollbackSdp.getPayload());
+        Assert.assertEquals(3, rollbackMonitor.getMonitorType());
+        Assert.assertEquals("MidMonitoring not pass", rollbackMonitor.getMonitorMsg());
+        Assert.assertArrayEquals(expectedPayload, rollbackMonitor.getPayload());
+    }
+
+    private void awaitSuccessfulReceipt(String txHash) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 120_000L;
+        while (System.currentTimeMillis() < deadline) {
+            CrossChainMessageReceipt current = dioxideBBCService.readCrossChainMessageReceipt(txHash);
+            if (current.isConfirmed()) {
+                Assert.assertTrue(current.getErrorMsg(), current.isSuccessful());
+                return;
+            }
+            Thread.sleep(2_000L);
+        }
+        Assert.fail("timed out waiting for Dioxide relay transaction " + txHash);
     }
 
     @Test
@@ -515,6 +719,30 @@ public class DioxideBBCServiceTest {
             return;
         }
 
+        String existingDapp = System.getProperty("dioxide.test.fixture.dapp");
+        if (StrUtil.isNotEmpty(existingDapp)) {
+            DioxideConfig config = new DioxideConfig();
+            config.setRpcUrl(RPC_URL);
+            config.setWsRpc(WS_RPC);
+            config.setPrivateKey(BBC_DIO_PRIVATE_KEY);
+            config.setDappName(existingDapp);
+            config.setIsPreContractDeployed(true);
+            config.setAmContractAddressDeployed(requiredTestProperty("dioxide.test.fixture.am"));
+            config.setSdpContractAddressDeployed(requiredTestProperty("dioxide.test.fixture.sdp"));
+            config.setMonitorContractAddressDeployed(requiredTestProperty("dioxide.test.fixture.monitor"));
+            config.setMonitorVerifierContractAddressDeployed(
+                    requiredTestProperty("dioxide.test.fixture.monitorVerifier")
+            );
+            config.setPtcHubContractAddressDeployed(requiredTestProperty("dioxide.test.fixture.ptcHub"));
+            DefaultBBCContext context = new DefaultBBCContext();
+            context.setConfForBlockchainClient(config.toJsonString().getBytes(StandardCharsets.UTF_8));
+            dioxideBBCService.startup(context);
+            dappCid = Long.parseLong(requiredTestProperty("dioxide.test.fixture.app"));
+            random_dapp_name = existingDapp;
+            setupBBC = true;
+            return;
+        }
+
         AbstractBBCContext mockValidCtx = mockValidCtx();
         dioxideBBCService.startup(mockValidCtx);
 
@@ -522,11 +750,13 @@ public class DioxideBBCServiceTest {
         dioxideBBCService.setupAuthMessageContract();
         dioxideBBCService.setupSDPMessageContract();
         dioxideBBCService.setupMonitorContract();
+        dioxideBBCService.setupPTCContract();
 
         AbstractBBCContext ctx = dioxideBBCService.getContext();
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getAuthMessageContract().getStatus());
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getSdpContract().getStatus());
         Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getMonitorContract().getStatus());
+        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, ctx.getPtcContract().getStatus());
         log.info("am contract cid: {}", ctx.getAuthMessageContract().getContractAddress());
         log.info("sdp contract cid: {}", ctx.getSdpContract().getContractAddress());
         log.info("monitor contract cid: {}", ctx.getMonitorContract().getContractAddress());
@@ -557,10 +787,18 @@ public class DioxideBBCServiceTest {
 
         // check contract status
         ctx = dioxideBBCService.getContext();
-        Assert.assertEquals(ContractStatusEnum.CONTRACT_READY, ctx.getAuthMessageContract().getStatus());
+        Assert.assertEquals(ContractStatusEnum.CONTRACT_DEPLOYED, ctx.getAuthMessageContract().getStatus());
 
         // set protocol to monitor
         dioxideBBCService.setProtocolInMonitor(ctx.getSdpContract().getContractAddress());
+
+        dioxideBBCService.setPtcContract(ctx.getPtcContract().getContractAddress());
+        Assert.assertEquals(
+                ContractStatusEnum.CONTRACT_READY,
+                dioxideBBCService.getContext().getAuthMessageContract().getStatus()
+        );
+        dioxideBBCService.setPtcHubInMonitorVerifier(ctx.getPtcContract().getContractAddress());
+        dioxideBBCService.setMonitorControl(2);
 
         // check contract status
         ctx = dioxideBBCService.getContext();
@@ -593,6 +831,14 @@ public class DioxideBBCServiceTest {
         log.info("set monitor to app contract");
 
         setupBBC = true;
+    }
+
+    private String requiredTestProperty(String name) {
+        String value = System.getProperty(name);
+        if (StrUtil.isEmpty(value)) {
+            throw new IllegalArgumentException("missing test property " + name);
+        }
+        return value;
     }
 
     private int[] toIntArray(byte[] bytes) {
@@ -679,13 +925,30 @@ public class DioxideBBCServiceTest {
     }
 
     private byte[] getRawMsgFromRelayer() throws IOException {
+        return getRawMsgFromRelayer(new byte[]{1}, TEST_MESSAGE.getBytes(StandardCharsets.UTF_8), -1);
+    }
+
+    private byte[] getRawMsgFromRelayer(byte[] monitorSignature, byte[] payload) throws IOException {
+        return getRawMsgFromRelayer(monitorSignature, payload, -1);
+    }
+
+    private byte[] getRawMsgFromRelayer(byte[] monitorSignature, byte[] payload, int sequence) throws IOException {
+        return getRawMsgFromRelayer(monitorSignature, payload, sequence, false);
+    }
+
+    private byte[] getRawMsgFromRelayer(
+            byte[] monitorSignature,
+            byte[] payload,
+            int sequence,
+            boolean monitorFirst
+    ) throws IOException {
         String dappCidHex = String.format("%064x", dappCid);
 
         IMonitorMessage monitorMessage = MonitorMessageFactory.createMonitorMessage(
                 1,
-                1,
-                "667788",
-                TEST_MESSAGE.getBytes(StandardCharsets.UTF_8)
+                2,
+                "monitor-open",
+                payload
         );
         
         ISDPMessage sdpMessage = SDPMessageFactory.createSDPMessage(
@@ -693,7 +956,7 @@ public class DioxideBBCServiceTest {
                 new byte[32],
                 CHAIN_DOMAIN,
                 HexUtil.decodeHex(dappCidHex),
-                -1,
+                sequence,
                 monitorMessage.encode()
         );
 
@@ -708,9 +971,29 @@ public class DioxideBBCServiceTest {
         MockResp resp = new MockResp();
         resp.setRawResponse(am.encode());
 
+        CommitteeNodeProof ordinaryProof = new CommitteeNodeProof(
+                "ordinary-node",
+                SignAlgoEnum.KECCAK256_WITH_SECP256K1,
+                new byte[]{9}
+        );
+        CommitteeNodeProof monitorProof = new CommitteeNodeProof(
+                "monitor-node",
+                SignAlgoEnum.KECCAK256_WITH_SECP256K1,
+                monitorSignature
+        );
+
         MockProof proof = new MockProof();
         proof.setResp(resp);
         proof.setDomain("112233");
+        proof.setRawProof(
+                CommitteeEndorseProof.builder()
+                        .committeeId("test-committee")
+                        .sigs(monitorFirst
+                                ? List.of(monitorProof, ordinaryProof)
+                                : List.of(ordinaryProof, monitorProof))
+                        .build()
+                        .encode()
+        );
 
         byte[] rawProof = TLVUtils.encode(proof);
 
@@ -746,6 +1029,9 @@ public class DioxideBBCServiceTest {
 
         @TLVField(tag = 9, type = TLVTypeEnum.STRING)
         private String domain;
+
+        @TLVField(tag = 0x01ff, type = TLVTypeEnum.BYTES, order = 0x01ff)
+        private byte[] rawProof;
     }
 
     @Getter

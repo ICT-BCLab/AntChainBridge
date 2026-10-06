@@ -1111,42 +1111,87 @@ public class Mychain020BBCService extends AbstractBBCService {
         }
 
         try {
-            if (StrUtil.isNotEmpty(context.getMonitorContractClientEVM().getContractAddress())
-                    && !context.getMonitorContractClientEVM().ensureImplementationSupported()) {
-                getBBCLogger().info(
-                        "[Mychain020BBCService] failed to upgrade legacy monitor contract for {}: {}",
-                        mychain020Client.getPrimary(),
-                        context.getMonitorContractClientEVM().getContractAddress());
-                throw new RuntimeException("upgrade legacy monitor for receive-side routing failed");
+            boolean ptcHubConfigured = ObjectUtil.isNotNull(context.getPtcContractEvm())
+                    && StrUtil.isNotEmpty(context.getPtcContractEvm().getContractAddress());
+            Identity recoveredMonitorVerifierIdentity = null;
+            boolean monitorVerifierHasName = StrUtil.isNotEmpty(
+                    context.getMonitorVerifierContractEVM().getContractAddress());
+            if (!monitorVerifierHasName
+                    && StrUtil.isNotEmpty(context.getMonitorContractClientEVM().getContractAddress())) {
+                try {
+                    recoveredMonitorVerifierIdentity = context.getMonitorContractClientEVM()
+                            .getMonitorVerifierIdentity();
+                } catch (RuntimeException e) {
+                    if (ptcHubConfigured) {
+                        throw new RuntimeException(
+                                "existing monitor verifier identity cannot be recovered; refusing to deploy a replacement "
+                                        + "because active TpBTAs would need to be re-uploaded",
+                                e);
+                    }
+                    getBBCLogger().info(
+                            "[Mychain020BBCService] no monitor verifier is bound and no PTC hub is configured; "
+                                    + "a fresh verifier can be deployed safely");
+                }
+                if (recoveredMonitorVerifierIdentity == null && ptcHubConfigured) {
+                    throw new RuntimeException(
+                            "existing monitor verifier identity cannot be recovered; refusing to deploy a replacement "
+                                    + "because active TpBTAs would need to be re-uploaded");
+                }
             }
 
-            if (ObjectUtil.isNotNull(context.getPtcContractEvm())
-                    && StrUtil.isNotEmpty(context.getPtcContractEvm().getContractAddress())
-                    && !context.getPtcContractEvm().ensureMonitorVerifierSupport()) {
-                throw new RuntimeException("upgrade legacy ptc hub for monitor support failed");
+            if (recoveredMonitorVerifierIdentity == null) {
+                if (!context.getMonitorVerifierContractEVM().deployContract()) {
+                    throw new RuntimeException("deploy monitor verifier with evm contract failed");
+                }
+                if (!context.getMonitorVerifierContractEVM().ensureImplementationSupported()) {
+                    throw new RuntimeException("upgrade monitor verifier for proof verification failed");
+                }
+            } else if (!context.getMonitorVerifierContractEVM()
+                    .ensureImplementationSupported(recoveredMonitorVerifierIdentity)) {
+                throw new RuntimeException("upgrade recovered monitor verifier for proof verification failed");
             }
+
+            if (ptcHubConfigured) {
+                if (!context.getPtcContractEvm().ensureCommitteeVerifierMonitorSupport()) {
+                    throw new RuntimeException("upgrade committee verifier for monitor proof routing failed");
+                }
+                if (!context.getPtcContractEvm().ensureMonitorProofRoutingSupport()) {
+                    throw new RuntimeException("upgrade ptc hub for monitor proof routing failed");
+                }
+            }
+
+            if (!context.getMonitorContractClientEVM().deployContract()) {
+                throw new RuntimeException("deploy monitor with evm contract failed");
+            }
+            if (!context.getMonitorContractClientEVM().ensureImplementationSupported()) {
+                throw new RuntimeException("upgrade monitor for receive-side verification failed");
+            }
+
             if (ObjectUtil.isNotNull(context.getSdpContractClientEVM())
                     && StrUtil.isNotEmpty(context.getSdpContractClientEVM().getContractAddress())
                     && !context.getSdpContractClientEVM().ensureMonitorSupport()) {
                 throw new RuntimeException("upgrade legacy sdp for monitor support failed");
             }
 
-            if (!context.getMonitorVerifierContractEVM().deployContract()) {
-                throw new RuntimeException("deploy monitor verifier with evm contract failed");
-            }
-            if (!context.getMonitorContractClientEVM().deployContract()) {
-                throw new RuntimeException("deploy monitor with evm contract failed");
-            }
-
-            context.getMonitorContractClientEVM().setMonitorVerifier(
-                    context.getMonitorVerifierContractEVM().getContractAddress());
-
-            if (ObjectUtil.isNotNull(context.getPtcContractEvm())
-                    && StrUtil.isNotEmpty(context.getPtcContractEvm().getContractAddress())) {
-                context.getMonitorVerifierContractEVM().setPtcHubAddress(
-                        context.getPtcContractEvm().getContractAddress());
-                context.getPtcContractEvm().setMonitorVerifier(
+            if (recoveredMonitorVerifierIdentity == null) {
+                context.getMonitorContractClientEVM().setMonitorVerifier(
                         context.getMonitorVerifierContractEVM().getContractAddress());
+            } else {
+                context.getMonitorContractClientEVM().setMonitorVerifier(recoveredMonitorVerifierIdentity);
+            }
+
+            if (ptcHubConfigured) {
+                if (recoveredMonitorVerifierIdentity == null) {
+                    context.getMonitorVerifierContractEVM().setPtcHubAddress(
+                            context.getPtcContractEvm().getContractAddress());
+                    context.getPtcContractEvm().setMonitorVerifier(
+                            context.getMonitorVerifierContractEVM().getContractAddress());
+                } else {
+                    context.getMonitorVerifierContractEVM().setPtcHubAddress(
+                            context.getPtcContractEvm().getContractAddress(),
+                            recoveredMonitorVerifierIdentity);
+                    context.getPtcContractEvm().setMonitorVerifier(recoveredMonitorVerifierIdentity);
+                }
             }
 
             if (ObjectUtil.isNotEmpty(context.getSdpContractClientEVM())
@@ -1164,8 +1209,10 @@ public class Mychain020BBCService extends AbstractBBCService {
 
             mychain020Client.getConfig().setMonitorContractName(
                     context.getMonitorContractClientEVM().getContractAddress());
-            mychain020Client.getConfig().setMonitorVerifierContractName(
-                    context.getMonitorVerifierContractEVM().getContractAddress());
+            if (recoveredMonitorVerifierIdentity == null) {
+                mychain020Client.getConfig().setMonitorVerifierContractName(
+                        context.getMonitorVerifierContractEVM().getContractAddress());
+            }
             context.setConfForBlockchainClient(
                     mychain020Client.getConfig().toJsonString().getBytes(StandardCharsets.UTF_8));
 
@@ -1173,7 +1220,9 @@ public class Mychain020BBCService extends AbstractBBCService {
                     "[Mychain020BBCService] monitor contract deployed for {}, monitor: {}, verifier: {}",
                     mychain020Client.getPrimary(),
                     context.getMonitorContractClientEVM().getContractAddress(),
-                    context.getMonitorVerifierContractEVM().getContractAddress());
+                    recoveredMonitorVerifierIdentity == null
+                            ? context.getMonitorVerifierContractEVM().getContractAddress()
+                            : recoveredMonitorVerifierIdentity.hexStrValue());
         } catch (Exception e) {
             getBBCLogger().error("[Mychain020BBCService] setup monitor contract for {} failed",
                     mychain020Client.getPrimary(), e);
