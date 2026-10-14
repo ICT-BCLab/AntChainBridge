@@ -189,7 +189,7 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
     @Override
     public void setBta(BtaWrapper btaWrapper) {
         try {
-            if (hasBta(btaWrapper.getDomain(), btaWrapper.getBtaVersion())) {
+            if (hasBta(btaWrapper.getDomain(), btaWrapper.getSubjectVersion())) {
                 throw new RuntimeException("bta already exists");
             }
             btaMapper.insert((BtaEntity) ConvertUtil.convertFrom(btaWrapper));
