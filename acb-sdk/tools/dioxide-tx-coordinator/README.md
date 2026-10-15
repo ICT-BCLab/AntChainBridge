@@ -155,3 +155,37 @@ ISN_TEST_MYSQL=1 ISN_TEST_MYSQL_PORT=18237 \
 和两个 Python 进程并发提交、旧 operation 不重签，及原有跨进程崩溃恢复/mailbox 互斥。
 
 2026-10-15 本次恢复及保守处置记录见 [RECOVERY_20261015.md](RECOVERY_20261015.md)。
+
+## 未过期原交易逐笔重播
+
+`dioxide_tx_replay.py` 用于节点恢复后逐笔重播明确选定的原签名，不重新 compose/sign，
+不降低 observed_isn/next_isn，不修改 operation、attempt 或业务消息。与过期交易对账入口分开使用。
+
+```bash
+python -m dioxide_tx_replay --config /secure/dioxide-tx.properties --rpc http://NODE:PORT/api \
+  audit --selection /secure/selection.json --output /secure/replay-audit.json
+python -m dioxide_tx_replay --config /secure/dioxide-tx.properties --rpc http://NODE:PORT/api \
+  replay --manifest /secure/replay-audit.json --operator OPERATOR
+```
+
+selection 明确列出 network_id、规范化 account、start_isn/end_isn、excluded_operations、
+root_function、protocol_prefix、predecessor.tx_hash，以及按连续 ISN 排序的 steps。
+每步包含 operation_id、attempt_no、isn、tx_hash、signed_sha256；不得按 ISN 模糊选取，
+同一 ISN 可能还保留更早的过期 attempt。运行前保持两个目标域及共享账户其他写入暂停。
+
+审计只读，持有现有 submission 命名锁，观察出块至少 180 秒，校验归档 checkpoint 和前驱、
+账户无有效预留、当前计数等于重播区间终点、原签名及 submission 镜像一致且剩余至少五分钟。
+审计不输出签名字节，输出文件以 CREATE_NEW/0600 创建，15 分钟内才能执行。
+
+执行期间一直持有账户命名锁，各 RPC 等待期间不持有数据库事务。每笔发送前追加 PREPARED
+审计，再发送同一 signed_tx，要求返回原哈希；只有完整精确 relay 图最终确定、包含成功协议事件
+及实际接收调用时才处理下一笔。支持索引 relay group 和 single relay，禁止把无关成员混入结果。
+确认后的 FINALIZED 以及异常 STOPPED 也追加记录。原签名和业务状态由原系统保留、确认任务处理。
+
+中断后已完整确认的原交易只核验并跳过。存在 PREPARED 而原交易又查不到时保持阻塞，
+不因新审计编号自动再次发送。响应丢失、RPC 失败、执行失败、节点回退、60 秒不出块、单笔
+确认超过 600 秒或签名即将过期均停止，不能继续下一笔或回滚数据库。全部原交易完成且
+节点到达区间终点后，只在相同计数及无预留的条件下保持/恢复 READY，绝不降低计数。
+
+隔离测试运行 `python -m unittest -v test_replay test_reconcile test_coordinator`；生产环境
+禁止启用 fixture。signed_tx、运行凭据及原始数据库备份均不纳入 Git 或公开日志。
