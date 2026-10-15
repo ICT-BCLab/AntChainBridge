@@ -1,0 +1,28 @@
+# Non-secret experiment metadata
+experiment.id=paper-latency-001
+experiment.scheme=Xun
+experiment.route=ETH-MYC
+experiment.round=1
+experiment.formal=false
+experiment.protocol=unordered-sdp-v1
+
+# Formal values are fixed at 5 TPS for 30 seconds. Set formal=true only after
+# measuring both sender and Relayer host offsets and confirming each is <=20ms.
+clock.offset.ms=0
+relayer.host.name=replace-with-relayer-host
+relayer.clock.offset.ms=0
+workload.rate=5
+workload.duration.seconds=30
+workload.workers=16
+terminal.wait.seconds=900
+
+source.product=ethereum3
+source.blockchain.id=eth04.id
+chain.config=/root-only/path/ethereum3.json
+source.app=0x0000000000000000000000000000000000000000
+target.domain=mychain.example
+target.app=0x0000000000000000000000000000000000000000
+output.dir=/tmp/paper-latency-001/Xun/ETH-MYC/round-01
+
+code.revision=d13d2ad
+plugin.artifact=/root-only/path/source-relayer-plugin.jar

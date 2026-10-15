@@ -15,14 +15,10 @@
  */
 package com.alipay.antchain.bridge.plugins.fiscobcos3;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 
-import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.annotation.JSONField;
 import lombok.Getter;
 import lombok.Setter;
@@ -45,15 +41,17 @@ public class FISCOBCOSConfig {
         return JSON.parseObject(jsonString, FISCOBCOSConfig.class);
     }
 
+    public enum CrossChainMessageScanPolicyEnum {
+        LOG_FILTER,
+        BLOCK_SCAN
+    }
+
     // [cryptoMaterial]
     @JSONField
     private String disableSsl = "false";
 
     @JSONField
     private String useSMCrypto = "false";
-
-    @JSONField
-    private String certPath;
 
     @JSONField
     private String caCert;
@@ -63,12 +61,6 @@ public class FISCOBCOSConfig {
 
     @JSONField
     private String sslKey;
-
-    @JSONField
-    private String enSslCert = "";
-
-    @JSONField
-    private String enSslKey = "";
 
     // [network]
     @JSONField
@@ -87,15 +79,20 @@ public class FISCOBCOSConfig {
     @JSONField
     private String accountFileFormat = "pem";
 
+    /**
+     * Optional explicit account file. FISCO SDK v3 does not select a PEM from
+     * {@link #keyStoreDir} unless an account address is also configured, so a
+     * production BBC should set this field to a root-only PEM path.
+     */
     @JSONField
-    private String accountAddress;
+    private String accountFilePath;
 
     @JSONField
-    private String threadPoolSize = "4";
+    private String accountPassword = "";
 
     // client
     @JSONField
-    private String groupID = "1";
+    private String groupID;
 
     // address
     @JSONField
@@ -105,17 +102,16 @@ public class FISCOBCOSConfig {
     private String sdpContractAddressDeployed;
 
     @JSONField
-    private String monitorCommitteeId = "default";
+    private String monitorContractAddressDeployed;
 
     @JSONField
-    private String monitorNodeId = "monitor-node";
+    private String ptcHubContractAddressDeployed;
 
     @JSONField
-    private String monitorNodeAddress;
+    private String bcdnsRootCertPem;
 
-    public boolean isGm(){
-        return StrUtil.isNotEmpty(this.useSMCrypto) && StrUtil.equals("true", this.useSMCrypto);
-    }
+    @JSONField
+    private CrossChainMessageScanPolicyEnum msgScanPolicy = CrossChainMessageScanPolicyEnum.BLOCK_SCAN;
 
     /**
      * json序列化为字符串
@@ -123,29 +119,4 @@ public class FISCOBCOSConfig {
     public String toJsonString() {
         return JSON.toJSONString(this);
     }
-
-    public static String readFileJson(String fileName) {
-        StringBuilder jsonStringBuilder = new StringBuilder();
-
-        try {
-            // 使用ClassLoader获取资源文件的输入流
-            InputStream inputStream = FISCOBCOSConfig.class.getClassLoader().getResourceAsStream(fileName);
-
-            // 使用BufferedReader逐行读取文件内容
-            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
-            String line;
-            while ((line = reader.readLine()) != null) {
-                jsonStringBuilder.append(line);
-            }
-
-            // 关闭资源
-            reader.close();
-            inputStream.close();
-        } catch (IOException e) {
-            throw new RuntimeException(StrUtil.format("read file {} exception", fileName), e);
-        }
-
-        return jsonStringBuilder.toString();
-    }
-
 }

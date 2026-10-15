@@ -1,6 +1,6 @@
 <div align="center">
   <img alt="am logo" src="https://gw.alipayobjects.com/zos/bmw-prod/3ee4adc7-1960-4dbf-982e-522ac135a0c0.svg" width="250" >
-  <h1 align="center">FISCO-BCOS 2 Monitor Plugin</h1>
+  <h1 align="center">FISCO-BCOS v3 Regulatory Plugin</h1>
   <p align="center">
     <a href="http://makeapullrequest.com">
       <img alt="pull requests welcome badge" src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat">
@@ -10,55 +10,112 @@
 
 
 
-| 说明                | 版本              |
-|-------------------|-----------------|
-| ⭐️ fisco-sdk-java | `2.8.0`         |
-| ✅ 测试通过的 fisco     | `2.11.0`国密链、标准链 |
+| 说明              | 版本              |
+|-----------------|-----------------|
+| ⭐️ fisco-sdk-java | `3.8.0`         |
+| ✅ 测试通过的 fisco   | `3.11.0`标准链 |
+| 🔄 TODO            | `3.11.0`国密链     |
 
 # 介绍
 
-在本路径之下，实现了带监管功能的FISCO-BCOS 2异构链接入插件，包括链下插件及链上插件部分。原有不带监管功能的插件保留在`fiscobcos2`目录，产品名为`fiscobcos2`；本插件位于`fiscobcos3`目录，产品名为`fiscobcos3`，两者可以在同一个PluginServer中同时加载。
+本目录提供 FISCO BCOS 3.x 的完整监管插件，产品名为 `fiscobcos3`。它与
+`ethereum3` 复用同一套 Solidity 系统合约语义，支持 Monitor V5、MonitorVerifier、
+SDP V1/V2/V3 监管路由以及完整 Committee PTC 证明验证。
 
-- **offchain-plugin**：链下插件，使用maven管理的Java工程，使用maven编译即可。基于fisco`2.8.0`版本的javasdk开发，在fisco`2.0`国密链及标准链上测试通过，并支持部署和管理Monitor、MonitorVerifier监管合约。
+无监管基线使用相邻的 `fiscobcos` 插件。这里不再承载旧 FISCO BCOS 2.x 实现；
+旧 2.x 链继续使用 `fiscobcos2`。
+
+- **offchain-plugin**：链下插件，使用maven管理的Java工程，基于JDK 21开发，使用maven编译即可。基于fisco`3.8.0`版本的[java-sdk](https://github.com/FISCO-BCOS/java-sdk)开发。
 
 # 用法
 
 ## 构建
 
-在offchain-plugin下通过`mvn package`编译插件Jar包，可以在target下找到`fiscobcos3-bbc-1.0-SNAPSHOT-plugin.jar`
+在offchain-plugin下通过`mvn clean package`编译插件Jar包，可以在target下找到`fiscobcos3-acb-plugin-1.0.0-plugin.jar`
+
+## 本地真链测试
+
+真链测试默认关闭，普通 `mvn test` 不要求启动 FISCO。使用 FISCO BCOS 3.11.0
+标准链时，先启动节点，再显式运行低写入量监管验收方法：
+
+```bash
+bash /home/saraday/blockchain/fisco/nodes/127.0.0.1/start_all.sh
+
+MAVEN_OPTS='-Xmx768m' mvn \
+  -Dfisco.live.enabled=true \
+  -Dfisco.live.sdkDir=/home/saraday/blockchain/fisco/nodes/127.0.0.1/sdk \
+  -Dfisco.live.peer=127.0.0.1:20200 \
+  -Dfisco.live.group=group0 \
+  -Dtest=FISCOBCOSBBCServiceTest#testLiveRegulatoryEndToEnd test
+```
+
+测试按 AM、SDP、Monitor/MonitorVerifier、PtcHub 的顺序只部署一套合约，并验证
+Monitor V5、SDP routing V3、双向绑定、有效监管签名、拒绝回滚和 CLOSE 放行。
+`sdk.key` 只从外部目录读取，不会打印或写入仓库。
 
 ## 使用
 
-参考[插件服务](https://github.com/AntChainOpenLab/AntChainBridgePluginServer/blob/main/README.md)（PluginServer, PS）的使用，将Jar包放到指定路径，通过PS加载即可。
+参考[插件服务](https://github.com/AntChainOpenLabs/AntChainBridge/blob/main/acb-pluginserver/README.md)（PluginServer, PS）的使用，将Jar包放到指定路径，通过PS加载即可。
 
 ### 配置文件
 
-当在AntChainBridge的Relayer服务注册fisco-bcos2.0时，需要指定PS和链类型（fiscobcos3），同时需要提交一个fisco链的配置。
+当在 AntChainBridge Relayer 注册监管版 FISCO BCOS 3.x 链时，链类型必须使用
+`fiscobcos3`，并按监管部署流程完成 SDP、Monitor、MonitorVerifier 和 PtcHub 绑定。
 
-fisco-bcos2.0链的配置文件`fiscobcos.json`主要包括链ssl证书信息和节点网络连接信息。
+fisco-bcos3.0链的配置文件`fiscobcos.json`主要包括链ssl证书信息和节点网络连接信息。
 
 #### 标准链配置文件
 
-当fisco链为标准链时，配置文件大致如下（配置文件中涉及证书路径均为绝对路径）：
+当FISCO链为标准链时，配置文件格式如下：
 
+**证书文件处理：**
+[参考fisco3.0官方安装文档](https://fisco-bcos-doc.readthedocs.io/zh-cn/latest/docs/quick_start/air_installation.html)，在链的安装目录`node/127.0.0.1/sdk`下找到sdk.key、sdk.crt、ca.crt等证书文件，可以使用以下命令转换为字符串格式：
+```bash
+cat sdk.key | awk '{if (NR>1) printf "\\n"; printf "%s", $0}END{printf "\\n"}'
+```
+
+**BCDNS配置：**
+使用[Embedded-BCDNS](https://github.com/AntChainOpenLabs/AntChainBridge/blob/main/acb-relayer/README.md#%E5%90%AF%E5%8A%A8embedded-bcdns)时，需要添加`bcdnsRootCertPem`字段，该字段对应之前生成的embedded-bcdns-root.crt文件内容。
+
+**配置文件示例：**
 ```json
 {
-  "certPath": "/path/to/sdk",
-  "caCert": "/path/to/sdk/ca.crt",
-  "sslCert": "/path/to/sdk/sdk.crt",
-  "sslKey": "/path/to/sdk/sdk.key",
-  "connectPeer": "127.0.0.1:20200",
-  "groupID": "1"
+    "accountFileFormat":"",
+    "accountFilePath":"/secure/path/account.pem",
+    "accountPassword":"",
+    "bcdnsRootCertPem":"",
+    "caCert":"",
+    "connectPeer":"",
+    "defaultGroup":"",
+    "disableSsl":"",
+    "groupID":"",
+    "keyStoreDir":"",
+    "messageTimeout":"",
+    "msgScanPolicy":"",
+    "monitorContractAddressDeployed":"",
+    "sslCert":"",
+    "sslKey":"",
+    "useSMCrypto":"false"
 }
 ```
 
-- certPath：sdk证书目录路径
-- caCert：sdk ca证书路径
-- sslCert：sdk ssl证书路径
-- sslKey：sdl ssl私钥路径
-- connectPeer：连接节点ip及端口
-- groupID：连接节点所在groupId，默认为1
-
+**配置字段说明：**
+- `accountFileFormat`：账户文件格式
+- `accountFilePath`：可选的显式 PEM 账户文件路径；生产环境建议使用受限绝对路径
+- `accountPassword`：账户文件密码，未加密 PEM 可留空
+- `bcdnsRootCertPem`：BCDNS根证书PEM格式内容
+- `caCert`：CA证书内容（字符串格式）
+- `connectPeer`：连接节点的IP地址和端口
+- `defaultGroup`：默认群组设置
+- `disableSsl`：是否禁用SSL连接
+- `groupID`：连接节点所在的群组ID，默认为1
+- `keyStoreDir`：密钥存储目录路径
+- `messageTimeout`：消息超时时间设置
+- `msgScanPolicy`：消息扫描策略
+- `monitorContractAddressDeployed`：可选的已部署 Monitor 地址；首次部署可留空，由 `setup-bbccontracts` 写入上下文
+- `sslCert`：SSL证书内容（字符串格式）
+- `sslKey`：SSL私钥内容（字符串格式）
+- `useSMCrypto`：是否使用国密算法，设置为`false`表示使用标准链
 
 #### 国密链配置文件
 
@@ -82,8 +139,8 @@ fisco-bcos2.0链的配置文件`fiscobcos.json`主要包括链ssl证书信息和
 - enSslKey：sdk 国密ssl私钥路径
 - useSMCrypto：国密链标识，国密链需要添加该标识，标准链默认为`false`
 
-[参考fisco2.0官方安装文档](https://fisco-bcos-documentation.readthedocs.io/zh-cn/latest/docs/installation.html#:~:text=cp%20%2Dr%20nodes/127.0.0.1/sdk/*%20console/conf/)，
-这些证书均可以在链的安装目录`node/127.0.0.1/sdk`下找到，例如fisco2.0国密链的相应安装目录应如下：
+[参考fisco3.0官方安装文档](https://fisco-bcos-doc.readthedocs.io/zh-cn/latest/docs/quick_start/air_installation.html)，
+这些证书均可以在链的安装目录`node/127.0.0.1/sdk`下找到，例如fisco3.0国密链的相应安装目录应如下：
 
 ```shell
  $ tree sdk

@@ -2,9 +2,9 @@
 package tools.regulatory;
 
 import com.alipay.antchain.bridge.commons.bbc.DefaultBBCContext;
-import com.alipay.antchain.bridge.plugins.fiscobcos.FISCOBCOSBBCService;
-import com.alipay.antchain.bridge.plugins.fiscobcos.abi.Monitor;
-import com.alipay.antchain.bridge.plugins.fiscobcos.abi.SDPMsg;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.FISCOBCOSBBCService;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.Monitor;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.SDPMsg;
 import java.nio.file.Files;
 import java.nio.file.Path;
 

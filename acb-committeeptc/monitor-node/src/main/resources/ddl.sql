@@ -103,8 +103,8 @@ CREATE TABLE IF NOT EXISTS `validated_consensus_states`
     `cs_version`   INT(11)             NOT NULL,
     `domain`       VARCHAR(128) BINARY NOT NULL,
     `height`       BIGINT UNSIGNED     NOT NULL,
-    `hash`         VARCHAR(64) DEFAULT NULL,
-    `parent_hash`  VARCHAR(64) DEFAULT NULL,
+    `hash`         VARCHAR(128) DEFAULT NULL,
+    `parent_hash`  VARCHAR(128) DEFAULT NULL,
     `raw_vcs`      LONGBLOB,
     `gmt_create`   DATETIME    DEFAULT CURRENT_TIMESTAMP,
     `gmt_modified` DATETIME    DEFAULT CURRENT_TIMESTAMP

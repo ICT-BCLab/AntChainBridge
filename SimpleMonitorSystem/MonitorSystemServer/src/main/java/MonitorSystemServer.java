@@ -21,6 +21,16 @@ public class MonitorSystemServer {
 
     private Server server;
 
+    static final String VERIFY_DELAY_PROPERTY = "monitor.verify.delay.ms";
+
+    interface DelayStrategy {
+        void delay(long delayMillis) throws InterruptedException;
+    }
+
+    private final long verifyDelayMillis;
+
+    private final DelayStrategy delayStrategy;
+
     enum VerifyMode {
         SUCCESS,
         FAILURE,
@@ -30,6 +40,21 @@ public class MonitorSystemServer {
 
     // 控制 verify 的返回结果，默认返回成功
     private volatile VerifyMode verifyMode = VerifyMode.SUCCESS;
+
+    public MonitorSystemServer() {
+        this(readVerifyDelayMillis(), Thread::sleep);
+    }
+
+    MonitorSystemServer(long verifyDelayMillis, DelayStrategy delayStrategy) {
+        if (verifyDelayMillis < 0) {
+            throw new IllegalArgumentException(VERIFY_DELAY_PROPERTY + " must not be negative");
+        }
+        if (delayStrategy == null) {
+            throw new IllegalArgumentException("delayStrategy must not be null");
+        }
+        this.verifyDelayMillis = verifyDelayMillis;
+        this.delayStrategy = delayStrategy;
+    }
 
     public void start(int port) throws Exception {
         server = NettyServerBuilder.forPort(port)
@@ -129,6 +154,8 @@ public class MonitorSystemServer {
 
         MonitorSystemResponse buildVerifyResponse(VerifyCrossChainMessageInMonitorSystemRequest request) {
 
+            applyVerificationDelay();
+
             byte[] rawUcp = request.getRawUcp().toByteArray();
             logInfo("Received verifyCrossChainMessageInMonitorSystem request:");
             logInfo("ucpId: " + request.getUcpId());
@@ -215,6 +242,34 @@ public class MonitorSystemServer {
 
         private String errorMessage(RuntimeException e) {
             return e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
+        }
+    }
+
+    private void applyVerificationDelay() {
+        if (verifyDelayMillis == 0) {
+            return;
+        }
+        try {
+            delayStrategy.delay(verifyDelayMillis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("monitor verification delay interrupted", e);
+        }
+    }
+
+    static long readVerifyDelayMillis() {
+        String configured = System.getProperty(VERIFY_DELAY_PROPERTY, "0").trim();
+        try {
+            long value = Long.parseLong(configured);
+            if (value < 0) {
+                throw new IllegalArgumentException(VERIFY_DELAY_PROPERTY + " must not be negative: " + value);
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException(
+                    VERIFY_DELAY_PROPERTY + " must be an integer number of milliseconds: " + configured,
+                    e
+            );
         }
     }
 

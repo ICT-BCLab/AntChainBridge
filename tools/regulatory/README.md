@@ -8,6 +8,8 @@ test environment.
 
 No endpoint, account, certificate, or private key is embedded in these files.
 Chain configuration is supplied at runtime through a root-only JSON file.
+All FISCO tools in this directory target the regulated FISCO BCOS 3.x product
+`fiscobcos3`; the Base product `fiscobcos` intentionally has no Monitor API.
 
 ## Tools
 

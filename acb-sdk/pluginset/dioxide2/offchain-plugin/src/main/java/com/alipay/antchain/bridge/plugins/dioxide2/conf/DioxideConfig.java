@@ -67,6 +67,10 @@ public class DioxideConfig {
     @JSONField
     private String ptcHubContractName = "PtcHub";
 
+    /**
+     * Only skips Dapp/support-contract deployment. It does not mean that AM,
+     * SDP, Monitor, MonitorVerifier or PtcHub bindings are already initialized.
+     */
     @JSONField
     private Boolean isPreContractDeployed = false;
 

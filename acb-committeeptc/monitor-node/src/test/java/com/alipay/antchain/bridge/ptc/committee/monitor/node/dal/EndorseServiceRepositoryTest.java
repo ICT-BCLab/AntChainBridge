@@ -134,8 +134,8 @@ public class EndorseServiceRepositoryTest extends TestBase {
         var cs = new ConsensusState(
                 new CrossChainDomain("test"),
                 BigInteger.valueOf(100L),
-                RandomUtil.randomBytes(32),
-                RandomUtil.randomBytes(32),
+                RandomUtil.randomBytes(52),
+                RandomUtil.randomBytes(52),
                 System.currentTimeMillis(),
                 new byte[]{},
                 new byte[]{},

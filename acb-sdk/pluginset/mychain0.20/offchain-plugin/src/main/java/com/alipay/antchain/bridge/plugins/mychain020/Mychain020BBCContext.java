@@ -6,6 +6,7 @@ import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson.annotation.JSONField;
 import com.alipay.antchain.bridge.commons.bbc.AbstractBBCContext;
+import com.alipay.antchain.bridge.commons.bbc.DefaultBBCContext;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.AuthMessageContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.ContractStatusEnum;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.MonitorContract;
@@ -86,6 +87,29 @@ public class Mychain020BBCContext extends AbstractBBCContext {
             this.setAmContractClientTeeWASM(((Mychain020BBCContext) context).getAmContractClientTeeWASM());
             this.setSdpContractClientTeeWASM(((Mychain020BBCContext) context).getSdpContractClientTeeWASM());
         }
+    }
+
+    /**
+     * Persist only the portable BBC context. Runtime contract clients belong to
+     * the plugin class loader and must never cross the PluginServer boundary.
+     *
+     * <p>Field-level {@link JSONField} annotations are not sufficient here:
+     * Fastjson running in the PluginServer parent class loader can discover the
+     * Lombok-generated getters without seeing the plugin-local annotation
+     * instance. Serializing a plain {@link DefaultBBCContext} also prevents
+     * chain calls from being triggered accidentally by bean getters such as
+     * {@code getMonitorVerifierIdentity()}.</p>
+     */
+    @Override
+    public byte[] encodeToBytes() {
+        DefaultBBCContext persistedContext = new DefaultBBCContext();
+        persistedContext.setSdpContract(this.getSdpContract());
+        persistedContext.setMonitorContract(this.getMonitorContract());
+        persistedContext.setPtcContract(this.getPtcContract());
+        persistedContext.setAuthMessageContract(this.getAuthMessageContract());
+        persistedContext.setReliable(this.isReliable());
+        persistedContext.setConfForBlockchainClient(this.getConfForBlockchainClient());
+        return persistedContext.encodeToBytes();
     }
 
     /**

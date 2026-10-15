@@ -287,6 +287,24 @@ public class DioxideClientFinalityTest {
     }
 
     @Test
+    public void testFinalizedSingleRelayReturnsInvocationEventTransactions() {
+        JSONObject singleRelay = com.alibaba.fastjson.JSON.parseObject(
+                "{\"Hash\":\"relay-single\",\"Packing\":\"PK_RELAY_SINGLE\","
+                        + "\"ConfirmState\":\"TXN_ARCHIVED\","
+                        + "\"Function\":\"AuthMsg.global.__relaylambda_10_recvPkgFromRelayer\","
+                        + "\"Invocation\":{\"Status\":\"IVKRET_SUCCESS\","
+                        + "\"Relays\":[\"target-a\",\"target-b:0\",\"target-a\"]}}"
+        );
+
+        DioxideClient.RelayEventInspection inspection =
+                DioxideClient.inspectRelayEvents(singleRelay, "relay-single");
+
+        Assert.assertEquals(DioxideClient.RelayEventState.READY, inspection.state());
+        Assert.assertEquals(List.of("target-a", "target-b:0"), inspection.eventTargetTxHashes());
+        Assert.assertEquals("", inspection.errorMessage());
+    }
+
+    @Test
     public void testMissingRelayEventsRemainPendingOnlyBeforeFinality() {
         Assert.assertEquals(
                 DioxideClient.RelayEventState.PENDING,

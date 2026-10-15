@@ -57,6 +57,24 @@
 
                             <!-- fat jar 直接放到项目根目录 -->
                             <outputFile>${project.basedir}/../${project.artifactId}-${project.version}.jar</outputFile>
+
+                            <!--
+                                依赖 JAR 的签名只对原 JAR 内容有效。Shade 合并并重写
+                                MANIFEST.MF 后必须排除这些签名元数据，否则 Java 会在
+                                启动 fat JAR 时报 Invalid signature file digest。
+                            -->
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/*.EC</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+
                             <!-- 合并 META-INF/services 文件，解决 gRPC SPI 问题 -->
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />

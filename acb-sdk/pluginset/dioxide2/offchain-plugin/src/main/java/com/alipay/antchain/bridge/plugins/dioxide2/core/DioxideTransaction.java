@@ -32,7 +32,7 @@ public class DioxideTransaction {
     private List<DioxideTransaction> embeddedRelays;
 
     @JSONField(name = "GasOffered")
-    private Integer gasOffered;
+    private Long gasOffered;
 
     @JSONField(name = "GasPrice")
     private String gasPrice;

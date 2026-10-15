@@ -25,6 +25,15 @@ chmod +x init_tls_certs.sh bin/*.sh
 ./bin/stop.sh
 ```
 
+论文时延实验可只对监管验证接口增加固定延迟；默认值为`0`，正式Xun实验使用`1000ms`：
+
+```shell
+JAVA_OPTS="-Dmonitor.verify.delay.ms=1000" ./bin/start.sh
+```
+
+该参数仅作用于`verifyCrossChainMessageInMonitorSystem`，不会延迟旁路留存接口
+`relayUcpToMonitorSystem`。负数或非整数配置会阻止服务启动。
+
 systemd服务模式（支持开机启动和异常自动重启）：
 
 ```shell
