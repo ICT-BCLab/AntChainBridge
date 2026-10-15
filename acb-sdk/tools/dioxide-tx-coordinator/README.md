@@ -153,3 +153,5 @@ ISN_TEST_MYSQL=1 ISN_TEST_MYSQL_PORT=18237 \
 
 测试库只允许使用独立本地 fixture；启用前文 JAVA_PROBE 环境变量还会验证恢复后两个 Java
 和两个 Python 进程并发提交、旧 operation 不重签，及原有跨进程崩溃恢复/mailbox 互斥。
+
+2026-10-15 本次恢复及保守处置记录见 [RECOVERY_20261015.md](RECOVERY_20261015.md)。
