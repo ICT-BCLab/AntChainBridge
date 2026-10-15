@@ -103,3 +103,53 @@ Dioxide relay group 可能含其他业务的交易，必须保留 groupHash:数�
 
 运维服务恢复也需要校验依赖：systemd 停止 Runner 可能连带停止 Backend，启动 Runner
 并不保证 Backend 自动恢复。每次切换后显式检查两个服务及公共查询接口。
+
+## 受控恢复一次已接受交易的 ISN 回退
+
+`dioxide_tx_reconcile.py` 补充运维恢复入口；Java/Python 正常提交中的回退保护不变，
+不需要替换业务插件 JAR。工具不签名、不广播，不修改 submission/attempt 或 Relayer 消息。
+当前只支持观察值恰好回退一步、无有效预留、回退位置只有一条非重试态 ACCEPTED 记录的情况。
+更复杂回退需要单独对账，不能用此工具强制解锁。
+
+先暂停所有共享账户写入并备份协调表和待验收消息，保存部署包哈希。在维护窗口中由运维显式
+安装 `antchain-bridge-plugin-lib/src/main/resources/db/dioxide_tx_reconciliation.sql`；此扩展不更改
+v2 协调表和 schema_version。审计表按追加方式使用，恢复角色只授予 SELECT/INSERT，
+不授予 UPDATE/DELETE；账户恢复仍需 bridge_tx_account 的 SELECT/UPDATE。
+
+```bash
+python -m dioxide_tx_reconcile --config /secure/dioxide-tx.properties \
+  --rpc http://NODE:PORT/api audit --account ACCOUNT --output /secure/audit.json
+python -m dioxide_tx_reconcile --config /secure/dioxide-tx.properties \
+  --rpc http://NODE:PORT/api apply --manifest /secure/audit.json --operator OPERATOR
+```
+
+`audit` 默认只读，不执行 DML/DDL；输出文件必须不存在，以 0600 创建。输出包括完整账户
+快照、脱敏的历史记录（只含签名摘要和期限，不含签名字节）、checkpoint、链上 ISN、前一笔
+归档交易及最终确定区块证据。审计失败返回非零，账户保持阻塞。配置文件和密码文件需自行
+保持 0600，不将它们或业务数据库备份加入 Git。
+
+恢复要求：checkpoint 已归档且匹配；前一笔交易属于该账户和 ISN，已归档且签名头与节点
+返回的 timestamp/TTL 相符；旧签名在最终确定区块时间前已过期并留一分钟余量；旧交易当前
+查不到；所有 submission/attempt 彼此匹配，旧 operation 保留 ACCEPTED，不能标记成可重试
+的 EXPIRED/FAILED。仅 transaction not found 或仅机器当前时间均不足以恢复。
+
+`apply` 读取不超过 15 分钟的审计，在现有 submission 命名锁与账户/历史行锁中重新查询全部
+证据，复核审计时的最终确定区块仍在归档链中，然后以一个数据库事务追加审计记录、对齐
+账户 next_isn/observed_isn 并设 READY。任何不一致或 RPC/数据库错误整体回滚。同一个
+recovery_id 重复执行只返回 already_applied，即使账户随后已前进，也不会再降低计数。
+审计校验和用于发现文件修改，不是授权签名；只有受控运维角色能执行恢复。
+
+恢复后先放行一个目标域，以原 UCP/operation ID 验证完整调用链和目标业务结果，再放行
+同账户其他域；旧缺失交易继续列为人工处理，工具不会将其补发或标为成功。观察至少
+15 分钟并记录审计编号和消息结果。若出现异常，暂停写入并保留新记录，不能将协调数据库
+恢复成广播前的备份，也不能更换 networkId 绕过旧记录。
+
+隔离测试增加 `test_reconcile`：
+
+```bash
+ISN_TEST_MYSQL=1 ISN_TEST_MYSQL_PORT=18237 \
+  python -m unittest -v test_reconcile test_coordinator
+```
+
+测试库只允许使用独立本地 fixture；启用前文 JAVA_PROBE 环境变量还会验证恢复后两个 Java
+和两个 Python 进程并发提交、旧 operation 不重签，及原有跨进程崩溃恢复/mailbox 互斥。
