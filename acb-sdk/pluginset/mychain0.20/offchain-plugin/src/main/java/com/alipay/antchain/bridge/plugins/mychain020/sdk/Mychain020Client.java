@@ -422,19 +422,32 @@ public class Mychain020Client {
     }
 
     public TransactionReceipt localCallContract(String contractName, Parameters parameters) {
+        return localCallContract(
+                Utils.getIdentityByName(contractName, config.getMychainHashType()),
+                contractName,
+                parameters);
+    }
+
+    public TransactionReceipt localCallContract(Identity contractIdentity, Parameters parameters) {
+        return localCallContract(contractIdentity, contractIdentity.hexStrValue(), parameters);
+    }
+
+    private TransactionReceipt localCallContract(Identity contractIdentity,
+                                                 String contractLabel,
+                                                 Parameters parameters) {
         String account = config.getMychainAnchorAccount();
 
         VMTypeEnum vmType = MychainUtils.getSupportedParameterType(parameters);
         logger.info("local call {} contractName {}.{}",
                 vmType,
-                contractName,
+                contractLabel,
                 vmType == VMTypeEnum.EVM ?
                         ((EVMParameter) parameters).getMethodSignature() :
                         ((WASMParameter) parameters).getMethodSignature());
 
         CallContractRequest request = new CallContractRequest(
                 Utils.getIdentityByName(account, config.getMychainHashType()),
-                Utils.getIdentityByName(contractName, config.getMychainHashType()),
+                contractIdentity,
                 parameters,
                 BigInteger.ZERO,
                 vmType
@@ -644,17 +657,40 @@ public class Mychain020Client {
         return this.upgradeContract(this.readFileBytes(contractFilename), contractName, type);
     }
 
+    public boolean upgradeContract(String contractFilename, Identity contractIdentity, VMTypeEnum type) {
+        return this.upgradeContract(this.readFileBytes(contractFilename), contractIdentity, type);
+    }
+
     public boolean upgradeContract(byte[] contractCode, String contractName, VMTypeEnum type) {
         if (StringUtils.isEmpty(contractName)) {
             logger.error("contract do not be deployed yet : {}", contractName);
             return false;
         }
+        return upgradeContract(
+                contractCode,
+                Utils.getIdentityByName(contractName, config.getMychainHashType()),
+                type,
+                contractName);
+    }
+
+    public boolean upgradeContract(byte[] contractCode, Identity contractIdentity, VMTypeEnum type) {
+        if (contractIdentity == null) {
+            logger.error("contract identity is empty");
+            return false;
+        }
+        return upgradeContract(contractCode, contractIdentity, type, contractIdentity.hexStrValue());
+    }
+
+    private boolean upgradeContract(byte[] contractCode,
+                                    Identity contractIdentity,
+                                    VMTypeEnum type,
+                                    String contractLabel) {
         if (type == VMTypeEnum.EVM) {
             contractCode = Hex.decode(new String(contractCode));
         }
 
         UpdateContractRequest request = new UpdateContractRequest(
-                Utils.getIdentityByName(contractName, config.getMychainHashType()),
+                contractIdentity,
                 contractCode,
                 type
         );
@@ -664,7 +700,7 @@ public class Mychain020Client {
         if (!response.isSuccess()) {
             logger.error(
                     "upgrade contract failed: {} - {} - {}",
-                    contractName,
+                    contractLabel,
                     response.getErrorCode().getErrorCode(),
                     response.getErrorCode().getErrorDesc()
             );
@@ -672,7 +708,7 @@ public class Mychain020Client {
         }
         logger.info(
                 "upgrade contract {} txHash {} - {} - {} - {}",
-                contractName,
+                contractLabel,
                 response.getTxHash().hexStrValue(),
                 response.isSuccess(),
                 response.getErrorCode().getErrorCode(),

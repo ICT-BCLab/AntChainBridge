@@ -50,7 +50,7 @@ contract PtcHub is IPtcHub, Ownable {
     }
 
     function getImplementationVersion() external pure returns (uint32) {
-        return 2;
+        return 3;
     }
 
     /**
@@ -253,7 +253,7 @@ contract PtcHub is IPtcHub, Ownable {
         identity verifier = verifierMap[AcbCommons.decodePTCCredentialSubjectFrom(ptr.ptcCrossChainCert.credentialSubject).ptcType];
         require(verifier != identity(0x0), "no ptc veifier set");
 
-        bool result = IPtcVerifier(verifier).verifyTpProof(tpbta, tpProof);
+        bool result = IPtcVerifier(verifier).verifyTpProof(tpbta, tpProof, monitorVerifierAddr);
         emit VerifyProof(tpbta.crossChainLane, result);
         require(result, "verify not pass");
     }

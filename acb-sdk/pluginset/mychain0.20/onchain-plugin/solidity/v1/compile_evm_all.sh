@@ -14,11 +14,6 @@ else
   MY_SOLC_CMD=(npx --yes --package @antchain/mysolidity@1.3.0 mysolc)
 fi
 
-cleanup() {
-  rm -rf "${TMP_DIR}"
-}
-trap cleanup EXIT
-
 cd "${SCRIPT_DIR}"
 mkdir -p "${CONTRACT_PATH}"
 
@@ -56,3 +51,4 @@ for contract in "${CONTRACTS[@]}"; do
 done
 
 echo "Mychain EVM deployment and runtime binaries generated under ${CONTRACT_PATH}"
+echo "Compiler intermediates retained under ${TMP_DIR}; remove individual files manually when no longer needed"

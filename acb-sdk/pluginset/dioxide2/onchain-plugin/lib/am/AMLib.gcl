@@ -47,6 +47,7 @@ contract AMLib {
     struct DecodeResult {
         array<uint8> senderDomain;
         array<uint8> rawResp;
+        array<uint8> rawTpProof;
     }
 
     /**
@@ -129,6 +130,7 @@ contract AMLib {
         DecodeResult dr;
         dr.senderDomain = proof.senderDomain;
         dr.rawResp = _decodeMsgBodyFromUDAGResp(proof.rawRespBody);
+        dr.rawTpProof = Utils.bytesCopy(rawProof);
 
         return dr;
     }

@@ -19,6 +19,8 @@ contract IAuthMessage {
         */
         @address function setProtocol(uint64 protocolID, address protocolAddress, uint32 protocolType) public export;
 
+        @address function setPtcHub(uint64 _ptcHubId, address _ptcHubAddress) public export;
+
         /**
         * @dev The upper protocol call this method to send cross-chain message.
         *

@@ -44,6 +44,12 @@ public class DioxideConfig {
     private String monitorContractAddressDeployed;
 
     @JSONField
+    private String monitorVerifierContractAddressDeployed;
+
+    @JSONField
+    private String ptcHubContractAddressDeployed;
+
+    @JSONField
     private String dappName = "AcbDapp";
 
     @JSONField
@@ -54,6 +60,12 @@ public class DioxideConfig {
 
     @JSONField
     private String monitorContractName = "Monitor";
+
+    @JSONField
+    private String monitorVerifierContractName = "MonitorVerifier";
+
+    @JSONField
+    private String ptcHubContractName = "PtcHub";
 
     @JSONField
     private Boolean isPreContractDeployed = false;

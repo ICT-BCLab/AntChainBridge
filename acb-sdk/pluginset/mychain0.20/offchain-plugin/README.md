@@ -20,6 +20,16 @@
 
 该插件增加 Monitor 和 MonitorVerifier 合约部署、监管节点背书同步、监管指令转发，以及发送方和接收方黑名单校验等功能。
 
+当前 EVM 监管实现与 Ethereum3 保持语义一致：PtcHub V3 将 required monitor 节点证明经
+CommitteePtcVerifier V2 交给 MonitorVerifier V2，Monitor V7 在 `MONITOR_OPEN` 下验签后再决定
+业务投递、V1 回滚或 V2/V3 错误 ACK。Mychain 的 `identity` 地址、MySolidity 编解码及原址
+`updateContract` 机制保持不变，TEE/WASM 暂不支持该监管合约链路。
+
+对历史部署执行 `setup-bbccontracts` 时，插件会按 MonitorVerifier、CommitteePtcVerifier、
+PtcHub、Monitor、SDP 的顺序检查并原址升级。如果配置中未保存 MonitorVerifier 名称，会优先
+从已有 Monitor 恢复其 identity；无法恢复时会停止，避免用缺失历史 TpBTA endorsement 的空
+Verifier 覆盖现网绑定。确需部署新 Verifier 时，应在维护窗口重新上传全部生效 TpBTA。
+
 # 构建
 
 **！！！目前存在部分内部依赖发布中，可能暂时无法成功构建，发布完成后即可使用以下命令进行构建**
@@ -30,6 +40,39 @@
 ```
 cd pluginset/mychain0.20/offchain-plugin && mvn package -Dmaven.test.skip=true
 ```
+
+## 测试
+
+普通 Maven 测试不连接 Mychain；显式真链测试默认通过 JUnit Assume 跳过：
+
+```shell
+mvn test
+```
+
+真链监管闭环测试为
+`Mychain020MonitorOnChainIntegrationTest#completeMonitorFlowOnSharedChainWithOneContractSet`。它使用一套
+带 UUID 的全新合约名，在同一个测试方法内完成部署、PTC trust root/TpBTA 写入、四个监管合约
+原址升级和状态保留检查、V1 正常投递/回滚、V2 错误 ACK；V3、关闭监管、缺少 monitor proof、
+错误普通节点签名和控制值矩阵使用 Mychain local call，避免在共享链上重复写交易。测试设置了
+29 笔共享链写交易上限，不删除链上合约或修改外部配置文件。
+
+运行前必须准备一份专用配置副本，其中 AM、SDP、PTC、Monitor、MonitorVerifier 地址均为空。
+配置中的逻辑目标节点必须是测试类锁定的`47.116.166.95 18130`；如果通过 SSH 隧道连接，只允许
+把实际连接地址覆盖为 loopback。示例：
+
+```shell
+mvn -Dtest=Mychain020MonitorOnChainIntegrationTest \
+  -Dmychain.integration.enabled=true \
+  -Dmychain.config.path=/path/to/fresh-mychain020.json \
+  '-Dmychain.integration.expectedPrimary=47.116.166.95 18130' \
+  '-Dmychain.integration.connectionPrimary=127.0.0.1 18130' \
+  test
+```
+
+该测试会验证账户有效、目标不是 TEE 链且区块持续增长后才写链。如果中途断开，可使用测试输出的
+runId、AM、SDP、PTC、Monitor、MonitorVerifier、Receiver 和已提交交易数，通过对应
+`mychain.integration.resume*`系统属性恢复同一套合约，避免重新部署。配置文件包含私钥和 TLS
+材料，不得提交到代码仓库。
 
 # 使用
 

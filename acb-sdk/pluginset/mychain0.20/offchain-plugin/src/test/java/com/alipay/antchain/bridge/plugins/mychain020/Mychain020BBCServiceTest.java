@@ -58,6 +58,7 @@ import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
+import org.junit.Assume;
 import org.bouncycastle.util.encoders.Hex;
 import org.slf4j.Logger;
 
@@ -227,6 +228,13 @@ public class Mychain020BBCServiceTest {
 
     @Before
     public void init() throws Exception {
+        Assume.assumeTrue(
+                "set -Dmychain.integration.enabled=true to run tests that write to a Mychain node",
+                Boolean.getBoolean("mychain.integration.enabled"));
+        Assume.assumeTrue(
+                "set -Dmychain.config.path to an explicit isolated/shared-chain test configuration",
+                System.getProperty("mychain.config.path") != null
+                        && !System.getProperty("mychain.config.path").trim().isEmpty());
         mychain020BBCService = new Mychain020BBCService();
 
         Method setLoggerMethod = ReflectUtil.getMethod(Mychain020BBCService.class, "setLogger", Logger.class);
@@ -242,7 +250,9 @@ public class Mychain020BBCServiceTest {
 
     @After
     public void clear() {
-        mychain020BBCService.shutdown();
+        if (mychain020BBCService != null) {
+            mychain020BBCService.shutdown();
+        }
     }
 
     @Test

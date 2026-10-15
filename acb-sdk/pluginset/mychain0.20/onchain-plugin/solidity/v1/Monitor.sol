@@ -11,7 +11,7 @@ import "./lib/utils/SizeOf.sol";
 import "./lib/utils/TypesToBytes.sol";
 
 contract Monitor is Ownable {
-    uint32 public constant IMPLEMENTATION_VERSION = 6;
+    uint32 public constant IMPLEMENTATION_VERSION = 7;
     uint32 public constant MONITOR_CLOSE = 1;
     uint32 public constant MONITOR_OPEN = 2;
     uint32 public constant MONITOR_ROLLBACK = 3;
@@ -44,6 +44,18 @@ contract Monitor is Ownable {
         uint32 monitorType,
         bool unordered
     );
+    event MonitorNodeProofVerified(
+        string senderDomain,
+        identity indexed sender,
+        identity indexed receiver,
+        bool result
+    );
+    event MonitorRollbackSent(
+        identity indexed sender,
+        string receiverDomain,
+        identity indexed receiver,
+        bool unordered
+    );
 
     modifier onlySubProtocol() {
         require(msg.sender == sdpAddress, "Monitor: sender is not sdp");
@@ -69,6 +81,12 @@ contract Monitor is Ownable {
     }
 
     function setMonitorControl(uint32 newMonitorControl) external onlyOwner {
+        require(
+            newMonitorControl == MONITOR_CLOSE
+                || newMonitorControl == MONITOR_OPEN
+                || newMonitorControl == MONITOR_ROLLBACK,
+            "Monitor: invalid monitor control"
+        );
         monitorControl = newMonitorControl;
     }
 
@@ -184,6 +202,25 @@ contract Monitor is Ownable {
         bytes calldata rawMessage
     ) external onlySubProtocol {
         (uint32 monitorType, bytes memory message) = _decodeMonitorMessage(rawMessage);
+        if (monitorType == MONITOR_OPEN) {
+            bool verified = _verifyMonitorNodeProof();
+            emit MonitorNodeProofVerified(senderDomain, author, receiverID, verified);
+            if (!verified) {
+                bytes memory rollbackMessage = _encodeMonitorMessage(
+                    MONITOR_ROLLBACK,
+                    bytes("MidMonitoring not pass"),
+                    message
+                );
+                ISDPMessage(sdpAddress).sendMessageFromMonitor(
+                    senderDomain,
+                    author,
+                    receiverID,
+                    rollbackMessage
+                );
+                emit MonitorRollbackSent(receiverID, senderDomain, author, false);
+                return;
+            }
+        }
         IContractUsingSDP(receiverID).recvMessage(senderDomain, author, message);
         emit MonitorMessageReceived(senderDomain, author, receiverID, monitorType, false);
     }
@@ -195,6 +232,25 @@ contract Monitor is Ownable {
         bytes calldata rawMessage
     ) external onlySubProtocol {
         (uint32 monitorType, bytes memory message) = _decodeMonitorMessage(rawMessage);
+        if (monitorType == MONITOR_OPEN) {
+            bool verified = _verifyMonitorNodeProof();
+            emit MonitorNodeProofVerified(senderDomain, author, receiverID, verified);
+            if (!verified) {
+                bytes memory rollbackMessage = _encodeMonitorMessage(
+                    MONITOR_ROLLBACK,
+                    bytes("MidMonitoring not pass"),
+                    message
+                );
+                ISDPMessage(sdpAddress).sendUnorderedMessageFromMonitor(
+                    senderDomain,
+                    author,
+                    receiverID,
+                    rollbackMessage
+                );
+                emit MonitorRollbackSent(receiverID, senderDomain, author, true);
+                return;
+            }
+        }
         IContractUsingSDP(receiverID).recvUnorderedMessage(senderDomain, author, message);
         emit MonitorMessageReceived(senderDomain, author, receiverID, monitorType, true);
     }
@@ -243,6 +299,11 @@ contract Monitor is Ownable {
         bool unordered
     ) internal {
         (uint32 monitorType, bytes memory message) = _decodeMonitorMessage(rawMessage);
+        if (monitorType == MONITOR_OPEN) {
+            bool verified = _verifyMonitorNodeProof();
+            emit MonitorNodeProofVerified(senderDomain, author, receiverID, verified);
+            require(verified, "Monitor: mid monitoring not pass");
+        }
         if (unordered) {
             IContractUsingSDP(receiverID).recvUnorderedMessage(senderDomain, author, message);
         } else {
@@ -283,7 +344,14 @@ contract Monitor is Ownable {
     }
 
     function _encodeMonitorMessage(uint32 monitorType, bytes memory message) internal pure returns (bytes memory) {
-        bytes memory monitorMsg = new bytes(0);
+        return _encodeMonitorMessage(monitorType, new bytes(0), message);
+    }
+
+    function _encodeMonitorMessage(
+        uint32 monitorType,
+        bytes memory monitorMsg,
+        bytes memory message
+    ) internal pure returns (bytes memory) {
         uint256 monitorMsgSize = SizeOf.sizeOfBytes(monitorMsg);
         uint256 messageSize = SizeOf.sizeOfBytes(message);
         bytes memory rawMessage = new bytes(4 + monitorMsgSize + messageSize);
@@ -297,6 +365,11 @@ contract Monitor is Ownable {
 
         TypesToBytes.stringToBytes(offset, message, rawMessage);
         return rawMessage;
+    }
+
+    function _verifyMonitorNodeProof() internal returns (bool) {
+        require(monitorVerifierAddress != identity(0), "Monitor: verifier not set");
+        return IMonitorVerifier(monitorVerifierAddress).verifyMonitorNodeProofMessage();
     }
 
     function _decodeMonitorMessage(bytes memory rawMessage)

@@ -26,7 +26,7 @@ import org.slf4j.Logger;
 @Setter
 public class MonitorContractClientEVM {
 
-    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 6;
+    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 7;
 
     private static final String MONITOR_EVM_CONTRACT_PREFIX = "MONITOR_EVM_CONTRACT_";
     private static final String MONITOR_EVM_RUNTIME_PATH = "/contract/v1/solidity/Monitor.bin-runtime";
@@ -117,7 +117,9 @@ public class MonitorContractClientEVM {
      * through the same monitor envelope used by V1, and exposes matching
      * receive-side entry points for all three SDP versions. Monitor V6 replaces
      * the compiler-sensitive assembly decoder so non-word-aligned business
-     * payloads are preserved byte-for-byte on Mychain.
+     * payloads are preserved byte-for-byte on Mychain. Monitor V7 verifies the
+     * monitor-node proof before delivery and restores Ethereum3-compatible
+     * rollback/error handling.
      */
     public boolean ensureImplementationSupported() {
         if (isImplementationVersionSupported()) {
@@ -160,7 +162,14 @@ public class MonitorContractClientEVM {
                     "",
                     "monitor verifier identity is unavailable");
         }
-        return new Identity(new Hash(receipt.getOutput()));
+        Identity identity = new Identity(new Hash(receipt.getOutput()));
+        if (identity.hexStrValue().matches("(?i)(?:0x)?0+")) {
+            throw new CallContractException(
+                    this.contractAddress,
+                    "",
+                    "monitor verifier identity is not configured");
+        }
+        return identity;
     }
 
     public void setProtocol(String sdpContractName) {
@@ -172,6 +181,12 @@ public class MonitorContractClientEVM {
     public void setMonitorVerifier(String monitorVerifierContractName) {
         EVMParameter parameters = new EVMParameter(SET_MONITOR_VERIFIER_ADDRESS_SIGN);
         parameters.addIdentity(Utils.getIdentityByName(monitorVerifierContractName, mychain020Client.getConfig().getMychainHashType()));
+        call(parameters);
+    }
+
+    public void setMonitorVerifier(Identity monitorVerifierIdentity) {
+        EVMParameter parameters = new EVMParameter(SET_MONITOR_VERIFIER_ADDRESS_SIGN);
+        parameters.addIdentity(monitorVerifierIdentity);
         call(parameters);
     }
 

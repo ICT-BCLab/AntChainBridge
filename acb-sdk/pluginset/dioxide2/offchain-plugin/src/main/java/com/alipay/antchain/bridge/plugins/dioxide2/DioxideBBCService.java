@@ -21,6 +21,7 @@ import com.alipay.antchain.bridge.commons.bbc.AbstractBBCContext;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.AuthMessageContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.ContractStatusEnum;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.MonitorContract;
+import com.alipay.antchain.bridge.commons.bbc.syscontract.PTCContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.SDPContract;
 import com.alipay.antchain.bridge.commons.core.base.*;
 import com.alipay.antchain.bridge.commons.core.ptc.PTCTrustRoot;
@@ -32,6 +33,7 @@ import com.alipay.antchain.bridge.plugins.dioxide2.conf.DioxideConfig;
 import com.alipay.antchain.bridge.plugins.dioxide2.conf.DioxideTypes;
 import com.alipay.antchain.bridge.plugins.dioxide2.core.DioxideClient;
 import com.alipay.antchain.bridge.plugins.dioxide2.core.DioxideTransaction;
+import com.alipay.antchain.bridge.plugins.dioxide2.core.DioxideTransactionBlock;
 import com.alipay.antchain.bridge.plugins.lib.BBCService;
 import com.alipay.antchain.bridge.plugins.spi.bbc.AbstractBBCService;
 import lombok.Getter;
@@ -106,6 +108,14 @@ public class DioxideBBCService extends AbstractBBCService {
             monitorContract.setContractAddress(this.config.getMonitorContractAddressDeployed());
             monitorContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
             this.bbcContext.setMonitorContract(monitorContract);
+        }
+
+        if (ObjectUtil.isNull(abstractBBCContext.getPtcContract())
+                && StrUtil.isNotEmpty(this.config.getPtcHubContractAddressDeployed())) {
+            PTCContract ptcContract = new PTCContract();
+            ptcContract.setContractAddress(this.config.getPtcHubContractAddressDeployed());
+            ptcContract.setStatus(ContractStatusEnum.CONTRACT_READY);
+            this.bbcContext.setPtcContract(ptcContract);
         }
 
     }
@@ -253,21 +263,7 @@ public class DioxideBBCService extends AbstractBBCService {
         // arg protocolAddress: contract cid
         dioxideClient.setProtocolToAuthMsg(protocolAddress, protocolType);
 
-        // 4. update am contract status
-        try {
-            JSONObject valState = dioxideClient.getContractState(this.config.getDappName(), config.getAmContractName(), DioxideTypes.Scope.Global, "")
-                    .getJSONObject("State");
-            if (CollUtil.isNotEmpty(valState.getJSONObject("protocolRoutes"))
-                    && StrUtil.isNotEmpty(valState.getJSONObject("protocolRoutes").getString(protocolType))) {
-                this.bbcContext.getAuthMessageContract().setStatus(ContractStatusEnum.CONTRACT_READY);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format(
-                            "failed to update am contract status (address: %s)",
-                            this.bbcContext.getAuthMessageContract().getContractAddress()
-                    ), e);
-        }
+        updateAuthMessageContractStatus();
     }
 
     @Override
@@ -368,7 +364,13 @@ public class DioxideBBCService extends AbstractBBCService {
             dioxideClient.getConfig().setIsPreContractDeployed(true);
         }
 
+        long monitorVerifierCid = dioxideClient.deployMonitorVerifierContract();
+        config.setMonitorVerifierContractAddressDeployed(String.valueOf(monitorVerifierCid));
+
         long monitorContractCid = dioxideClient.deployMonitorContract();
+        config.setMonitorContractAddressDeployed(String.valueOf(monitorContractCid));
+        dioxideClient.setMonitorVerifierToMonitor(String.valueOf(monitorVerifierCid));
+        dioxideClient.setMonitorToMonitorVerifier(String.valueOf(monitorContractCid));
         MonitorContract monitorContract = new MonitorContract();
         monitorContract.setContractAddress(String.valueOf(monitorContractCid));
         monitorContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
@@ -428,30 +430,28 @@ public class DioxideBBCService extends AbstractBBCService {
 
         dioxideClient.setSdpContractToMonitor(contractAddress);
 
-        // 4. update monitor contract status
-        try {
-            JSONObject valState = dioxideClient.getContractState(this.config.getDappName(), config.getMonitorContractName(), DioxideTypes.Scope.Global, "")
-                    .getJSONObject("State");
-            if (!"0".equals(valState.getString("sdpContractId"))) {
-                this.bbcContext.getMonitorContract().setStatus(ContractStatusEnum.CONTRACT_READY);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format(
-                            "failed to update monitor contract status (address: %s)",
-                            this.bbcContext.getMonitorContract().getContractAddress()
-                    ), e);
-        }
+        updateMonitorContractStatus();
     }
 
     @Override
     public void setMonitorControl(int monitorType) {
-
+        requireMonitorContract();
+        if (monitorType != 1 && monitorType != 2 && monitorType != 3) {
+            throw new IllegalArgumentException("unsupported monitor control: " + monitorType);
+        }
+        dioxideClient.setMonitorControl(monitorType);
+        updateMonitorContractStatus();
     }
 
     @Override
     public void setPtcHubInMonitorVerifier(String contractAddress) {
-
+        requireMonitorContract();
+        requirePtcContract();
+        if (StrUtil.isEmpty(config.getMonitorVerifierContractAddressDeployed())) {
+            throw new RuntimeException("empty monitor verifier contract address");
+        }
+        dioxideClient.setPtcHubToMonitorVerifier(contractAddress);
+        updateMonitorContractStatus();
     }
 
     @Override
@@ -461,57 +461,144 @@ public class DioxideBBCService extends AbstractBBCService {
 
     @Override
     public ConsensusState readConsensusState(BigInteger height) {
-        return null;
+        if (height == null || height.signum() < 0) {
+            throw new IllegalArgumentException("height must be non-negative");
+        }
+
+        DioxideTransactionBlock block = dioxideClient.getTransactionBlockInGlobalShardByHeight(height.longValueExact());
+        if (block == null) {
+            throw new RuntimeException("empty Dioxide transaction block at height " + height);
+        }
+        if (StrUtil.isEmpty(block.getHash())) {
+            throw new RuntimeException("empty Dioxide block hash at height " + height);
+        }
+
+        JSONObject consensusHeader = dioxideClient.getConsensusHeaderByHeight(height.longValueExact());
+        long timestamp = block.getTimestamp() == null
+                ? (consensusHeader == null ? 0L : consensusHeader.getLongValue("Timestamp"))
+                : block.getTimestamp();
+        byte[] stateData = consensusHeader == null
+                ? new byte[0]
+                : consensusHeader.toJSONString().getBytes(StandardCharsets.UTF_8);
+
+        return new ConsensusState(
+                BigInteger.valueOf(block.getHeight() == null ? height.longValueExact() : block.getHeight()),
+                block.getHash().getBytes(StandardCharsets.UTF_8),
+                StrUtil.nullToEmpty(block.getPrev()).getBytes(StandardCharsets.UTF_8),
+                timestamp,
+                stateData,
+                new byte[0],
+                new byte[0]
+        );
     }
 
     @Override
     public boolean hasTpBta(CrossChainLane tpbtaLane, int tpBtaVersion) {
-        return false;
+        requirePtcContract();
+        return dioxideClient.hasTpBta(tpbtaLane.encode(), versionBytes(tpBtaVersion));
     }
 
     @Override
     public ThirdPartyBlockchainTrustAnchor getTpBta(CrossChainLane tpbtaLane, int tpBtaVersion) {
-        return null;
+        requirePtcContract();
+        byte[] raw = dioxideClient.queryTpBta(tpbtaLane.encode(), versionBytes(tpBtaVersion));
+        return ObjectUtil.isEmpty(raw) ? null : ThirdPartyBlockchainTrustAnchor.decode(raw);
     }
 
     @Override
     public Set<PTCTypeEnum> getSupportedPTCType() {
-        return null;
+        requirePtcContract();
+        return Set.of(PTCTypeEnum.COMMITTEE);
     }
 
     @Override
     public PTCTrustRoot getPTCTrustRoot(@NonNull ObjectIdentity ptcOwnerOid) {
-        return null;
+        requirePtcContract();
+        byte[] raw = dioxideClient.queryPtcTrustRoot(ptcOwnerOid.encode());
+        return ObjectUtil.isEmpty(raw) ? null : PTCTrustRoot.decode(raw);
     }
 
     @Override
     public boolean hasPTCTrustRoot(ObjectIdentity ptcOwnerOid) {
-        return false;
+        requirePtcContract();
+        return dioxideClient.hasPtcTrustRoot(ptcOwnerOid.encode());
     }
 
     @Override
     public PTCVerifyAnchor getPTCVerifyAnchor(ObjectIdentity ptcOwnerOid, BigInteger version) {
-        return null;
+        requirePtcContract();
+        byte[] raw = dioxideClient.queryPtcVerifyAnchor(ptcOwnerOid.encode(), versionBytes(version));
+        return ObjectUtil.isEmpty(raw) ? null : PTCVerifyAnchor.decode(raw);
     }
 
     @Override
     public boolean hasPTCVerifyAnchor(ObjectIdentity ptcOwnerOid, BigInteger version) {
-        return false;
+        requirePtcContract();
+        return dioxideClient.hasPtcVerifyAnchor(ptcOwnerOid.encode(), versionBytes(version));
     }
 
     @Override
     public void setupPTCContract() {
+        if (ObjectUtil.isNull(this.bbcContext)) {
+            throw new RuntimeException("empty bbc context");
+        }
+        if (checkPtcContractIsDeployed()) {
+            return;
+        }
+        if (ObjectUtil.isNull(this.bbcContext.getAuthMessageContract())) {
+            throw new RuntimeException("auth message contract must be deployed before PtcHub");
+        }
+        if (StrUtil.isEmpty(config.getMonitorVerifierContractAddressDeployed())) {
+            throw new RuntimeException("monitor verifier must be deployed before PtcHub");
+        }
 
+        long ptcHubCid = dioxideClient.deployPtcHubContract();
+        String ptcHubAddress = String.valueOf(ptcHubCid);
+        config.setPtcHubContractAddressDeployed(ptcHubAddress);
+        dioxideClient.setMonitorVerifierToPtcHub(config.getMonitorVerifierContractAddressDeployed());
+        dioxideClient.setAuthMessageToPtcHub(this.bbcContext.getAuthMessageContract().getContractAddress());
+
+        PTCContract ptcContract = new PTCContract();
+        ptcContract.setContractAddress(ptcHubAddress);
+        ptcContract.setStatus(ContractStatusEnum.CONTRACT_READY);
+        this.bbcContext.setPtcContract(ptcContract);
     }
 
     @Override
     public void setPtcContract(String ptcContractAddress) {
+        if (ObjectUtil.isNull(this.bbcContext)
+                || ObjectUtil.isNull(this.bbcContext.getAuthMessageContract())) {
+            throw new RuntimeException("empty auth message contract in bbc context");
+        }
+        requirePtcContract();
+        dioxideClient.setPtcHubToAuthMessage(ptcContractAddress);
+        updateAuthMessageContractStatus();
+    }
 
+    @Override
+    public void updatePTCTrustRoot(PTCTrustRoot ptcTrustRoot) {
+        requirePtcContract();
+        byte[] ownerOid = ptcTrustRoot.getPtcCredentialSubject().getApplicant().encode();
+        dioxideClient.savePtcTrustRoot(ownerOid, ptcTrustRoot.encode());
+        if (ptcTrustRoot.getVerifyAnchorMap() != null) {
+            ptcTrustRoot.getVerifyAnchorMap().forEach((version, anchor) ->
+                    dioxideClient.savePtcVerifyAnchor(
+                            ownerOid,
+                            versionBytes(version),
+                            anchor.encode()
+                    )
+            );
+        }
     }
 
     @Override
     public void addTpBta(ThirdPartyBlockchainTrustAnchor tpbta) {
-
+        requirePtcContract();
+        dioxideClient.saveTpBta(
+                tpbta.getCrossChainLane().encode(),
+                versionBytes(tpbta.getTpbtaVersion()),
+                tpbta.encode()
+        );
     }
 
     @Override
@@ -554,6 +641,89 @@ public class DioxideBBCService extends AbstractBBCService {
                 config.getMonitorContractName(),
                 this.bbcContext.getMonitorContract().getContractAddress()
         );
+    }
+
+    private boolean checkPtcContractIsDeployed() {
+        return ObjectUtil.isNotNull(this.bbcContext.getPtcContract())
+                && StrUtil.isNotEmpty(this.bbcContext.getPtcContract().getContractAddress())
+                && dioxideClient.isContractVersionCurrent(
+                        config.getPtcHubContractName(),
+                        this.bbcContext.getPtcContract().getContractAddress()
+                );
+    }
+
+    private void requireMonitorContract() {
+        if (ObjectUtil.isNull(this.bbcContext)
+                || ObjectUtil.isNull(this.bbcContext.getMonitorContract())
+                || StrUtil.isEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
+            throw new RuntimeException("empty monitor contract in bbc context");
+        }
+    }
+
+    private void requirePtcContract() {
+        if (ObjectUtil.isNull(this.bbcContext)
+                || ObjectUtil.isNull(this.bbcContext.getPtcContract())
+                || StrUtil.isEmpty(this.bbcContext.getPtcContract().getContractAddress())) {
+            throw new RuntimeException("empty PtcHub contract in bbc context");
+        }
+    }
+
+    private void updateAuthMessageContractStatus() {
+        try {
+            JSONObject state = dioxideClient.getContractState(
+                    config.getDappName(), config.getAmContractName(), DioxideTypes.Scope.Global, ""
+            ).getJSONObject("State");
+            JSONObject protocolRoutes = state == null ? null : state.getJSONObject("protocolRoutes");
+            if (state != null
+                    && CollUtil.isNotEmpty(protocolRoutes)
+                    && StrUtil.isNotEmpty(protocolRoutes.getString("0"))
+                    && state.getLongValue("ptcHubId") != 0L) {
+                this.bbcContext.getAuthMessageContract().setStatus(ContractStatusEnum.CONTRACT_READY);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format(
+                            "failed to update am contract status (address: %s)",
+                            this.bbcContext.getAuthMessageContract().getContractAddress()
+                    ), e);
+        }
+    }
+
+    private void updateMonitorContractStatus() {
+        try {
+            JSONObject monitorState = dioxideClient.getContractState(
+                    config.getDappName(), config.getMonitorContractName(), DioxideTypes.Scope.Global, ""
+            ).getJSONObject("State");
+            JSONObject verifierState = dioxideClient.getContractState(
+                    config.getDappName(), config.getMonitorVerifierContractName(), DioxideTypes.Scope.Global, ""
+            ).getJSONObject("State");
+            String ptcHubAddress = verifierState == null ? null : verifierState.getString("ptcHubAddress");
+            if (monitorState != null
+                    && monitorState.getLongValue("sdpContractId") != 0L
+                    && monitorState.getLongValue("monitorVerifierId") != 0L
+                    && monitorState.getIntValue("monitorControl") != 0
+                    && StrUtil.isNotEmpty(ptcHubAddress)
+                    && !"<address:null>".equals(ptcHubAddress)) {
+                this.bbcContext.getMonitorContract().setStatus(ContractStatusEnum.CONTRACT_READY);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format(
+                            "failed to update monitor contract status (address: %s)",
+                            this.bbcContext.getMonitorContract().getContractAddress()
+                    ), e);
+        }
+    }
+
+    private byte[] versionBytes(int version) {
+        return versionBytes(BigInteger.valueOf(version));
+    }
+
+    private byte[] versionBytes(BigInteger version) {
+        if (version == null || version.signum() < 0) {
+            throw new IllegalArgumentException("version must be non-negative");
+        }
+        return version.toByteArray();
     }
 
     private boolean isByteArrayZero(byte[] bytes) {

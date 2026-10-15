@@ -15,11 +15,20 @@ contract MonitorVerifier is IMonitorVerifier, Ownable {
     mapping(bytes32 => NodeEndorseInfo) private monitorNodeEndorseInfoMap;
     identity public ptcHubAddress;
 
+    // Appended after the legacy storage fields for update-contract compatibility.
+    MonitorNodeProofMessage private monitorNodeProofMessage;
+
+    uint32 public constant IMPLEMENTATION_VERSION = 2;
+
     event MonitorNodeEndorseInfoUpdated(string committeeId, string nodeId, bytes rawPublicKey);
 
     modifier onlyPtcHub() {
         require(msg.sender == ptcHubAddress, "MonitorVerifier: caller is not PtcHub");
         _;
+    }
+
+    function getImplementationVersion() external pure returns (uint32) {
+        return IMPLEMENTATION_VERSION;
     }
 
     function setPtcHubAddress(identity newPtcHubAddress) external onlyOwner {
@@ -59,11 +68,47 @@ contract MonitorVerifier is IMonitorVerifier, Ownable {
         NodeEndorseInfo storage monitorNode =
             monitorNodeEndorseInfoMap[keccak256(abi.encodePacked(committeeId))];
         require(bytes(monitorNode.nodeId).length > 0, "MonitorVerifier: monitor node not found");
-        return AcbCommons.verifySig(
+        return CommitteeLib.verifyMonitorOrder(
+            committeeId,
+            monitorNode,
             signAlgo,
-            monitorNode.publicKey.getRawPublicKey(),
-            rawMonitorOrder,
-            rawProof
+            rawProof,
+            rawMonitorOrder
+        );
+    }
+
+    // PtcHub -> CommitteePtcVerifier -> MonitorVerifier and the subsequent
+    // AuthMessage -> SDP -> Monitor call execute atomically in one transaction.
+    // The immediate caller is CommitteePtcVerifier, so this entry point cannot
+    // use onlyPtcHub; the proof itself is authenticated when Monitor consumes it.
+    function receiveMonitorNodeProofMessage(
+        CrossChainLane calldata newCrossChainLane,
+        string calldata newCommitteeId,
+        MonitorCommitteeNodeProof calldata newMonitorNodeProof,
+        bytes calldata newEncodedToSign
+    ) external override {
+        monitorNodeProofMessage.crossChainLane = newCrossChainLane;
+        monitorNodeProofMessage.committeeId = newCommitteeId;
+        monitorNodeProofMessage.monitorNodeProof = newMonitorNodeProof;
+        monitorNodeProofMessage.encodedToSign = newEncodedToSign;
+    }
+
+    function verifyMonitorNodeProofMessage() external override returns (bool) {
+        NodeEndorseInfo storage monitorNode = monitorNodeEndorseInfoMap[
+            keccak256(abi.encodePacked(monitorNodeProofMessage.committeeId))
+        ];
+        require(bytes(monitorNode.nodeId).length > 0, "MonitorVerifier: monitor node not found");
+        CommitteeNodeProof memory monitorNodeProof = CommitteeNodeProof({
+            nodeId: monitorNodeProofMessage.monitorNodeProof.nodeId,
+            signAlgo: monitorNodeProofMessage.monitorNodeProof.signAlgo,
+            signature: monitorNodeProofMessage.monitorNodeProof.signature
+        });
+        return CommitteeLib.verifyTpProofFromMonitorNode(
+            monitorNodeProofMessage.crossChainLane,
+            monitorNodeProofMessage.committeeId,
+            monitorNode,
+            monitorNodeProof,
+            monitorNodeProofMessage.encodedToSign
         );
     }
 

@@ -35,9 +35,11 @@ import org.slf4j.helpers.NOPLogger;
 import com.alipay.antchain.bridge.commons.core.base.CrossChainMessageReceipt;
 import com.alipay.antchain.bridge.plugins.dioxide2.conf.DioxideAddressTypeEnum;
 import com.alipay.antchain.bridge.plugins.dioxide2.gcl.*;
+import com.alipay.antchain.bridge.plugins.dioxide2.utils.Krock32Encoder;
 import com.alipay.antchain.bridge.commons.core.base.CrossChainMessage;
 import com.alipay.antchain.bridge.plugins.dioxide2.conf.DioxideConfig;
 import com.alipay.antchain.bridge.plugins.dioxide2.conf.DioxideTypes;
+import java.security.MessageDigest;
 
 @Getter
 public class DioxideClient {
@@ -72,7 +74,10 @@ public class DioxideClient {
         return transactionCoordinator;
     }
 
-    private static final int DEFAULT_TIMEOUT = 20 * 1000;
+    private static final int DEFAULT_TIMEOUT = Integer.getInteger(
+            "dioxide.tx.confirm.timeout.ms",
+            20 * 1000
+    );
 
     private static final List<String> PRE_CONTRACT_ORDER = List.of(
             Interfaces.IAUTHMESSAGE,
@@ -81,6 +86,8 @@ public class DioxideClient {
             Interfaces.ISUBPROTOCOL,
             Interfaces.ICONTRACTUSINGMONITOR,
             Interfaces.IMONITOR,
+            Interfaces.IPTCHUB,
+            Interfaces.IMONITORVERIFIER,
             Libs.UTILS,
             Libs.SIZEOF,
             Libs.BYTESTOTYPES,
@@ -509,6 +516,30 @@ public class DioxideClient {
         }
     }
 
+    public long deployMonitorVerifierContract() {
+        String source = new String(
+                Base64.getDecoder().decode(Contracts.MONITORVERIFIER),
+                StandardCharsets.UTF_8
+        );
+        return deployContract(
+                config.getMonitorVerifierContractName(),
+                source,
+                JSON.toJSONString(orderedMap("_owner", dioxideAccount.getAddressInString()))
+        );
+    }
+
+    public long deployPtcHubContract() {
+        String source = new String(
+                Base64.getDecoder().decode(Contracts.PTCHUB),
+                StandardCharsets.UTF_8
+        );
+        return deployContract(
+                config.getPtcHubContractName(),
+                source,
+                JSON.toJSONString(orderedMap("_owner", dioxideAccount.getAddressInString()))
+        );
+    }
+
     public long deployContract(String contractName, String contractSource, String cargsString) {
         try {
             deployPreContract();
@@ -886,6 +917,198 @@ public class DioxideClient {
                     ), e
             );
         }
+    }
+
+    public void setMonitorControl(int monitorType) {
+        invokeContractFunction(
+                config.getMonitorContractName(),
+                "setMonitorControl",
+                orderedMap("_monitorControl", monitorType)
+        );
+    }
+
+    public void setMonitorVerifierToMonitor(String monitorVerifierCidInString) {
+        long monitorVerifierCid = Long.parseLong(monitorVerifierCidInString);
+        invokeContractFunction(
+                config.getMonitorContractName(),
+                "setMonitorVerifier",
+                orderedMap(
+                        "_monitorVerifierId", monitorVerifierCid,
+                        "_monitorVerifierAddress", contractAddress(monitorVerifierCid)
+                )
+        );
+    }
+
+    public void setMonitorToMonitorVerifier(String monitorCidInString) {
+        long monitorCid = Long.parseLong(monitorCidInString);
+        invokeContractFunction(
+                config.getMonitorVerifierContractName(),
+                "setMonitor",
+                orderedMap("_monitorAddress", contractAddress(monitorCid))
+        );
+    }
+
+    public void setPtcHubToMonitorVerifier(String ptcHubCidInString) {
+        long ptcHubCid = Long.parseLong(ptcHubCidInString);
+        invokeContractFunction(
+                config.getMonitorVerifierContractName(),
+                "setPtcHub",
+                orderedMap("_ptcHubAddress", contractAddress(ptcHubCid))
+        );
+    }
+
+    public void setMonitorVerifierToPtcHub(String monitorVerifierCidInString) {
+        long monitorVerifierCid = Long.parseLong(monitorVerifierCidInString);
+        invokeContractFunction(
+                config.getPtcHubContractName(),
+                "setMonitorVerifier",
+                orderedMap(
+                        "_monitorVerifierId", monitorVerifierCid,
+                        "_monitorVerifierAddress", contractAddress(monitorVerifierCid)
+                )
+        );
+    }
+
+    public void setAuthMessageToPtcHub(String authMessageCidInString) {
+        long authMessageCid = Long.parseLong(authMessageCidInString);
+        invokeContractFunction(
+                config.getPtcHubContractName(),
+                "setAuthMessage",
+                orderedMap("_authMessageAddress", contractAddress(authMessageCid))
+        );
+    }
+
+    public void setPtcHubToAuthMessage(String ptcHubCidInString) {
+        long ptcHubCid = Long.parseLong(ptcHubCidInString);
+        invokeContractFunction(
+                config.getAmContractName(),
+                "setPtcHub",
+                orderedMap(
+                        "_ptcHubId", ptcHubCid,
+                        "_ptcHubAddress", contractAddress(ptcHubCid)
+                )
+        );
+    }
+
+    public void savePtcTrustRoot(byte[] ownerOid, byte[] rawTrustRoot) {
+        invokeContractFunction(
+                config.getPtcHubContractName(),
+                "updatePTCTrustRoot",
+                orderedMap(
+                        "ownerOid", toIntArray(ownerOid),
+                        "rawTrustRoot", toIntArray(rawTrustRoot)
+                )
+        );
+    }
+
+    public void savePtcVerifyAnchor(byte[] ownerOid, byte[] version, byte[] rawAnchor) {
+        invokeContractFunction(
+                config.getPtcHubContractName(),
+                "updatePTCVerifyAnchor",
+                orderedMap(
+                        "ownerOid", toIntArray(ownerOid),
+                        "version", toIntArray(version),
+                        "rawAnchor", toIntArray(rawAnchor)
+                )
+        );
+    }
+
+    public void saveTpBta(byte[] lane, byte[] version, byte[] rawTpBta) {
+        invokeContractFunction(
+                config.getPtcHubContractName(),
+                "addTpBta",
+                orderedMap(
+                        "lane", toIntArray(lane),
+                        "version", toIntArray(version),
+                        "rawTpBta", toIntArray(rawTpBta)
+                )
+        );
+    }
+
+    public byte[] queryPtcTrustRoot(byte[] ownerOid) {
+        return queryPtcBytes("ptcTrustRoots", ownerOid);
+    }
+
+    public byte[] queryPtcVerifyAnchor(byte[] ownerOid, byte[] version) {
+        return queryPtcBytes("ptcVerifyAnchors", concat(ownerOid, version));
+    }
+
+    public byte[] queryTpBta(byte[] lane, byte[] version) {
+        return queryPtcBytes("tpBtas", concat(lane, version));
+    }
+
+    public boolean hasPtcTrustRoot(byte[] ownerOid) {
+        return queryPtcTrustRoot(ownerOid) != null;
+    }
+
+    public boolean hasPtcVerifyAnchor(byte[] ownerOid, byte[] version) {
+        return queryPtcVerifyAnchor(ownerOid, version) != null;
+    }
+
+    public boolean hasTpBta(byte[] lane, byte[] version) {
+        return queryTpBta(lane, version) != null;
+    }
+
+    private byte[] queryPtcBytes(String mapName, byte[] rawKey) {
+        JSONObject response = getContractState(
+                config.getDappName(), config.getPtcHubContractName(), DioxideTypes.Scope.Global, ""
+        );
+        JSONObject state = response.getJSONObject("State");
+        JSONObject values = state == null ? null : state.getJSONObject(mapName);
+        if (values == null) {
+            return null;
+        }
+        JSONObject entry = values.getJSONObject(ptcStorageKey(rawKey));
+        if (entry == null || !entry.getBooleanValue("exists")) {
+            return null;
+        }
+        JSONArray raw = entry.getJSONArray("raw");
+        if (raw == null) {
+            throw new RuntimeException("invalid PtcHub storage entry without raw value");
+        }
+        byte[] result = new byte[raw.size()];
+        for (int i = 0; i < raw.size(); i++) {
+            result[i] = (byte) (raw.getIntValue(i) & 0xFF);
+        }
+        return result;
+    }
+
+    private String invokeContractFunction(
+            String contractName,
+            String function,
+            LinkedHashMap<String, Object> args) {
+        String txHash = sendTransaction(
+                JSON.toJSONString(orderedMap(
+                        "sender", dioxideAccount.getAddressInString(),
+                        "function", String.format("%s.%s.%s", config.getDappName(), contractName, function),
+                        "args", args
+                )),
+                true
+        );
+        if (StrUtil.isEmpty(txHash)) {
+            throw new RuntimeException(String.format("empty transaction hash for %s.%s", contractName, function));
+        }
+        getBbcLogger().info("invoke {}.{} by tx {}", contractName, function, txHash);
+        return txHash;
+    }
+
+    private byte[] concat(byte[] first, byte[] second) {
+        byte[] result = Arrays.copyOf(first, first.length + second.length);
+        System.arraycopy(second, 0, result, first.length, second.length);
+        return result;
+    }
+
+    static String ptcStorageKey(byte[] value) {
+        try {
+            return Krock32Encoder.encode(MessageDigest.getInstance("SHA-256").digest(value))
+                    .toLowerCase(Locale.ROOT);
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    private String contractAddress(long contractCid) {
+        return String.format("0x%016X:contract", contractCid);
     }
 
     private int[] toIntArray(byte[] bytes) {

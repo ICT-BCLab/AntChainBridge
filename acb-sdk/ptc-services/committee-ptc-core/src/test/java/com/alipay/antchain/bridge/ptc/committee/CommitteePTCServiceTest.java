@@ -664,6 +664,51 @@ public class CommitteePTCServiceTest {
     }
 
     @Test
+    public void testDioxideDomainUsesFullCommitteeProof() {
+        CommitteePTCService ptcService = new CommitteePTCService();
+        ptcService.startup(SERVICE_CONF.getBytes());
+        ThirdPartyBlockchainTrustAnchorV1 dioxideTpBta = BeanUtil.copyProperties(
+                tpbta,
+                ThirdPartyBlockchainTrustAnchorV1.class
+        );
+        CrossChainLane dioxideLane = new CrossChainLane(new CrossChainDomain("dioxide2"));
+        dioxideTpBta.setCrossChainLane(dioxideLane);
+
+        CommitteeNodeProof nodeProof = CommitteeNodeProof.builder()
+                .nodeId("node1")
+                .signAlgo(SignAlgoEnum.KECCAK256_WITH_SECP256K1)
+                .signature(SignAlgoEnum.KECCAK256_WITH_SECP256K1.getSigner().sign(
+                        NODE_PTC_PRIVATE_KEY,
+                        ThirdPartyProof.create(
+                                dioxideTpBta.getTpbtaVersion(),
+                                ucp.getSrcMessage().getMessage(),
+                                dioxideLane
+                        ).getEncodedToSign()
+                )).build();
+        when(mockStubNode1.verifyCrossChainMessage(any())).thenReturn(
+                Response.newBuilder()
+                        .setVerifyCrossChainMessageResp(
+                                VerifyCrossChainMessageResponse.newBuilder()
+                                        .setRawNodeProof(ByteString.copyFrom(nodeProof.encode()))
+                                        .setRegulationStatus("approved")
+                        ).build()
+        );
+
+        PTCVerifyCrossChainMessageResult result = ptcService.verifyCrossChainMessageWithResult(
+                dioxideTpBta,
+                currVcs,
+                ucp,
+                "dioxide-ucp"
+        );
+
+        assertNotNull(result.getThirdPartyProof());
+        assertTrue(result.getThirdPartyProof().getRawProof().length > 0);
+        CommitteeEndorseProof proof = CommitteeEndorseProof.decode(result.getThirdPartyProof().getRawProof());
+        assertEquals(1, proof.getSigs().size());
+        assertEquals("node1", proof.getSigs().get(0).getNodeId());
+    }
+
+    @Test
     public void testQueryThirdPartyBlockchainTrustAnchor() {
         CommitteePTCService ptcService = new CommitteePTCService();
         ptcService.startup(SERVICE_CONF.getBytes());

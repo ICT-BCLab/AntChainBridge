@@ -76,6 +76,8 @@ contract TLVUtils {
     function LVWithOffset parseLVItem(array<uint8> rawData, uint32 offset) public const {
         LVWithOffset result;
 
+        __debug.assert(offset + 4u32 <= rawData.length());
+
         // 读取 length (4 bytes, big-endian, then reverse to little-endian)
         uint32 lenBE = (uint32(rawData[offset]) << 24u32) 
                      | (uint32(rawData[offset + 1u32]) << 16u32)
@@ -86,6 +88,8 @@ contract TLVUtils {
                           | ((lenBE & 0x0000FF00u32) << 8u32)
                           | ((lenBE & 0x000000FFu32) << 24u32);
         offset += 4u32;
+
+        __debug.assert(offset + result.lvItem.len <= rawData.length());
 
         // 读取 value (直接从当前 offset 复制 len 个字节)
         for (uint32 i = 0u32; i < result.lvItem.len; i++) {

@@ -55,11 +55,11 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
 
     private static final String PTC_HUB_EVM_RUNTIME_PATH = "/contract/v1/solidity/PtcHub.bin-runtime";
 
-    private static final String GET_MONITOR_VERIFIER_SIGN = "getMonitorVerifier()";
-
     private static final String GET_IMPLEMENTATION_VERSION_SIGN = "getImplementationVersion()";
 
     private static final BigInteger ROOT_RECONCILIATION_IMPLEMENTATION_VERSION = BigInteger.valueOf(2L);
+
+    private static final BigInteger MONITOR_PROOF_ROUTING_IMPLEMENTATION_VERSION = BigInteger.valueOf(3L);
 
     private static final long LEGACY_METHOD_NOT_FOUND_RESULT = 10201L;
 
@@ -219,17 +219,34 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
         logger.info("Set monitor verifier {} with tx {} successfully!", monitorVerifierName, result.getTxId());
     }
 
+    public void setMonitorVerifier(com.alipay.mychain.sdk.domain.account.Identity monitorVerifierIdentity) {
+        EVMParameter parameters = new EVMParameter("setMonitorVerifier(identity)");
+        parameters.addIdentity(monitorVerifierIdentity);
+
+        SendResponseResult result = mychain020Client.callContract(this.getContractAddress(), parameters, true);
+        if (!result.isSuccess()) {
+            throw new CallContractException(getContractAddress(), result.getTxId(), result.getErrorMessage());
+        }
+        logger.info("Set monitor verifier {} with tx {} successfully!",
+                monitorVerifierIdentity.hexStrValue(), result.getTxId());
+    }
+
     /**
      * Upgrade a PTC Hub deployed before monitor support was introduced while
      * preserving the contract identity and its existing trust data.
      *
      * <p>The regulatory PTC Hub appends only {@code monitorVerifierAddr} to the
-     * legacy storage layout. Mychain's update-contract operation replaces the
-     * runtime code at the existing identity, so the BCDNS certificate, PTC
-     * trust roots, verify anchors and TpBTAs remain available.</p>
+     * legacy storage layout. V3 also routes committee monitor proofs without
+     * adding storage. Mychain's update-contract operation replaces the runtime
+     * code at the existing identity, so the BCDNS certificate, PTC trust
+     * roots, verify anchors and TpBTAs remain available.</p>
      */
     public boolean ensureMonitorVerifierSupport() {
-        if (isMonitorVerifierSupported()) {
+        return ensureMonitorProofRoutingSupport();
+    }
+
+    public boolean ensureMonitorProofRoutingSupport() {
+        if (isMonitorProofRoutingSupported()) {
             return true;
         }
         if (StrUtil.isEmpty(this.getContractAddress())) {
@@ -249,7 +266,7 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
             return false;
         }
 
-        boolean supported = isMonitorVerifierSupported();
+        boolean supported = isMonitorProofRoutingSupported();
         if (!supported) {
             logger.error("ptc hub {} still lacks monitor support after upgrade", this.getContractAddress());
         }
@@ -257,38 +274,22 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
     }
 
     public boolean isMonitorVerifierSupported() {
+        return isMonitorProofRoutingSupported();
+    }
+
+    public boolean isMonitorProofRoutingSupported() {
         if (StrUtil.isEmpty(this.getContractAddress())) {
             return false;
         }
-
-        try {
-            TransactionReceipt receipt = mychain020Client.localCallContract(
-                    this.getContractAddress(),
-                    new EVMParameter(GET_MONITOR_VERIFIER_SIGN));
-            if (ObjectUtil.isEmpty(receipt)) {
-                throw new IllegalStateException("empty ptc hub capability probe receipt");
-            }
-            if (receipt.getResult() == LEGACY_METHOD_NOT_FOUND_RESULT) {
-                return false;
-            }
-            if (receipt.getResult() != ErrorCode.SUCCESS.getErrorCode()
-                    || ObjectUtil.isEmpty(receipt.getOutput())) {
-                throw new IllegalStateException(
-                        StrUtil.format(
-                                "unexpected ptc hub capability probe result: {}",
-                                receipt.getResult()));
-            }
-            return true;
-        } catch (Exception e) {
-            throw new IllegalStateException(
-                    StrUtil.format(
-                            "failed to probe monitor support on ptc hub {}",
-                            this.getContractAddress()),
-                    e);
-        }
+        return queryImplementationVersion().compareTo(MONITOR_PROOF_ROUTING_IMPLEMENTATION_VERSION) >= 0;
     }
 
     public String getCommitteeVerifier() {
+        com.alipay.mychain.sdk.domain.account.Identity identity = getCommitteeVerifierIdentity();
+        return identity == null ? null : identity.hexStrValue();
+    }
+
+    public com.alipay.mychain.sdk.domain.account.Identity getCommitteeVerifierIdentity() {
         EVMParameter parameters = new EVMParameter("verifierMap(uint8)");
         parameters.addUint(BigInteger.valueOf(PTCTypeEnum.COMMITTEE.ordinal()));
 
@@ -296,7 +297,20 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
         if (ObjectUtil.isEmpty(receipt.getOutput())) {
             return null;
         }
-        return new EVMOutput(Hex.toHexString(receipt.getOutput())).getIdentity().hexStrValue();
+        com.alipay.mychain.sdk.domain.account.Identity identity =
+                new com.alipay.mychain.sdk.domain.account.Identity(
+                        new EVMOutput(Hex.toHexString(receipt.getOutput())).getIdentity());
+        return identity.hexStrValue().matches("(?i)(?:0x)?0+") ? null : identity;
+    }
+
+    public boolean ensureCommitteeVerifierMonitorSupport() {
+        com.alipay.mychain.sdk.domain.account.Identity verifierIdentity = getCommitteeVerifierIdentity();
+        if (verifierIdentity == null) {
+            logger.error("committee verifier is not configured in PTC hub {}", getContractAddress());
+            return false;
+        }
+        return new CommitteePtcVerifierContractEvm(mychain020Client, logger)
+                .ensureImplementationSupported(verifierIdentity);
     }
 
     @Override
