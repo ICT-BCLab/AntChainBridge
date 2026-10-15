@@ -189,3 +189,5 @@ root_function、protocol_prefix、predecessor.tx_hash，以及按连续 ISN 排�
 
 隔离测试运行 `python -m unittest -v test_replay test_reconcile test_coordinator`；生产环境
 禁止启用 fixture。signed_tx、运行凭据及原始数据库备份均不纳入 Git 或公开日志。
+
+逐笔重播及停止位置见 [REPLAY_20261015.md](REPLAY_20261015.md)。
