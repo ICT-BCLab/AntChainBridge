@@ -24,6 +24,8 @@ import javax.annotation.Resource;
 
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
+import com.alipay.antchain.bridge.commons.core.base.CrossChainMessage;
+import com.alipay.antchain.bridge.relayer.commons.constant.AuthMsgProcessStateEnum;
 import com.alipay.antchain.bridge.relayer.commons.constant.UniformCrosschainPacketStateEnum;
 import com.alipay.antchain.bridge.relayer.commons.exception.AntChainBridgeRelayerException;
 import com.alipay.antchain.bridge.relayer.commons.exception.RelayerErrorCodeEnum;
@@ -37,6 +39,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionCallbackWithoutResult;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
@@ -114,6 +118,10 @@ public class ValidationService {
 
                         try {
                             uniformCrosschainPacketValidator.doProcess(ucpContext);
+                            if (ucpContext.getUcp().getSrcMessage().getType() == CrossChainMessage.CrossChainMessageType.AUTH_MSG
+                                    && crossChainMessageRepository.getAuthMessageState(ucpId) == AuthMsgProcessStateEnum.PROVED) {
+                                wakeAMProcessAfterCommit(ucpContext);
+                            }
                         } catch (AntChainBridgeRelayerException e) {
                             throw e;
                         } catch (Exception e) {
@@ -127,5 +135,20 @@ public class ValidationService {
                     }
                 }
         );
+    }
+
+    private void wakeAMProcessAfterCommit(UniformCrosschainPacketContext context) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    blockchainIdleDCache.setLastAMReceiveTime(context.getProduct(), context.getBlockchainId());
+                } catch (Exception e) {
+                    // The proof is committed. A cache failure must not turn it into a validation retry.
+                    log.warn("failed to wake AM processing after proof commit for ucp {}; idle rescan will recover",
+                            context.getUcpId(), e);
+                }
+            }
+        });
     }
 }
