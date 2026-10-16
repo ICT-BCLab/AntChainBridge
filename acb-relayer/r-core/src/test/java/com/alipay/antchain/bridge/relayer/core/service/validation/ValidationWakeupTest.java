@@ -20,7 +20,7 @@ import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
 
 public class ValidationWakeupTest {
-    private final ValidationService service = new ValidationService();
+    final ValidationService service = new ValidationService();
     private final ICrossChainMessageRepository repository = mock(ICrossChainMessageRepository.class);
     private final UniformCrosschainPacketValidator validator = mock(UniformCrosschainPacketValidator.class);
     private final BlockchainIdleDCache cache = mock(BlockchainIdleDCache.class);

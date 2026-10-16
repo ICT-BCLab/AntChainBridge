@@ -64,6 +64,21 @@ public class BlockchainIdleWakeupTest {
     }
 
     @Test
+    public void proofFinishingAfterTwentySecondsWakesTheActualIdleGateAfterCommit() throws Exception {
+        redis.put(BlockchainIdleDCache.genKey("mychain020", "source-chain", "last_am_receive_time"),
+                String.valueOf(System.currentTimeMillis() - 20000));
+        redis.put(BlockchainIdleDCache.genKey("mychain020", "source-chain", "last_empty_am_pool_time"),
+                String.valueOf(System.currentTimeMillis()));
+        assertFalse(cache.ifAMProcessIdle("mychain020", "source-chain"));
+        assertTrue(cache.ifAMProcessIdle("mychain020", "source-chain"));
+        ValidationWakeupTest validation = new ValidationWakeupTest();
+        validation.setUp();
+        ValidationWakeupTest.inject(validation.service, "blockchainIdleDCache", cache);
+        validation.service.wrapUCPTask("test-ucp").run();
+        assertFalse(cache.ifAMProcessIdle("mychain020", "source-chain"));
+    }
+
+    @Test
     public void allIdleQueuesHaveIndependentBoundedRescans() {
         List<BiFunction<String, String, Boolean>> gates = new ArrayList<>();
         gates.add(cache::ifAMProcessIdle); gates.add(cache::ifUCPProcessIdle);
