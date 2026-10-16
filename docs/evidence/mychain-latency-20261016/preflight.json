@@ -1,0 +1,36 @@
+[
+  {
+    "phase": "PROCESS_START",
+    "epochMs": 1792137001657,
+    "atTokyo": "2026-10-16T16:50:01.657+09:00",
+    "elapsedMs": 6.578421,
+    "mode": "CHECK_ONLY"
+  },
+  {
+    "phase": "SDK_CONNECT_BEGIN",
+    "epochMs": 1792137002595,
+    "atTokyo": "2026-10-16T16:50:02.595+09:00",
+    "elapsedMs": 939.033216
+  },
+  {
+    "phase": "SDK_READY",
+    "epochMs": 1792137003764,
+    "atTokyo": "2026-10-16T16:50:03.764+09:00",
+    "elapsedMs": 2108.109609
+  },
+  {
+    "phase": "SOURCE_CONTRACT_OK",
+    "epochMs": 1792137003770,
+    "atTokyo": "2026-10-16T16:50:03.770+09:00",
+    "elapsedMs": 2114.264426,
+    "sourceIdentity": "2c8363f71d100ad44ff3ef2e8dba3e333a0df426d7200a3b9fb39913f601c3db",
+    "vm": "EVM"
+  },
+  {
+    "phase": "PROCESS_DONE",
+    "epochMs": 1792137003773,
+    "atTokyo": "2026-10-16T16:50:03.773+09:00",
+    "elapsedMs": 2117.602089,
+    "passed": true
+  }
+]

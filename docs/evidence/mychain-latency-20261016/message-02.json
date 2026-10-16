@@ -1,0 +1,87 @@
+{
+  "index": 2,
+  "message": "LATENCY-20261016-165102-16d8a9-02",
+  "startedAt": "2026-10-16T16:51:31.156560+09:00",
+  "events": [
+    {
+      "phase": "PROCESS_START",
+      "epochMs": 1792137091232,
+      "atTokyo": "2026-10-16T16:51:31.232+09:00",
+      "elapsedMs": 13.63412,
+      "mode": "SEND_ONCE"
+    },
+    {
+      "phase": "SDK_CONNECT_BEGIN",
+      "epochMs": 1792137092014,
+      "atTokyo": "2026-10-16T16:51:32.014+09:00",
+      "elapsedMs": 790.424871
+    },
+    {
+      "phase": "SDK_READY",
+      "epochMs": 1792137092986,
+      "atTokyo": "2026-10-16T16:51:32.986+09:00",
+      "elapsedMs": 1762.295172
+    },
+    {
+      "phase": "SOURCE_CONTRACT_OK",
+      "epochMs": 1792137092994,
+      "atTokyo": "2026-10-16T16:51:32.994+09:00",
+      "elapsedMs": 1770.091779,
+      "sourceIdentity": "2c8363f71d100ad44ff3ef2e8dba3e333a0df426d7200a3b9fb39913f601c3db",
+      "vm": "EVM"
+    },
+    {
+      "phase": "SOURCE_CALL_BEGIN",
+      "epochMs": 1792137092997,
+      "atTokyo": "2026-10-16T16:51:32.997+09:00",
+      "elapsedMs": 1773.251541
+    },
+    {
+      "phase": "HASH_GENERATED",
+      "epochMs": 1792137093008,
+      "atTokyo": "2026-10-16T16:51:33.008+09:00",
+      "elapsedMs": 1784.557129,
+      "txHash": "d1ab76aa54f5dbd10ae87159ca03130f9c07497af9bd6a9710bcd606d86173e5"
+    },
+    {
+      "phase": "BROADCAST_BEGIN",
+      "epochMs": 1792137093011,
+      "atTokyo": "2026-10-16T16:51:33.011+09:00",
+      "elapsedMs": 1786.68846
+    },
+    {
+      "phase": "SOURCE_SYNC_RETURN",
+      "epochMs": 1792137093541,
+      "atTokyo": "2026-10-16T16:51:33.541+09:00",
+      "elapsedMs": 2317.492567,
+      "txHash": "d1ab76aa54f5dbd10ae87159ca03130f9c07497af9bd6a9710bcd606d86173e5",
+      "confirmed": true,
+      "success": true,
+      "errorCode": "0"
+    },
+    {
+      "phase": "SOURCE_RECEIPT_VERIFIED",
+      "epochMs": 1792137093545,
+      "atTokyo": "2026-10-16T16:51:33.545+09:00",
+      "elapsedMs": 2321.219418,
+      "blockHeight": "26893410",
+      "result": 0
+    },
+    {
+      "phase": "SOURCE_BLOCK_HEADER",
+      "epochMs": 1792137093552,
+      "atTokyo": "2026-10-16T16:51:33.552+09:00",
+      "elapsedMs": 2327.95061,
+      "blockTimestampRaw": 1792137093035
+    },
+    {
+      "phase": "PROCESS_DONE",
+      "epochMs": 1792137093557,
+      "atTokyo": "2026-10-16T16:51:33.557+09:00",
+      "elapsedMs": 2333.43379,
+      "passed": true
+    }
+  ],
+  "exitCode": 0,
+  "endedAt": "2026-10-16T16:51:34.766715+09:00"
+}

@@ -1,0 +1,877 @@
+{
+  "observedAt": "2026-10-16T16:54:10.382617+09:00",
+  "selectedFiles": 2,
+  "readFileBytes": 68512785,
+  "events": [
+    {
+      "timeTokyo": "2026-10-16T16:51:05.479000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "UCP_STORED",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:05.484000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps",
+      "sourceBlockMetadata": {
+        "height": "26893400",
+        "timestamp": 1792137065302
+      }
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:05.678000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:05.777000+09:00",
+      "thread": "validation-service-3",
+      "event": "PTC_START",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:08.635000+09:00",
+      "thread": "validation-service-3",
+      "event": "PTC_DONE",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:08.636000+09:00",
+      "thread": "validation-service-3",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d/regulation-status",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:08.725000+09:00",
+      "thread": "validation-service-3",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d/regulation-status",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:08.736000+09:00",
+      "thread": "validation-service-3",
+      "event": "VALIDATION_DONE",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:08.901000+09:00",
+      "thread": "process_executor-worker-3",
+      "event": "AM_PEEK",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:08.905000+09:00",
+      "thread": "Process-worker-0",
+      "event": "AM_PROCESS",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "authIds": [
+        3920
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:08.907000+09:00",
+      "thread": "Process-worker-0",
+      "event": "SDP_PARSE",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "authIds": [
+        3920
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:09.044000+09:00",
+      "thread": "Committer-worker-0",
+      "event": "COMMIT_BEGIN",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "sdpIds": [
+        3911
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:09.044000+09:00",
+      "thread": "Committer-worker-0",
+      "event": "COMMIT_CALL",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "sdpIds": [
+        3911
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:09.587000+09:00",
+      "thread": "Committer-worker-0",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d/target-chain-submission",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:09.674000+09:00",
+      "thread": "Committer-worker-0",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d/target-chain-submission",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:16.854000+09:00",
+      "thread": "confirm_executor-worker-2",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d/target-chain-execution",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:16.940000+09:00",
+      "thread": "confirm_executor-worker-2",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d/target-chain-execution",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.139000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "UCP_STORED",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.140000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps",
+      "sourceBlockMetadata": {
+        "height": "26893410",
+        "timestamp": 1792137093035
+      }
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.267000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.406000+09:00",
+      "thread": "validation-service-1",
+      "event": "PTC_START",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:36.692000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "UCP_STORED",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:36.693000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps",
+      "sourceBlockMetadata": {
+        "height": "26893412",
+        "timestamp": 1792137096611
+      }
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:36.818000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.176000+09:00",
+      "thread": "validation-service-1",
+      "event": "PTC_DONE",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.176000+09:00",
+      "thread": "validation-service-1",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e/regulation-status",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.265000+09:00",
+      "thread": "validation-service-1",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e/regulation-status",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.268000+09:00",
+      "thread": "validation-service-1",
+      "event": "VALIDATION_DONE",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.352000+09:00",
+      "thread": "process_executor-worker-1",
+      "event": "AM_PEEK",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.354000+09:00",
+      "thread": "Process-worker-2",
+      "event": "AM_PROCESS",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "authIds": [
+        3921
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.356000+09:00",
+      "thread": "Process-worker-2",
+      "event": "SDP_PARSE",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "authIds": [
+        3921
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.361000+09:00",
+      "thread": "validation-service-1",
+      "event": "PTC_START",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.486000+09:00",
+      "thread": "Committer-worker-1",
+      "event": "COMMIT_BEGIN",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "sdpIds": [
+        3912
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.486000+09:00",
+      "thread": "Committer-worker-1",
+      "event": "COMMIT_CALL",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "sdpIds": [
+        3912
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.718000+09:00",
+      "thread": "Committer-worker-1",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e/target-chain-submission",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.805000+09:00",
+      "thread": "Committer-worker-1",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e/target-chain-submission",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:39.771000+09:00",
+      "thread": "validation-service-1",
+      "event": "PTC_DONE",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:39.771000+09:00",
+      "thread": "validation-service-1",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4/regulation-status",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:39.858000+09:00",
+      "thread": "validation-service-1",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4/regulation-status",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:39.861000+09:00",
+      "thread": "validation-service-1",
+      "event": "VALIDATION_DONE",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:39.967000+09:00",
+      "thread": "process_executor-worker-0",
+      "event": "AM_PEEK",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:39.986000+09:00",
+      "thread": "Process-worker-0",
+      "event": "AM_PROCESS",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "authIds": [
+        3922
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:39.987000+09:00",
+      "thread": "Process-worker-0",
+      "event": "SDP_PARSE",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "authIds": [
+        3922
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.124000+09:00",
+      "thread": "Committer-worker-2",
+      "event": "COMMIT_BEGIN",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "sdpIds": [
+        3913
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.124000+09:00",
+      "thread": "Committer-worker-2",
+      "event": "COMMIT_CALL",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "sdpIds": [
+        3913
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.314000+09:00",
+      "thread": "Committer-worker-2",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4/target-chain-submission",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.401000+09:00",
+      "thread": "Committer-worker-2",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4/target-chain-submission",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.482000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "UCP_STORED",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.482000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps",
+      "sourceBlockMetadata": {
+        "height": "26893414",
+        "timestamp": 1792137100284
+      }
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.606000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.739000+09:00",
+      "thread": "validation-service-2",
+      "event": "PTC_START",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.049000+09:00",
+      "thread": "validation-service-2",
+      "event": "PTC_DONE",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.049000+09:00",
+      "thread": "validation-service-2",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1/regulation-status",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.140000+09:00",
+      "thread": "validation-service-2",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1/regulation-status",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.143000+09:00",
+      "thread": "validation-service-2",
+      "event": "VALIDATION_DONE",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.221000+09:00",
+      "thread": "process_executor-worker-2",
+      "event": "AM_PEEK",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.223000+09:00",
+      "thread": "Process-worker-2",
+      "event": "AM_PROCESS",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "authIds": [
+        3923
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.225000+09:00",
+      "thread": "Process-worker-2",
+      "event": "SDP_PARSE",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "authIds": [
+        3923
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.404000+09:00",
+      "thread": "Committer-worker-7",
+      "event": "COMMIT_BEGIN",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "sdpIds": [
+        3914
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.405000+09:00",
+      "thread": "Committer-worker-7",
+      "event": "COMMIT_CALL",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "sdpIds": [
+        3914
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.562000+09:00",
+      "thread": "Committer-worker-7",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1/target-chain-submission",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.648000+09:00",
+      "thread": "Committer-worker-7",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1/target-chain-submission",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.178000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "UCP_STORED",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.178000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps",
+      "sourceBlockMetadata": {
+        "height": "26893416",
+        "timestamp": 1792137104044
+      }
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.303000+09:00",
+      "thread": "anchor_executor-worker-3",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.445000+09:00",
+      "thread": "validation-service-2",
+      "event": "PTC_START",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:46.208000+09:00",
+      "thread": "confirm_executor-worker-0",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e/target-chain-execution",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:46.294000+09:00",
+      "thread": "confirm_executor-worker-0",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e/target-chain-execution",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.095000+09:00",
+      "thread": "validation-service-2",
+      "event": "PTC_DONE",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.095000+09:00",
+      "thread": "validation-service-2",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773/regulation-status",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.132000+09:00",
+      "thread": "confirm_executor-worker-2",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4/target-chain-execution",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.186000+09:00",
+      "thread": "validation-service-2",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773/regulation-status",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.189000+09:00",
+      "thread": "validation-service-2",
+      "event": "VALIDATION_DONE",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.218000+09:00",
+      "thread": "confirm_executor-worker-2",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4/target-chain-execution",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.318000+09:00",
+      "thread": "process_executor-worker-1",
+      "event": "AM_PEEK",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.320000+09:00",
+      "thread": "Process-worker-1",
+      "event": "AM_PROCESS",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "authIds": [
+        3924
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.321000+09:00",
+      "thread": "Process-worker-1",
+      "event": "SDP_PARSE",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "authIds": [
+        3924
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.456000+09:00",
+      "thread": "Committer-worker-0",
+      "event": "COMMIT_BEGIN",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "sdpIds": [
+        3915
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.456000+09:00",
+      "thread": "Committer-worker-0",
+      "event": "COMMIT_CALL",
+      "ucpIds": [],
+      "file": "application.log.2026-10-16.134",
+      "sdpIds": [
+        3915
+      ]
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.615000+09:00",
+      "thread": "Committer-worker-0",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773/target-chain-submission",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.721000+09:00",
+      "thread": "Committer-worker-0",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773/target-chain-submission",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:49.314000+09:00",
+      "thread": "confirm_executor-worker-3",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1/target-chain-execution",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:49.432000+09:00",
+      "thread": "confirm_executor-worker-3",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1/target-chain-execution",
+      "httpStatus": 200
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:57+09:00",
+      "thread": "confirm_executor-worker-1",
+      "event": "REPORT_REQUEST",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773/target-chain-execution",
+      "sourceBlockMetadata": {}
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:57.086000+09:00",
+      "thread": "confirm_executor-worker-1",
+      "event": "REPORT_OK",
+      "ucpIds": [
+        "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773"
+      ],
+      "file": "application.log.2026-10-16.134",
+      "path": "/api/cc-relayer/ucps/70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773/target-chain-execution",
+      "httpStatus": 200
+    }
+  ]
+}

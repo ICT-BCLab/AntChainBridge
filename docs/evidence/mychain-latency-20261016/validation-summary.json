@@ -1,0 +1,10 @@
+{
+  "java8AllCliToolsCompiled": true,
+  "receiptRegressionCases": 9,
+  "receiptRegressionPassed": true,
+  "duplicateAttemptGuardPassed": true,
+  "readonlyPreflightPassed": true,
+  "fiveNewMessagesFullNativeSuccess": true,
+  "offlineStatisticsReproduced": true,
+  "evidenceFieldsCheckedNoSecrets": true
+}

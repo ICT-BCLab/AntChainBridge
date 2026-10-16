@@ -1,0 +1,46 @@
+{
+  "index": 5,
+  "message": "LATENCY-20261016-165102-16d8a9-05",
+  "sourceHash": "99b8749fc609f9c3a0f4e903f40da2869d01dae480ff15ca97d6fea3ec34fa0d",
+  "firstDbObservedEpochMs": 1792137105190,
+  "database": {
+    "ucp_id": "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773",
+    "process_state": "PROVED",
+    "ledger_time": "2026-10-16T16:51:47.188000+09:00",
+    "gmt_create": "2026-10-16T16:51:44+09:00",
+    "gmt_modified": "2026-10-16T16:51:47+09:00",
+    "containsTestMessage": false,
+    "authMessages": [
+      {
+        "id": 3924,
+        "process_state": "am_processed"
+      }
+    ],
+    "sdpMessages": [
+      {
+        "id": 3915,
+        "process_state": "tx_success",
+        "tx_hash": "h4javm8fkdws6g1c52cjshrqf8rtea8ztw28bavqtd63arfn9dhg",
+        "tx_success": 1
+      }
+    ]
+  },
+  "firstPlatformObservedEpochMs": 1792137105270,
+  "platform": {
+    "stageTimes": {
+      "RELAYER_RECEIVED": "2026-10-16T07:51:44.29Z",
+      "REGULATION_FINISHED": "2026-10-16T07:51:47.169Z",
+      "TARGET_SUBMITTED": "2026-10-16T07:51:47.691Z",
+      "TARGET_EXECUTED": "2026-10-16T07:51:57.074Z"
+    },
+    "status": "approved",
+    "currentStage": null
+  },
+  "platformLastQuery": {
+    "beginEpochMs": 1792137117551,
+    "endEpochMs": 1792137117633,
+    "httpDate": "Fri, 16 Oct 2026 07:51:57 GMT",
+    "httpStatus": 200
+  },
+  "lastObservedAt": "2026-10-16T16:51:57.633677+09:00"
+}

@@ -67,3 +67,8 @@ The first repair deployment uses the reviewed Mychain020 JAR already running on 
 server, copied into the standalone CLI release. No core services need to restart. Preserve the
 old CLI sources/classes/JAR in a root-only backup before replacing the active helper. Restore
 only those files to roll back; do not replay historical attempts or alter chain state.
+
+
+## 2026-10-16 分段测时
+
+MychainLatencySender以原SDK同步路径发送全新测试消息，在request.complete后的hash、源回执及区块头时间点输出白名单元数据，使用原子持久attempt防止重复发送。现场5笔全成功，详见[实链测时报告](../../../docs/MYCHAIN_LATENCY_ACCEPTANCE_20261016_ZH.md)。measure_latency.py仅用于已配置的私有测试环境，summarise_latency.py可离线重建分段统计；本轮既有attempt不可删除或复用。

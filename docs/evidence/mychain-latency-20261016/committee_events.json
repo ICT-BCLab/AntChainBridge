@@ -1,0 +1,1108 @@
+{
+  "events": [
+    {
+      "timeTokyo": "2026-10-16T16:51:05.790000+09:00",
+      "epoch": 1792137065.79,
+      "thread": "grpc-default-executor-691",
+      "role": "committee-node1",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.407000+09:00",
+      "epoch": 1792137093.407,
+      "thread": "grpc-default-executor-691",
+      "role": "committee-node1",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.363000+09:00",
+      "epoch": 1792137097.363,
+      "thread": "grpc-default-executor-691",
+      "role": "committee-node1",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.740000+09:00",
+      "epoch": 1792137100.74,
+      "thread": "grpc-default-executor-691",
+      "role": "committee-node1",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.446000+09:00",
+      "epoch": 1792137104.446,
+      "thread": "grpc-default-executor-691",
+      "role": "committee-node1",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:05.789000+09:00",
+      "epoch": 1792137065.789,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.407000+09:00",
+      "epoch": 1792137093.407,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.362000+09:00",
+      "epoch": 1792137097.362,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.740000+09:00",
+      "epoch": 1792137100.74,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.446000+09:00",
+      "epoch": 1792137104.446,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:02.011000+09:00",
+      "epoch": 1792137062.011,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:04.883000+09:00",
+      "epoch": 1792137064.883,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:05.442000+09:00",
+      "epoch": 1792137065.442,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:05.792000+09:00",
+      "epoch": 1792137065.792,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:08.414000+09:00",
+      "epoch": 1792137068.414,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:11.559000+09:00",
+      "epoch": 1792137071.559,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:14.372000+09:00",
+      "epoch": 1792137074.372,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:17.377000+09:00",
+      "epoch": 1792137077.377,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:20.474000+09:00",
+      "epoch": 1792137080.474,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:23.517000+09:00",
+      "epoch": 1792137083.517,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:26.393000+09:00",
+      "epoch": 1792137086.393,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:29.398000+09:00",
+      "epoch": 1792137089.398,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:32.503000+09:00",
+      "epoch": 1792137092.503,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.115000+09:00",
+      "epoch": 1792137093.115,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.411000+09:00",
+      "epoch": 1792137093.411,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:36.391000+09:00",
+      "epoch": 1792137096.391,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:36.667000+09:00",
+      "epoch": 1792137096.667,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.366000+09:00",
+      "epoch": 1792137097.366,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:39.705000+09:00",
+      "epoch": 1792137099.705,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.459000+09:00",
+      "epoch": 1792137100.459,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.743000+09:00",
+      "epoch": 1792137100.743,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.400000+09:00",
+      "epoch": 1792137103.4,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.154000+09:00",
+      "epoch": 1792137104.154,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.449000+09:00",
+      "epoch": 1792137104.449,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.223000+09:00",
+      "epoch": 1792137107.223,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:50.160000+09:00",
+      "epoch": 1792137110.16,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:53.188000+09:00",
+      "epoch": 1792137113.188,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:53.726000+09:00",
+      "epoch": 1792137113.726,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:53.743000+09:00",
+      "epoch": 1792137113.743,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:53.839000+09:00",
+      "epoch": 1792137113.839,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:53.936000+09:00",
+      "epoch": 1792137113.936,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.031000+09:00",
+      "epoch": 1792137114.031,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.053000+09:00",
+      "epoch": 1792137114.053,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.158000+09:00",
+      "epoch": 1792137114.158,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.249000+09:00",
+      "epoch": 1792137114.249,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.344000+09:00",
+      "epoch": 1792137114.344,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.403000+09:00",
+      "epoch": 1792137114.403,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.468000+09:00",
+      "epoch": 1792137114.468,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.566000+09:00",
+      "epoch": 1792137114.566,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.632000+09:00",
+      "epoch": 1792137114.632,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.720000+09:00",
+      "epoch": 1792137114.72,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.783000+09:00",
+      "epoch": 1792137114.783,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.877000+09:00",
+      "epoch": 1792137114.877,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:54.941000+09:00",
+      "epoch": 1792137114.941,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.030000+09:00",
+      "epoch": 1792137115.03,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.074000+09:00",
+      "epoch": 1792137115.074,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.166000+09:00",
+      "epoch": 1792137115.166,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.259000+09:00",
+      "epoch": 1792137115.259,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.341000+09:00",
+      "epoch": 1792137115.341,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.377000+09:00",
+      "epoch": 1792137115.377,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.479000+09:00",
+      "epoch": 1792137115.479,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.560000+09:00",
+      "epoch": 1792137115.56,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.660000+09:00",
+      "epoch": 1792137115.66,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.692000+09:00",
+      "epoch": 1792137115.692,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.772000+09:00",
+      "epoch": 1792137115.772,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.868000+09:00",
+      "epoch": 1792137115.868,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.964000+09:00",
+      "epoch": 1792137115.964,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:55.996000+09:00",
+      "epoch": 1792137115.996,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:56.191000+09:00",
+      "epoch": 1792137116.191,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:56.275000+09:00",
+      "epoch": 1792137116.275,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:56.353000+09:00",
+      "epoch": 1792137116.353,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:56.526000+09:00",
+      "epoch": 1792137116.526,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:56.601000+09:00",
+      "epoch": 1792137116.601,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:56.678000+09:00",
+      "epoch": 1792137116.678,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:56.856000+09:00",
+      "epoch": 1792137116.856,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:56.938000+09:00",
+      "epoch": 1792137116.938,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:56.999000+09:00",
+      "epoch": 1792137116.999,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:57.188000+09:00",
+      "epoch": 1792137117.188,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:57.262000+09:00",
+      "epoch": 1792137117.262,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:57.345000+09:00",
+      "epoch": 1792137117.345,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:57.522000+09:00",
+      "epoch": 1792137117.522,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:57.595000+09:00",
+      "epoch": 1792137117.595,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:57.676000+09:00",
+      "epoch": 1792137117.676,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:57.838000+09:00",
+      "epoch": 1792137117.838,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:57.915000+09:00",
+      "epoch": 1792137117.915,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:58.006000+09:00",
+      "epoch": 1792137118.006,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:58.186000+09:00",
+      "epoch": 1792137118.186,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:58.233000+09:00",
+      "epoch": 1792137118.233,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:58.322000+09:00",
+      "epoch": 1792137118.322,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:58.505000+09:00",
+      "epoch": 1792137118.505,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:58.583000+09:00",
+      "epoch": 1792137118.583,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:58.638000+09:00",
+      "epoch": 1792137118.638,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:58.837000+09:00",
+      "epoch": 1792137118.837,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:58.906000+09:00",
+      "epoch": 1792137118.906,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:59.003000+09:00",
+      "epoch": 1792137119.003,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:59.174000+09:00",
+      "epoch": 1792137119.174,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:59.224000+09:00",
+      "epoch": 1792137119.224,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:59.321000+09:00",
+      "epoch": 1792137119.321,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:59.529000+09:00",
+      "epoch": 1792137119.529,
+      "thread": "grpc-default-executor-473",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:59.556000+09:00",
+      "epoch": 1792137119.556,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:59.633000+09:00",
+      "epoch": 1792137119.633,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:59.832000+09:00",
+      "epoch": 1792137119.832,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:59.926000+09:00",
+      "epoch": 1792137119.926,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:52:00.006000+09:00",
+      "epoch": 1792137120.006,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:52:00.147000+09:00",
+      "epoch": 1792137120.147,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:52:00.248000+09:00",
+      "epoch": 1792137120.248,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:52:00.332000+09:00",
+      "epoch": 1792137120.332,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth05"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:52:00.520000+09:00",
+      "epoch": 1792137120.52,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth04"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:52:00.567000+09:00",
+      "epoch": 1792137120.567,
+      "thread": "grpc-default-executor-471",
+      "role": "committee-node2",
+      "event": "CONSENSUS_STATE_MISSING",
+      "domain": "eth10"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:05.786000+09:00",
+      "epoch": 1792137065.786,
+      "thread": "grpc-default-executor-671",
+      "role": "committee-node3",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.407000+09:00",
+      "epoch": 1792137093.407,
+      "thread": "grpc-default-executor-671",
+      "role": "committee-node3",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.362000+09:00",
+      "epoch": 1792137097.362,
+      "thread": "grpc-default-executor-671",
+      "role": "committee-node3",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.740000+09:00",
+      "epoch": 1792137100.74,
+      "thread": "grpc-default-executor-671",
+      "role": "committee-node3",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.446000+09:00",
+      "epoch": 1792137104.446,
+      "thread": "grpc-default-executor-671",
+      "role": "committee-node3",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:05.786000+09:00",
+      "epoch": 1792137065.786,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:05.786000+09:00",
+      "epoch": 1792137065.786,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_REQUIRED"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:05.788000+09:00",
+      "epoch": 1792137065.788,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_CALL",
+      "phase": "begin",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:08.630000+09:00",
+      "epoch": 1792137068.63,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_CALL",
+      "phase": "success",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.407000+09:00",
+      "epoch": 1792137093.407,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.407000+09:00",
+      "epoch": 1792137093.407,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_REQUIRED"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:33.409000+09:00",
+      "epoch": 1792137093.409,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_CALL",
+      "phase": "begin",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.174000+09:00",
+      "epoch": 1792137097.174,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_CALL",
+      "phase": "success",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.362000+09:00",
+      "epoch": 1792137097.362,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.362000+09:00",
+      "epoch": 1792137097.362,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_REQUIRED"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:37.365000+09:00",
+      "epoch": 1792137097.365,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_CALL",
+      "phase": "begin",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:39.765000+09:00",
+      "epoch": 1792137099.765,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_CALL",
+      "phase": "success",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.740000+09:00",
+      "epoch": 1792137100.74,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.740000+09:00",
+      "epoch": 1792137100.74,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_REQUIRED"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:40.742000+09:00",
+      "epoch": 1792137100.742,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_CALL",
+      "phase": "begin",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:43.047000+09:00",
+      "epoch": 1792137103.047,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_CALL",
+      "phase": "success",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.446000+09:00",
+      "epoch": 1792137104.446,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "NODE_VERIFY_START",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.446000+09:00",
+      "epoch": 1792137104.446,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_REQUIRED"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:44.448000+09:00",
+      "epoch": 1792137104.448,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_CALL",
+      "phase": "begin",
+      "domain": "my02"
+    },
+    {
+      "timeTokyo": "2026-10-16T16:51:47.094000+09:00",
+      "epoch": 1792137107.094,
+      "thread": "grpc-default-executor-725",
+      "role": "monitor-node",
+      "event": "MONITOR_CALL",
+      "phase": "success",
+      "domain": "my02"
+    }
+  ],
+  "scannedFiles": [
+    {
+      "role": "committee-node1",
+      "file": "application.log",
+      "bytes": 9964636
+    },
+    {
+      "role": "committee-node2",
+      "file": "application.log",
+      "bytes": 9964636
+    },
+    {
+      "role": "committee-node2",
+      "file": "error.log",
+      "bytes": 12356484
+    },
+    {
+      "role": "committee-node3",
+      "file": "application.log",
+      "bytes": 9964895
+    },
+    {
+      "role": "monitor-node",
+      "file": "application.log",
+      "bytes": 9989370
+    }
+  ]
+}

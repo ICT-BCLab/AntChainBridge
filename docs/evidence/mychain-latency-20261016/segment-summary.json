@@ -1,0 +1,204 @@
+{
+  "rows": [
+    {
+      "index": 1,
+      "message": "LATENCY-20261016-165102-16d8a9-01",
+      "sourceHash": "876eab9716c53cfe0eb87a8bd21a0ea22152212786f719c3dd41d4012f5a87e9",
+      "ucpId": "6db7b3138496f695ed4f2311b12f2a7e163f4e8ff3dda1500e3068c8cccdc62d",
+      "targetHash": "vf26epnrcer3pqfx551bdv111jfv6vevx3xe3rsns000c3pt9szg",
+      "hashGeneratedAt": "2026-10-16T16:51:04.961+09:00",
+      "platformReceivedAt": "2026-10-16T07:51:05.65Z",
+      "platformExecutedAt": "2026-10-16T07:51:16.928Z",
+      "seconds": {
+        "sdkPreparationToHash": 1.772,
+        "hashToSourceBlock": 0.341,
+        "hashToSyncReturn": 0.551,
+        "sourceBlockToRelayerStored": 0.177,
+        "relayerStoredToReportBegin": 0.005,
+        "hashToPlatformReceived": 0.689,
+        "syncReturnToPlatformReceived": 0.138,
+        "platformRegulation": 3.062,
+        "externalRegulatoryRpc": 2.842,
+        "validationLogToAmStart": 0.169,
+        "regulationToTargetSubmitted": 0.949,
+        "targetSubmittedToExecutedReport": 7.267,
+        "hashToExecutedReport": 11.967
+      }
+    },
+    {
+      "index": 2,
+      "message": "LATENCY-20261016-165102-16d8a9-02",
+      "sourceHash": "d1ab76aa54f5dbd10ae87159ca03130f9c07497af9bd6a9710bcd606d86173e5",
+      "ucpId": "e278343daac5d7340cdbbd25d02acbe42fe6b70504a4f003cf3f32fc13b7d99e",
+      "targetHash": "16569dcsj4pk0bd02a0hkgs34jpz1q5x0acgegkbs9c8mk3kpmr0",
+      "hashGeneratedAt": "2026-10-16T16:51:33.008+09:00",
+      "platformReceivedAt": "2026-10-16T07:51:33.254Z",
+      "platformExecutedAt": "2026-10-16T07:51:46.283Z",
+      "seconds": {
+        "sdkPreparationToHash": 1.776,
+        "hashToSourceBlock": 0.027,
+        "hashToSyncReturn": 0.533,
+        "sourceBlockToRelayerStored": 0.104,
+        "relayerStoredToReportBegin": 0.001,
+        "hashToPlatformReceived": 0.246,
+        "syncReturnToPlatformReceived": -0.287,
+        "platformRegulation": 3.999,
+        "externalRegulatoryRpc": 3.765,
+        "validationLogToAmStart": 0.086,
+        "regulationToTargetSubmitted": 0.54,
+        "targetSubmittedToExecutedReport": 8.49,
+        "hashToExecutedReport": 13.275
+      }
+    },
+    {
+      "index": 3,
+      "message": "LATENCY-20261016-165102-16d8a9-03",
+      "sourceHash": "639b381381cc4675a33ca21addd2b1f7a102a60f1cd1f54ee925a113fd6805b0",
+      "ucpId": "076d152e4363f1deb0472ac21179f3df523778650d6b99b7d2ad3403b15671f4",
+      "targetHash": "crpa5ydqxtr1s372chpf0rywbhmska4ga7gzz6feygeyaw4ga7sg",
+      "hashGeneratedAt": "2026-10-16T16:51:36.590+09:00",
+      "platformReceivedAt": "2026-10-16T07:51:36.805Z",
+      "platformExecutedAt": "2026-10-16T07:51:47.206Z",
+      "seconds": {
+        "sdkPreparationToHash": 1.744,
+        "hashToSourceBlock": 0.021,
+        "hashToSyncReturn": 0.529,
+        "sourceBlockToRelayerStored": 0.081,
+        "relayerStoredToReportBegin": 0.001,
+        "hashToPlatformReceived": 0.215,
+        "syncReturnToPlatformReceived": -0.314,
+        "platformRegulation": 3.04,
+        "externalRegulatoryRpc": 2.4,
+        "validationLogToAmStart": 0.125,
+        "regulationToTargetSubmitted": 0.544,
+        "targetSubmittedToExecutedReport": 6.817,
+        "hashToExecutedReport": 10.616
+      }
+    },
+    {
+      "index": 4,
+      "message": "LATENCY-20261016-165102-16d8a9-04",
+      "sourceHash": "992ce0c3fb24d80ef0b619ab3885ae25f3cbadcffe74b8b020162405b8f38f55",
+      "ucpId": "354c9f970ca4bd8a7628f76e284f55eab6eba84839184245fb56baa0c9896bc1",
+      "targetHash": "49y2vr45b1cqfa3zmjf2e39z7h99sp0fz0ek9xynx0h3nkz09kk0",
+      "hashGeneratedAt": "2026-10-16T16:51:40.258+09:00",
+      "platformReceivedAt": "2026-10-16T07:51:40.594Z",
+      "platformExecutedAt": "2026-10-16T07:51:49.389Z",
+      "seconds": {
+        "sdkPreparationToHash": 1.727,
+        "hashToSourceBlock": 0.026,
+        "hashToSyncReturn": 0.536,
+        "sourceBlockToRelayerStored": 0.198,
+        "relayerStoredToReportBegin": 0.0,
+        "hashToPlatformReceived": 0.336,
+        "syncReturnToPlatformReceived": -0.2,
+        "platformRegulation": 2.529,
+        "externalRegulatoryRpc": 2.305,
+        "validationLogToAmStart": 0.08,
+        "regulationToTargetSubmitted": 0.514,
+        "targetSubmittedToExecutedReport": 5.752,
+        "hashToExecutedReport": 9.131
+      }
+    },
+    {
+      "index": 5,
+      "message": "LATENCY-20261016-165102-16d8a9-05",
+      "sourceHash": "99b8749fc609f9c3a0f4e903f40da2869d01dae480ff15ca97d6fea3ec34fa0d",
+      "ucpId": "70a561b17d594cedb3f8b74fea1a881d12007257d45e5ca49cb37055557ec773",
+      "targetHash": "h4javm8fkdws6g1c52cjshrqf8rtea8ztw28bavqtd63arfn9dhg",
+      "hashGeneratedAt": "2026-10-16T16:51:44.013+09:00",
+      "platformReceivedAt": "2026-10-16T07:51:44.29Z",
+      "platformExecutedAt": "2026-10-16T07:51:57.074Z",
+      "seconds": {
+        "sdkPreparationToHash": 1.809,
+        "hashToSourceBlock": 0.031,
+        "hashToSyncReturn": 0.538,
+        "sourceBlockToRelayerStored": 0.134,
+        "relayerStoredToReportBegin": 0.0,
+        "hashToPlatformReceived": 0.277,
+        "syncReturnToPlatformReceived": -0.261,
+        "platformRegulation": 2.879,
+        "externalRegulatoryRpc": 2.646,
+        "validationLogToAmStart": 0.131,
+        "regulationToTargetSubmitted": 0.522,
+        "targetSubmittedToExecutedReport": 9.383,
+        "hashToExecutedReport": 13.061
+      }
+    }
+  ],
+  "statisticsSeconds": {
+    "sdkPreparationToHash": {
+      "min": 1.727,
+      "median": 1.772,
+      "max": 1.809
+    },
+    "hashToSourceBlock": {
+      "min": 0.021,
+      "median": 0.027,
+      "max": 0.341
+    },
+    "hashToSyncReturn": {
+      "min": 0.529,
+      "median": 0.536,
+      "max": 0.551
+    },
+    "sourceBlockToRelayerStored": {
+      "min": 0.081,
+      "median": 0.134,
+      "max": 0.198
+    },
+    "relayerStoredToReportBegin": {
+      "min": 0.0,
+      "median": 0.001,
+      "max": 0.005
+    },
+    "hashToPlatformReceived": {
+      "min": 0.215,
+      "median": 0.277,
+      "max": 0.689
+    },
+    "syncReturnToPlatformReceived": {
+      "min": -0.314,
+      "median": -0.261,
+      "max": 0.138
+    },
+    "platformRegulation": {
+      "min": 2.529,
+      "median": 3.04,
+      "max": 3.999
+    },
+    "externalRegulatoryRpc": {
+      "min": 2.305,
+      "median": 2.646,
+      "max": 3.765
+    },
+    "validationLogToAmStart": {
+      "min": 0.08,
+      "median": 0.125,
+      "max": 0.169
+    },
+    "regulationToTargetSubmitted": {
+      "min": 0.514,
+      "median": 0.54,
+      "max": 0.949
+    },
+    "targetSubmittedToExecutedReport": {
+      "min": 5.752,
+      "median": 7.267,
+      "max": 9.383
+    },
+    "hashToExecutedReport": {
+      "min": 9.131,
+      "median": 11.967,
+      "max": 13.275
+    }
+  },
+  "postCount": 20,
+  "postRttMs": {
+    "min": 86.0,
+    "median": 89.0,
+    "max": 194.0
+  },
+  "platformStageTimesAllWithinClientRoundTrip": true,
+  "productionSlowRegulationOverTenSecondsCovered": false
+}

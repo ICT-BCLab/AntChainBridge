@@ -1,0 +1,17 @@
+{
+  "at": "2026-10-16T16:51:17.848313+09:00",
+  "indexes": [
+    1
+  ],
+  "completed": [
+    1
+  ],
+  "sourceFailure": false,
+  "applicationMatchCounts": {
+    "LATENCY-20261016-165102-16d8a9-01": 1,
+    "LATENCY-20261016-165102-16d8a9-02": 0,
+    "LATENCY-20261016-165102-16d8a9-03": 0,
+    "LATENCY-20261016-165102-16d8a9-04": 0,
+    "LATENCY-20261016-165102-16d8a9-05": 0
+  }
+}
