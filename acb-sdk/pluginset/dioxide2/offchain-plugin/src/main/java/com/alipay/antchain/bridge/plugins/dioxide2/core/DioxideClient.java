@@ -359,8 +359,8 @@ public class DioxideClient {
                                 CrossChainMessage.CrossChainMessageType.AUTH_MSG,
                                 dtx.getHeight(),
                                 getConsensusHeaderByHeight(height).getLongValue("Timestamp"),
-                                // Store the original Dioxide block hash reversibly: relayer will hex-encode these UTF-8 bytes.
-                                block.getHash().getBytes(StandardCharsets.UTF_8),
+                                // Use the same original 32-byte digest as readConsensusState.
+                                com.alipay.antchain.bridge.plugins.dioxide2.utils.DioxideBlockHash.decode(block.getHash()),
                                 deserializedSendMsgEventArgs(dtx.getInputAsString()),
                                 // todo: put ledger data, for SPV or other attestations
                                 // this time we need no verify. it's ok to set it with empty bytes

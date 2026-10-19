@@ -483,8 +483,8 @@ public class DioxideBBCService extends AbstractBBCService {
 
         return new ConsensusState(
                 BigInteger.valueOf(block.getHeight() == null ? height.longValueExact() : block.getHeight()),
-                block.getHash().getBytes(StandardCharsets.UTF_8),
-                StrUtil.nullToEmpty(block.getPrev()).getBytes(StandardCharsets.UTF_8),
+                com.alipay.antchain.bridge.plugins.dioxide2.utils.DioxideBlockHash.decode(block.getHash()),
+                StrUtil.isEmpty(block.getPrev()) ? new byte[0] : com.alipay.antchain.bridge.plugins.dioxide2.utils.DioxideBlockHash.decode(block.getPrev()),
                 timestamp,
                 stateData,
                 new byte[0],
