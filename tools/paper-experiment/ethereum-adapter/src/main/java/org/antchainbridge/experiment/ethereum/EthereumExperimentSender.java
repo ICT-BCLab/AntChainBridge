@@ -1,82 +1,74 @@
 package org.antchainbridge.experiment.ethereum;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-
+import java.nio.file.*;
+import java.math.BigInteger;
+import java.util.*;
 import com.alipay.antchain.bridge.commons.bbc.DefaultBBCContext;
 import com.alipay.antchain.bridge.plugins.ethereum3.EthereumBBCService;
 import com.alipay.antchain.bridge.plugins.ethereum3.abi.AppContract;
 import com.alipay.antchain.bridge.plugins.ethereum3.helper.AcbFastRawTransactionManager;
-import org.antchainbridge.experiment.ExperimentConfig;
-import org.antchainbridge.experiment.OpenLoopWorkload;
-import org.antchainbridge.experiment.TransactionSender;
-import org.web3j.protocol.core.methods.response.TransactionReceipt;
+import org.antchainbridge.experiment.*;
+import org.web3j.protocol.Web3j;
+import org.web3j.protocol.core.*;
+import org.web3j.protocol.core.methods.response.*;
 import org.web3j.tx.gas.DefaultGasProvider;
 
-public final class EthereumExperimentSender implements TransactionSender {
-
+/** The reader methods only issue eth_get* queries. */
+public final class EthereumExperimentSender implements TransactionSender,ChainReader {
     private final EthereumBBCService service;
+    private final Web3j web3j;
     private final AppContract app;
-    private final String targetDomain;
-    private final byte[] targetApp;
-
-    private EthereumExperimentSender(ExperimentConfig config) throws Exception {
-        DefaultBBCContext context = new DefaultBBCContext();
-        context.setConfForBlockchainClient(Files.readAllBytes(Path.of(config.required("chain.config"))));
-        this.service = new EthereumBBCService();
-        service.startup(context);
-        if (!(service.getAcbEthClient().getRawTransactionManager() instanceof AcbFastRawTransactionManager)) {
-            service.shutdown();
-            throw new IllegalArgumentException(
-                    "Ethereum experiment config must set ethNoncePolicy to FAST for concurrent submissions"
-            );
-        }
-        this.app = AppContract.load(
-                config.required("source.app"),
-                service.getAcbEthClient().getWeb3j(),
-                service.getAcbEthClient().getRawTransactionManager(),
-                new DefaultGasProvider()
-        );
-        this.targetDomain = config.required("target.domain");
-        this.targetApp = parseCrossChainId(config.required("target.app"));
+    private final String targetDomain,address;
+    private byte[] targetApp;
+    public EthereumExperimentSender(ExperimentConfig c,boolean sending)throws Exception {
+        service=new EthereumBBCService();DefaultBBCContext ctx=new DefaultBBCContext();
+        ctx.setConfForBlockchainClient(Files.readAllBytes(Path.of(c.required("chain.config"))));
+        try {
+            service.startup(ctx);web3j=service.getAcbEthClient().getWeb3j();
+            if(sending && !(service.getAcbEthClient().getRawTransactionManager() instanceof AcbFastRawTransactionManager))
+                throw new IllegalArgumentException("ethNoncePolicy must be FAST");
+            address=Identities.evmAddress(c.required("source.app"));
+            app=AppContract.load(address,web3j,service.getAcbEthClient().getRawTransactionManager(),new DefaultGasProvider());
+            targetDomain=c.required("target.domain");
+            var code=web3j.ethGetCode(address,DefaultBlockParameterName.LATEST).send();
+            if(code.hasError() || code.getCode()==null || code.getCode().equals("0x"))throw new IllegalArgumentException("application code missing");
+        } catch(Exception e){service.shutdown();throw e;}
     }
-
-    @Override
-    public String send(byte[] payload) throws Exception {
-        TransactionReceipt receipt = app.sendUnorderedMessage(targetDomain, targetApp, payload).send();
-        if (receipt == null || !receipt.isStatusOK()) {
-            throw new IllegalStateException(
-                    "ethereum source transaction failed: " + (receipt == null ? "no receipt" : receipt.getStatus())
-            );
-        }
-        return receipt.getTransactionHash();
+    public String appIdentity(){return Identities.canonical(address);}
+    public String eventTopic(String signature){return org.web3j.crypto.Hash.sha3String(signature);}
+    public void preflight(byte[] bytes,String target){targetApp=Identities.bytes(target);}
+    public String send(byte[] payload)throws Exception {
+        if(targetApp==null)throw new IllegalStateException("preflight required");
+        TransactionReceipt r=app.sendUnorderedMessage(targetDomain,targetApp,payload).send();
+        if(r==null)throw new SubmissionFailure("",false);
+        if(!r.isStatusOK())throw new SubmissionFailure(r.getTransactionHash(),true);
+        return r.getTransactionHash();
     }
-
-    @Override
-    public void close() {
-        service.shutdown();
+    private EthBlock.Block block(long h,boolean full)throws Exception {
+        var r=web3j.ethGetBlockByNumber(DefaultBlockParameter.valueOf(BigInteger.valueOf(h)),full).send();
+        if(r.hasError() || r.getBlock()==null)throw new IllegalStateException("block unavailable");return r.getBlock();
     }
-
-    public static void main(String[] args) throws Exception {
-        if (args.length != 1) {
-            throw new IllegalArgumentException("usage: EthereumExperimentSender EXPERIMENT_PROPERTIES");
-        }
-        ExperimentConfig config = ExperimentConfig.load(Path.of(args[0]));
-        try (EthereumExperimentSender sender = new EthereumExperimentSender(config)) {
-            new OpenLoopWorkload().run(config, sender);
-        }
+    public Head finalizedHead()throws Exception {
+        var r=web3j.ethGetBlockByNumber(DefaultBlockParameterName.FINALIZED,false).send();
+        if(r.hasError() || r.getBlock()==null)throw new IllegalStateException("finalized head unavailable");
+        return new Head(r.getBlock().getNumber().longValueExact(),r.getBlock().getHash());
     }
-
-    private static byte[] parseCrossChainId(String value) {
-        String raw = value.startsWith("0x") || value.startsWith("0X") ? value.substring(2) : value;
-        if (!raw.matches("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")) {
-            throw new IllegalArgumentException("target.app must be a 20-byte address or 32-byte identity");
-        }
-        byte[] result = new byte[32];
-        int offset = raw.length() == 40 ? 12 : 0;
-        for (int i = 0; i < raw.length() / 2; i++) {
-            result[offset + i] = (byte) Integer.parseInt(raw.substring(i * 2, i * 2 + 2), 16);
-        }
-        return result;
+    public String blockHash(long h)throws Exception{return block(h,false).getHash();}
+    public Receipt receipt(String hash)throws Exception {
+        var response=web3j.ethGetTransactionReceipt("0x"+Identities.hex(hash)).send();
+        if(response.hasError())throw new IllegalStateException("receipt RPC failed");
+        var r=response.getTransactionReceipt().orElse(null);if(r==null)return null;
+        List<ChainReader.Log> logs=new ArrayList<>();int i=0;
+        for(var l:r.getLogs())logs.add(new ChainReader.Log(l.getAddress(),l.getTopics(),l.getData(),i++));
+        return new Receipt(r.getTransactionHash(),r.getBlockNumber().longValueExact(),r.getBlockHash(),r.isStatusOK(),logs);
     }
+    public List<Receipt> receipts(long h)throws Exception {
+        var b=block(h,false);List<Receipt> out=new ArrayList<>();
+        for(var tx:b.getTransactions()) {
+            var r=receipt((String)tx.get());
+            if(r==null || r.height()!=h || !r.blockHash().equalsIgnoreCase(b.getHash()))throw new IllegalStateException("incomplete block receipts");
+            out.add(r);
+        }return out;
+    }
+    public void close(){service.shutdown();}
 }

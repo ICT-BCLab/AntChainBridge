@@ -1,28 +1,38 @@
-# Non-secret experiment metadata
+# Public metadata only. Keep actual SDK configs/credentials outside the repository.
 experiment.id=paper-latency-001
 experiment.scheme=Xun
 experiment.route=ETH-MYC
 experiment.round=1
+# Formal round numbers are 1..5: 6 routes * 2 schemes * 5 rounds = 60 rounds / 9000 samples.
 experiment.formal=false
 experiment.protocol=unordered-sdp-v1
-
-# Formal values are fixed at 5 TPS for 30 seconds. Set formal=true only after
-# measuring both sender and Relayer host offsets and confirming each is <=20ms.
+# All rounds of one experiment MUST share this persistent registry. Never clear it to retry.
+experiment.state.dir=/secure/paper-latency-001/state
 clock.offset.ms=0
-relayer.host.name=replace-with-relayer-host
 relayer.clock.offset.ms=0
 workload.rate=5
 workload.duration.seconds=30
 workload.workers=16
+source.wait.seconds=900
 terminal.wait.seconds=900
 
 source.product=ethereum3
 source.blockchain.id=eth04.id
+source.domain=ethereum.example
 chain.config=/root-only/path/ethereum3.json
 source.app=0x0000000000000000000000000000000000000000
-target.domain=mychain.example
-target.app=0x0000000000000000000000000000000000000000
-output.dir=/tmp/paper-latency-001/Xun/ETH-MYC/round-01
+# Required when SOURCE is Mychain. name hashes the name; identity accepts exactly 32 bytes.
+# source.app.mode=identity
 
-code.revision=d13d2ad
+target.product=mychain2
+target.blockchain.id=my02.id
+target.domain=mychain.example
+target.chain.config=/root-only/path/mychain.json
+target.app=0000000000000000000000000000000000000000000000000000000000000000
+target.app.mode=identity
+# evm-app: ETH/FISCO AppContract; mychain-legacy: amNotify; mychain-monitor: UnorderedMessageReceived.
+target.event.profile=mychain-legacy
+# Must NOT exist; send creates it exclusively. Each round has its own directory.
+output.dir=/data/paper-latency-001/Xun/ETH-MYC/round-01
+code.revision=replace-with-full-git-commit
 plugin.artifact=/root-only/path/source-relayer-plugin.jar

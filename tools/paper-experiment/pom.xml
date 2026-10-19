@@ -19,6 +19,7 @@
         <module>ethereum-adapter</module>
         <module>mychain-adapter</module>
         <module>fisco-adapter</module>
+        <module>runner</module>
     </modules>
 
     <build>

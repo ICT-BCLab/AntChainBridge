@@ -5,22 +5,29 @@ import java.nio.file.Path;
 
 import com.alipay.antchain.bridge.commons.bbc.DefaultBBCContext;
 import org.antchainbridge.experiment.ExperimentConfig;
-import org.antchainbridge.experiment.OpenLoopWorkload;
 import org.antchainbridge.experiment.TransactionSender;
+import org.antchainbridge.experiment.ChainReader;
+import org.antchainbridge.experiment.Identities;
+import java.util.*;
+import java.math.BigInteger;
+import org.fisco.bcos.sdk.v3.client.Client;
 import org.fisco.bcos.sdk.v3.model.TransactionReceipt;
 
-public final class FiscoExperimentSender implements TransactionSender {
+public final class FiscoExperimentSender implements TransactionSender, ChainReader {
 
     private final FiscoMessageSender messageSender;
     private final Runnable closeAction;
     private final String targetDomain;
-    private final byte[] targetApp;
+    private byte[] targetApp;
+    private final Client client;
+    private final String address;
 
-    private FiscoExperimentSender(ExperimentConfig config) throws Exception {
+    public FiscoExperimentSender(ExperimentConfig config, boolean sending) throws Exception {
         DefaultBBCContext context = new DefaultBBCContext();
         context.setConfForBlockchainClient(Files.readAllBytes(Path.of(config.required("chain.config"))));
         FiscoVariant variant = requireSourceProduct(config.required("source.product"));
-        String sourceApp = normaliseAddress(config.required("source.app"));
+        String sourceApp = Identities.evmAddress(config.required("source.app"));
+        this.address=sourceApp;
         if (variant == FiscoVariant.BASE) {
             com.alipay.antchain.bridge.plugins.fiscobcos.FISCOBCOSBBCService service =
                     new com.alipay.antchain.bridge.plugins.fiscobcos.FISCOBCOSBBCService();
@@ -28,6 +35,7 @@ public final class FiscoExperimentSender implements TransactionSender {
             com.alipay.antchain.bridge.plugins.fiscobcos.abi.AppContract app =
                     com.alipay.antchain.bridge.plugins.fiscobcos.abi.AppContract.load(
                             sourceApp, service.getClient(), service.getKeyPair());
+            this.client=service.getClient();
             this.messageSender = app::sendUnorderedMessage;
             this.closeAction = service::shutdown;
         } else {
@@ -37,21 +45,20 @@ public final class FiscoExperimentSender implements TransactionSender {
             com.alipay.antchain.bridge.plugins.fiscobcos3.abi.AppContract app =
                     com.alipay.antchain.bridge.plugins.fiscobcos3.abi.AppContract.load(
                             sourceApp, service.getClient(), service.getKeyPair());
+            this.client=service.getClient();
             this.messageSender = app::sendUnorderedMessage;
             this.closeAction = service::shutdown;
         }
         this.targetDomain = config.required("target.domain");
-        this.targetApp = parseCrossChainId(config.required("target.app"));
+
     }
 
     @Override
-    public String send(byte[] payload) {
+    public String send(byte[] payload) throws Exception {
+        if(targetApp==null)throw new IllegalStateException("preflight required");
         TransactionReceipt receipt = messageSender.send(targetDomain, targetApp, payload);
-        if (receipt == null || !receipt.isStatusOK()) {
-            throw new IllegalStateException(
-                    "FISCO source transaction failed: " + (receipt == null ? "no receipt" : receipt.getStatus())
-            );
-        }
+        if(receipt==null)throw new SubmissionFailure("",false);
+        if(!receipt.isStatusOK())throw new SubmissionFailure(receipt.getTransactionHash(),true);
         return receipt.getTransactionHash();
     }
 
@@ -60,35 +67,29 @@ public final class FiscoExperimentSender implements TransactionSender {
         closeAction.run();
     }
 
-    public static void main(String[] args) throws Exception {
-        if (args.length != 1) {
-            throw new IllegalArgumentException("usage: FiscoExperimentSender EXPERIMENT_PROPERTIES");
-        }
-        ExperimentConfig config = ExperimentConfig.load(Path.of(args[0]));
-        try (FiscoExperimentSender sender = new FiscoExperimentSender(config)) {
-            new OpenLoopWorkload().run(config, sender);
-        }
+    public String appIdentity(){return Identities.canonical(address);}
+    public String eventTopic(String signature){return client.getCryptoSuite().hash(signature);}
+    public void preflight(byte[] payload,String target){targetApp=Identities.bytes(target);}
+    public Head finalizedHead(){long h=client.getBlockNumber().getBlockNumber().longValueExact();return new Head(h,blockHash(h));}
+    public String blockHash(long h){
+        var b=client.getBlockByNumber(BigInteger.valueOf(h),true,true).getBlock();
+        if(b==null || b.getNumber()!=h)throw new IllegalStateException("FISCO block unavailable");return b.getHash();
     }
-
-    private static String normaliseAddress(String value) {
-        String raw = value.startsWith("0x") || value.startsWith("0X") ? value.substring(2) : value;
-        if (!raw.matches("[0-9a-fA-F]{40}")) {
-            throw new IllegalArgumentException("address must be a 20-byte hexadecimal value");
-        }
-        return "0x" + raw.toLowerCase();
+    public Receipt receipt(String hash){
+        var r=client.getTransactionReceipt("0x"+Identities.hex(hash),false).getTransactionReceipt();
+        if(r==null)return null;
+        List<ChainReader.Log> logs=new ArrayList<>();int i=0;
+        for(var l:r.getLogEntries())logs.add(new ChainReader.Log(l.getAddress(),l.getTopics(),l.getData(),i++));
+        long h=r.getBlockNumber().longValueExact();return new Receipt(r.getTransactionHash(),h,blockHash(h),r.isStatusOK(),logs);
     }
-
-    private static byte[] parseCrossChainId(String value) {
-        String raw = value.startsWith("0x") || value.startsWith("0X") ? value.substring(2) : value;
-        if (!raw.matches("[0-9a-fA-F]{40}|[0-9a-fA-F]{64}")) {
-            throw new IllegalArgumentException("target.app must be a 20-byte address or 32-byte identity");
-        }
-        byte[] result = new byte[32];
-        int offset = raw.length() == 40 ? 12 : 0;
-        for (int i = 0; i < raw.length() / 2; i++) {
-            result[offset + i] = (byte) Integer.parseInt(raw.substring(i * 2, i * 2 + 2), 16);
-        }
-        return result;
+    public List<Receipt> receipts(long h){
+        var b=client.getBlockByNumber(BigInteger.valueOf(h),false,true).getBlock();
+        if(b==null || b.getNumber()!=h || b.getTransactions()==null)throw new IllegalStateException("FISCO block unavailable");
+        List<Receipt> out=new ArrayList<>();
+        for(var tx:b.getTransactions()){
+            var r=receipt((String)tx.get());
+            if(r==null || r.height()!=h || !r.blockHash().equalsIgnoreCase(b.getHash()))throw new IllegalStateException("incomplete FISCO receipts");out.add(r);
+        }return out;
     }
 
     static FiscoVariant requireSourceProduct(String product) {
