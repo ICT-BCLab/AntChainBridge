@@ -33,6 +33,29 @@ SDP V1/V2/V3 监管路由以及完整 Committee PTC 证明验证。
 
 在offchain-plugin下通过`mvn clean package`编译插件Jar包，可以在target下找到`fiscobcos3-acb-plugin-1.0.0-plugin.jar`
 
+## 收据证明哈希与离线回归
+
+HCDVS 的收据 Merkle 证明使用包内的 `PureJavaKeccak256`，以 Bouncy Castle
+`KeccakDigest(256)` 实现 SDK 的 `Hash` 接口。算法仍为 Keccak-256，而不是
+SHA3-256；继续复用 SDK 的 `MerkleProofUtility` 和原有收据根、交易及消息校验。
+每次计算创建独立摘要实例，不依赖 WeDPR JNI 或线程上下文类加载器。
+SDK 的其他功能仍可能使用原生库；不要从插件中移除这些资源。
+
+复用宿主已有的 Bouncy Castle provided 依赖，不修改其版本。Base 和监管插件
+采用相同实现，进行实验对比时应固定两端的代码版本与插件哈希。
+
+在当前目录使用 Java 21 运行以下离线测试和构建，不启动节点或生成合约 wrapper：
+
+```sh
+mvn -Dtest=PureJavaKeccak256Test,FISCOBCOSReceiptProofRegressionTest,FISCOBCOSHCDVSServiceTest package
+```
+
+测试覆盖已知哈希向量、UTF-8、二进制与空输入、多叶 Merkle 证明、错误根与节点
+拒绝、错误消息与锚定 AM 身份拒绝，以及 16 线程共享验证实例。
+发布时还需在宿主 Spring Boot 与实际 PF4J 加载器下验证两个插件同时加载、
+多收据验证和停止后重载；只在普通 Java classpath 中通过测试不足以证明插件加载正常。
+插件应在组件停止时更新并核对哈希；此修复不要求重新部署合约或重发源交易。
+
 ## 本地真链测试
 
 真链测试默认关闭，普通 `mvn test` 不要求启动 FISCO。使用 FISCO BCOS 3.11.0

@@ -11,7 +11,6 @@ import com.alipay.antchain.bridge.commons.core.bta.IBlockchainTrustAnchor;
 import com.alipay.antchain.bridge.plugins.lib.HeteroChainDataVerifierService;
 import com.alipay.antchain.bridge.plugins.spi.ptc.AbstractHCDVSService;
 import com.alipay.antchain.bridge.plugins.spi.ptc.core.VerifyResult;
-import org.fisco.bcos.sdk.v3.crypto.hash.Keccak256;
 import org.fisco.bcos.sdk.v3.utils.MerkleProofUtility;
 import org.bouncycastle.asn1.x9.X9ECParameters;
 import org.bouncycastle.crypto.ec.CustomNamedCurves;
@@ -460,7 +459,7 @@ public class FISCOBCOSHCDVSService extends AbstractHCDVSService {
                         receiptsRoot,
                         proofNodes,
                         receiptHash,
-                        new Keccak256()
+                        new PureJavaKeccak256()
                 );
 
                 if (!proofValid) {
