@@ -25,6 +25,7 @@ import com.alipay.antchain.bridge.commons.core.rcc.ReliableCrossChainMessage;
 import com.alipay.antchain.bridge.plugins.lib.BBCService;
 import com.alipay.antchain.bridge.plugins.mychain020.contract.AMContractClientEVM;
 import com.alipay.antchain.bridge.plugins.mychain020.contract.AMContractClientWASM;
+import com.alipay.antchain.bridge.plugins.mychain020.contract.PtcContractEvm;
 import com.alipay.antchain.bridge.plugins.mychain020.model.ContractAddressInfo;
 import com.alipay.antchain.bridge.plugins.mychain020.sdk.Mychain020Client;
 import com.alipay.antchain.bridge.plugins.mychain020.utils.ContractUtils;
@@ -1085,6 +1086,12 @@ public class Mychain020BBCService extends AbstractBBCService {
                 throw new RuntimeException("reconcile ptc hub BCDNS root failed");
             }
 
+            // Relayer deploys Monitor before PTC: reconcile once both exist.
+            if (context.getMonitorContractClientEVM() != null
+                    && StrUtil.isNotEmpty(context.getMonitorContractClientEVM().getContractAddress())) {
+                reconcileMonitorPtcBinding(context.getPtcContractEvm().getContractAddress());
+            }
+
             PTCContract ptcContract = new PTCContract();
             ptcContract.setContractAddress(MychainUtils.contractAddrFormat(context.getPtcContractEvm().getContractAddress(), ""));
             ptcContract.setStatus(context.getPtcContractEvm().getStatus());
@@ -1118,19 +1125,9 @@ public class Mychain020BBCService extends AbstractBBCService {
                     context.getMonitorVerifierContractEVM().getContractAddress());
             if (!monitorVerifierHasName
                     && StrUtil.isNotEmpty(context.getMonitorContractClientEVM().getContractAddress())) {
-                try {
-                    recoveredMonitorVerifierIdentity = context.getMonitorContractClientEVM()
-                            .getMonitorVerifierIdentity();
-                } catch (RuntimeException e) {
-                    if (ptcHubConfigured) {
-                        throw new RuntimeException(
-                                "existing monitor verifier identity cannot be recovered; refusing to deploy a replacement "
-                                        + "because active TpBTAs would need to be re-uploaded",
-                                e);
-                    }
-                    getBBCLogger().info(
-                            "[Mychain020BBCService] no monitor verifier is bound and no PTC hub is configured; "
-                                    + "a fresh verifier can be deployed safely");
+                Identity bound = context.getMonitorContractClientEVM().getMonitorVerifierIdentityOrZero();
+                if (!isZeroIdentity(bound)) {
+                    recoveredMonitorVerifierIdentity = bound;
                 }
                 if (recoveredMonitorVerifierIdentity == null && ptcHubConfigured) {
                     throw new RuntimeException(
@@ -1173,25 +1170,29 @@ public class Mychain020BBCService extends AbstractBBCService {
                 throw new RuntimeException("upgrade legacy sdp for monitor support failed");
             }
 
-            if (recoveredMonitorVerifierIdentity == null) {
-                context.getMonitorContractClientEVM().setMonitorVerifier(
-                        context.getMonitorVerifierContractEVM().getContractAddress());
-            } else {
-                context.getMonitorContractClientEVM().setMonitorVerifier(recoveredMonitorVerifierIdentity);
+            Identity expectedVerifier = recoveredMonitorVerifierIdentity == null
+                    ? Utils.getIdentityByName(context.getMonitorVerifierContractEVM().getContractAddress(),
+                            mychain020Client.getConfig().getMychainHashType())
+                    : recoveredMonitorVerifierIdentity;
+            if (isZeroIdentity(expectedVerifier)) {
+                throw new RuntimeException("monitor verifier identity is not configured");
+            }
+            Identity monitorBinding = context.getMonitorContractClientEVM().getMonitorVerifierIdentityOrZero();
+            requireCompatibleBinding(monitorBinding, expectedVerifier, "Monitor -> MonitorVerifier");
+            if (isZeroIdentity(monitorBinding)) {
+                if (recoveredMonitorVerifierIdentity == null) {
+                    context.getMonitorContractClientEVM().setMonitorVerifier(
+                            context.getMonitorVerifierContractEVM().getContractAddress());
+                } else {
+                    context.getMonitorContractClientEVM().setMonitorVerifier(recoveredMonitorVerifierIdentity);
+                }
+            }
+            if (!sameIdentity(expectedVerifier, context.getMonitorContractClientEVM().getMonitorVerifierIdentityOrZero())) {
+                throw new RuntimeException("Monitor -> MonitorVerifier binding read-back mismatch");
             }
 
             if (ptcHubConfigured) {
-                if (recoveredMonitorVerifierIdentity == null) {
-                    context.getMonitorVerifierContractEVM().setPtcHubAddress(
-                            context.getPtcContractEvm().getContractAddress());
-                    context.getPtcContractEvm().setMonitorVerifier(
-                            context.getMonitorVerifierContractEVM().getContractAddress());
-                } else {
-                    context.getMonitorVerifierContractEVM().setPtcHubAddress(
-                            context.getPtcContractEvm().getContractAddress(),
-                            recoveredMonitorVerifierIdentity);
-                    context.getPtcContractEvm().setMonitorVerifier(recoveredMonitorVerifierIdentity);
-                }
+                reconcileMonitorPtcBinding(context.getPtcContractEvm().getContractAddress());
             }
 
             if (ObjectUtil.isNotEmpty(context.getSdpContractClientEVM())
@@ -1295,17 +1296,77 @@ public class Mychain020BBCService extends AbstractBBCService {
                 contractAddress,
                 context.getPtcContractEvm().getContractAddress(),
                 "ptc hub");
-        if (StrUtil.isNotEmpty(context.getMonitorVerifierContractEVM().getContractAddress())) {
-            context.getMonitorVerifierContractEVM().setPtcHubAddress(ptcHubContractName);
-            return;
-        }
-        if (ObjectUtil.isNull(context.getMonitorContractClientEVM())
-                || StrUtil.isEmpty(context.getMonitorContractClientEVM().getContractAddress())) {
+        reconcileMonitorPtcBinding(ptcHubContractName);
+    }
+
+    /** Explicit initialization only; SDK startup must never send repair transactions. */
+    private void reconcileMonitorPtcBinding(String ptcHubContractName) {
+        if (context.getMonitorVerifierContractEVM() == null) {
             throw new RuntimeException("monitor verifier contract is not deployed");
         }
+        String verifierName = context.getMonitorVerifierContractEVM().getContractAddress();
+        Identity recoveredIdentity = null;
+        Identity verifierIdentity;
+        if (StrUtil.isNotEmpty(verifierName)) {
+            verifierIdentity = Utils.getIdentityByName(verifierName, mychain020Client.getConfig().getMychainHashType());
+        } else {
+            if (context.getMonitorContractClientEVM() == null
+                    || StrUtil.isEmpty(context.getMonitorContractClientEVM().getContractAddress())) {
+                throw new RuntimeException("monitor verifier contract is not deployed");
+            }
+            recoveredIdentity = context.getMonitorContractClientEVM().getMonitorVerifierIdentity();
+            verifierIdentity = recoveredIdentity;
+        }
+        if (isZeroIdentity(verifierIdentity)) {
+            throw new RuntimeException("monitor verifier identity is not configured");
+        }
+        Identity ptcIdentity = Utils.getIdentityByName(ptcHubContractName, mychain020Client.getConfig().getMychainHashType());
+        PtcContractEvm ptc = context.getPtcContractEvm();
+        if (ptc == null || !ptcHubContractName.equals(ptc.getContractAddress())) {
+            // An explicit address selects this hub for BOTH reads and writes.
+            ptc = new PtcContractEvm(mychain020Client, getBBCLogger());
+            ptc.setContractAddress(ptcHubContractName);
+        }
+        Identity currentHub = context.getMonitorVerifierContractEVM().getPtcHubIdentity(recoveredIdentity);
+        Identity currentVerifier = ptc.getMonitorVerifierIdentity();
+        requireCompatibleBinding(currentHub, ptcIdentity, "MonitorVerifier -> PtcHub");
+        requireCompatibleBinding(currentVerifier, verifierIdentity, "PtcHub -> MonitorVerifier");
+        if (isZeroIdentity(currentHub)) {
+            if (recoveredIdentity == null) {
+                context.getMonitorVerifierContractEVM().setPtcHubAddress(ptcHubContractName);
+            } else {
+                context.getMonitorVerifierContractEVM().setPtcHubAddress(ptcHubContractName, recoveredIdentity);
+            }
+        }
+        if (isZeroIdentity(currentVerifier)) {
+            // This identity may have been recovered by getter: never hash it again.
+            ptc.setMonitorVerifier(verifierIdentity);
+        }
+        if (!sameIdentity(ptcIdentity, context.getMonitorVerifierContractEVM().getPtcHubIdentity(recoveredIdentity))
+                || !sameIdentity(verifierIdentity, ptc.getMonitorVerifierIdentity())) {
+            throw new RuntimeException("monitor/PTC reciprocal binding read-back mismatch");
+        }
+    }
 
-        Identity verifierIdentity = context.getMonitorContractClientEVM().getMonitorVerifierIdentity();
-        context.getMonitorVerifierContractEVM().setPtcHubAddress(ptcHubContractName, verifierIdentity);
+    private boolean isZeroIdentity(Identity identity) {
+        if (identity == null) {
+            throw new RuntimeException("binding getter returned no identity");
+        }
+        String hex = identity.hexStrValue();
+        if (hex == null || !hex.matches("(?i)(?:0x)?[0-9a-f]{64}")) {
+            throw new RuntimeException("binding getter returned an invalid identity");
+        }
+        return hex.matches("(?i)(?:0x)?0+");
+    }
+
+    private boolean sameIdentity(Identity first, Identity second) {
+        return first != null && second != null && first.hexStrValue().equalsIgnoreCase(second.hexStrValue());
+    }
+
+    private void requireCompatibleBinding(Identity actual, Identity expected, String direction) {
+        if (!isZeroIdentity(actual) && !sameIdentity(actual, expected)) {
+            throw new RuntimeException("conflicting nonzero binding: " + direction);
+        }
     }
 
     /**

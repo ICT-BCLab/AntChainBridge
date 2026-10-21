@@ -27,6 +27,13 @@
     </repositories>
 
     <dependencies>
+        <!-- The inherited Lombok processor predates Java 21 javac internals. -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>1.18.32</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcpkix-jdk18on</artifactId>

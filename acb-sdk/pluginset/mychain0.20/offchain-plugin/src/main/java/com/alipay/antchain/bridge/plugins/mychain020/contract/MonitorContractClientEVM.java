@@ -150,6 +150,18 @@ public class MonitorContractClientEVM {
     }
 
     public Identity getMonitorVerifierIdentity() {
+        Identity identity = getMonitorVerifierIdentityOrZero();
+        if (identity.hexStrValue().matches("(?i)(?:0x)?0+")) {
+            throw new CallContractException(
+                    this.contractAddress,
+                    "",
+                    "monitor verifier identity is not configured");
+        }
+        return identity;
+    }
+
+    /** Distinguish a successful unset-binding read from an RPC/ABI failure. */
+    public Identity getMonitorVerifierIdentityOrZero() {
         TransactionReceipt receipt = mychain020Client.localCallContract(
                 this.contractAddress,
                 new EVMParameter(GET_MONITOR_VERIFIER_SIGN));
@@ -162,14 +174,7 @@ public class MonitorContractClientEVM {
                     "",
                     "monitor verifier identity is unavailable");
         }
-        Identity identity = new Identity(new Hash(receipt.getOutput()));
-        if (identity.hexStrValue().matches("(?i)(?:0x)?0+")) {
-            throw new CallContractException(
-                    this.contractAddress,
-                    "",
-                    "monitor verifier identity is not configured");
-        }
-        return identity;
+        return new Identity(new Hash(receipt.getOutput()));
     }
 
     public void setProtocol(String sdpContractName) {
