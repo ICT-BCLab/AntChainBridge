@@ -12,6 +12,7 @@ public final class ReceptionDecoder {
             case "evm-app" -> "recvCrosschainMsg(string,bytes32,bytes,bool)";
             case "mychain-legacy" -> "amNotify(string,identity,string)";
             case "mychain-monitor" -> "UnorderedMessageReceived(string,identity,bytes,uint256)";
+            case "mychain-minimal" -> "recvCrosschainMsg(string,identity,bytes,bool)";
             default -> throw new IllegalArgumentException("unsupported target.event.profile");
         };
     }
@@ -32,7 +33,7 @@ public final class ReceptionDecoder {
         byte[] payload=dynamic(bytes,64,head);Map<String,Object> out=new LinkedHashMap<>();
         out.put("sourceDomain",domain);out.put("author",HexFormat.of().formatHex(Arrays.copyOfRange(bytes,32,64)));
         out.put("payloadBase64",Base64.getEncoder().encodeToString(payload));out.put("payloadSha256",EvidenceIO.sha256(payload));
-        if(profile.equals("evm-app")) {int flag=integer(bytes,96);if(flag>1)throw new IllegalArgumentException("invalid bool");out.put("isOrdered",flag==1);}
+        if(profile.equals("evm-app") || profile.equals("mychain-minimal")) {int flag=integer(bytes,96);if(flag>1)throw new IllegalArgumentException("invalid bool");out.put("isOrdered",flag==1);}
         // Legacy event has no order flag. The run is pinned to unordered V1 and the original target receipt is separately checked.
         out.put("orderEvidence",profile.equals("mychain-legacy")?"SOURCE_UNORDERED_V1":"APP_EVENT");
         out.put("eventProfile",profile);return out;
