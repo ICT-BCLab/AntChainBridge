@@ -525,6 +525,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             throw new RuntimeException("empty am contract in bbc context");
         }
 
+        String amAddress = requireAmAddress(this.bbcContext.getAuthMessageContract().getContractAddress());
         List<CrossChainMessage> messageList = new ArrayList<>();
         TransactionDecoderInterface decoder =
                 new TransactionDecoderService(client.getCryptoSuite().getHashImpl(), false);
@@ -542,7 +543,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
                     continue;
                 }
 
-                for (byte[] rawAuthMessage : decodeSendAuthMessages(decoder, receipt.getLogEntries())) {
+                for (byte[] rawAuthMessage : decodeSendAuthMessages(decoder, receipt.getLogEntries(), amAddress)) {
                     try {
                         // 构造ledgerData: 直接使用收据JSON序列化
                         byte[] ledgerData = JSON.toJSONString(receipt).getBytes();
@@ -594,12 +595,17 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         return null;
     }
 
-    private static List<byte[]> decodeSendAuthMessages(
+    static List<byte[]> decodeSendAuthMessages(
             TransactionDecoderInterface decoder,
-            List<TransactionReceipt.Logs> logs) throws ContractCodecException {
+            List<TransactionReceipt.Logs> logs,
+            String amAddress) throws ContractCodecException {
+        List<TransactionReceipt.Logs> amLogs = filterLogsByAmAddress(logs, amAddress);
         List<byte[]> messages = new ArrayList<>();
+        if (amLogs.isEmpty()) {
+            return messages;
+        }
         for (String abi : Arrays.asList(AuthMsg.ABI, SEND_AUTH_MESSAGE_STRING_EVENT_ABI)) {
-            Map<String, List<List<Object>>> events = decoder.decodeEvents(abi, logs);
+            Map<String, List<List<Object>>> events = decoder.decodeEvents(abi, amLogs);
             for (List<Object> event : events.getOrDefault("SendAuthMessage", Collections.emptyList())) {
                 if (!event.isEmpty()) {
                     messages.add(decodeAuthMessageEventPayload(event.get(0)));
@@ -607,6 +613,37 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             }
         }
         return messages;
+    }
+
+    static List<TransactionReceipt.Logs> filterLogsByAmAddress(
+            List<TransactionReceipt.Logs> logs, String amAddress) {
+        String expected = requireAmAddress(amAddress);
+        List<TransactionReceipt.Logs> selected = new ArrayList<>();
+        if (logs != null) {
+            for (TransactionReceipt.Logs log : logs) {
+                if (log != null && expected.equals(normalizeAmAddress(log.getAddress()))) {
+                    selected.add(log);
+                }
+            }
+        }
+        // Keep the original receipt and log order intact for ledgerData/proof verification.
+        return selected;
+    }
+
+    private static String requireAmAddress(String address) {
+        String normalized = normalizeAmAddress(address);
+        if (normalized == null) {
+            throw new IllegalArgumentException("invalid AM contract address in bbc context");
+        }
+        return normalized;
+    }
+
+    private static String normalizeAmAddress(String address) {
+        if (address == null) {
+            return null;
+        }
+        String hex = StrUtil.removePrefixIgnoreCase(address.trim(), "0x");
+        return hex.matches("[0-9a-fA-F]{40}") ? hex.toLowerCase(Locale.ROOT) : null;
     }
 
     static byte[] decodeAuthMessageEventPayload(Object payload) {
