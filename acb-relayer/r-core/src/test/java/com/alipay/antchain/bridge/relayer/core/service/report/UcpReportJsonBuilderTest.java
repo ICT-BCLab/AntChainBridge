@@ -32,6 +32,10 @@ import org.junit.Test;
 
 public class UcpReportJsonBuilderTest {
 
+    private static final String[] MONITORED_PRODUCTS = {
+            "dioxide2", "ethereum3", "mychain2", "fiscobcos3", "MYCHAIN2", "FISCOBCOS3"
+    };
+
     @Test
     public void testBuildMonitoredUcp() {
         MonitorMessageV1 monitorMessage = new MonitorMessageV1();
@@ -66,30 +70,36 @@ public class UcpReportJsonBuilderTest {
         context.setBlockchainId("test-chain");
         context.setUcp(new UniformCrosschainPacket(new CrossChainDomain("source.example"), crossChainMessage, null));
 
-        JSONObject body = new UcpReportJsonBuilder().build(context);
-        JSONObject ucp = body.getJSONObject("ucp");
-        JSONObject srcMessage = ucp.getJSONObject("srcMessage");
-        JSONObject auth = srcMessage.getJSONObject("message").getJSONObject("authMessage");
-        JSONObject sdp = auth.getJSONObject("payload").getJSONObject("sdpMessage");
-        JSONObject monitor = sdp.getJSONObject("payload").getJSONObject("monitorMessage");
+        for (String product : MONITORED_PRODUCTS) {
+            context.setProduct(product);
+            JSONObject body = new UcpReportJsonBuilder().build(context);
+            JSONObject ucp = body.getJSONObject("ucp");
+            JSONObject srcMessage = ucp.getJSONObject("srcMessage");
+            JSONObject auth = srcMessage.getJSONObject("message").getJSONObject("authMessage");
+            JSONObject sdp = auth.getJSONObject("payload").getJSONObject("sdpMessage");
+            Assert.assertTrue("Expected expanded monitor payload for " + product,
+                    sdp.get("payload") instanceof JSONObject);
+            JSONObject monitor = sdp.getJSONObject("payload").getJSONObject("monitorMessage");
 
-        Assert.assertEquals("ucp-test", body.getString("ucpId"));
-        Assert.assertEquals(HexUtil.encodeHexStr(context.getUcp().encode()), body.getString("rawUcp"));
-        Assert.assertEquals(
-                Base64.getEncoder().encodeToString(context.getUcp().encode()),
-                body.getString("rawUcpBase64")
-        );
-        Assert.assertEquals(1, body.getJSONObject("am").getIntValue("version"));
-        Assert.assertEquals("target.example", body.getJSONObject("sdp").getString("targetDomain"));
-        Assert.assertEquals("source.example", ucp.getString("srcDomain"));
-        Assert.assertEquals("AUTH_MSG", srcMessage.getString("type"));
-        Assert.assertEquals("target.example", sdp.getString("targetDomain"));
-        Assert.assertEquals(2, monitor.getIntValue("monitorType"));
-        Assert.assertEquals("rule-hit", monitor.getString("monitorMsg"));
-        Assert.assertEquals("business-data", monitor.getString("payload"));
-        Assert.assertEquals("0102", srcMessage.getJSONObject("provableData").getString("blockHash"));
-        Assert.assertEquals("03", srcMessage.getJSONObject("provableData").getString("ledgerData"));
-        Assert.assertFalse(body.toJSONString().contains("\"rawHex\""));
+            Assert.assertEquals("ucp-test", body.getString("ucpId"));
+            Assert.assertEquals(product, body.getJSONObject("source").getString("product"));
+            Assert.assertEquals(HexUtil.encodeHexStr(context.getUcp().encode()), body.getString("rawUcp"));
+            Assert.assertEquals(
+                    Base64.getEncoder().encodeToString(context.getUcp().encode()),
+                    body.getString("rawUcpBase64")
+            );
+            Assert.assertEquals(1, body.getJSONObject("am").getIntValue("version"));
+            Assert.assertEquals("target.example", body.getJSONObject("sdp").getString("targetDomain"));
+            Assert.assertEquals("source.example", ucp.getString("srcDomain"));
+            Assert.assertEquals("AUTH_MSG", srcMessage.getString("type"));
+            Assert.assertEquals("target.example", sdp.getString("targetDomain"));
+            Assert.assertEquals(2, monitor.getIntValue("monitorType"));
+            Assert.assertEquals("rule-hit", monitor.getString("monitorMsg"));
+            Assert.assertEquals("business-data", monitor.getString("payload"));
+            Assert.assertEquals("0102", srcMessage.getJSONObject("provableData").getString("blockHash"));
+            Assert.assertEquals("03", srcMessage.getJSONObject("provableData").getString("ledgerData"));
+            Assert.assertFalse(body.toJSONString().contains("\"rawHex\""));
+        }
     }
 
     @Test
@@ -113,12 +123,14 @@ public class UcpReportJsonBuilderTest {
         authMessage.setPayload(sdpMessage.encode());
 
         UniformCrosschainPacketContext context = buildContext(createAuthMessage(authMessage));
-        context.setProduct("dioxide2");
-        Object payload = new UcpReportJsonBuilder().build(context)
-                .getJSONObject("sdp")
-                .get("payload");
+        for (String product : MONITORED_PRODUCTS) {
+            context.setProduct(product);
+            Object payload = new UcpReportJsonBuilder().build(context)
+                    .getJSONObject("sdp")
+                    .get("payload");
 
-        Assert.assertEquals(HexUtil.encodeHexStr(malformedPayload), payload);
+            Assert.assertEquals(HexUtil.encodeHexStr(malformedPayload), payload);
+        }
     }
 
     @Test
@@ -140,13 +152,15 @@ public class UcpReportJsonBuilderTest {
         authMessage.setPayload(sdpMessage.encode());
 
         UniformCrosschainPacketContext context = buildContext(createAuthMessage(authMessage));
-        context.setProduct("dioxide");
-        Object payload = new UcpReportJsonBuilder().build(context)
-                .getJSONObject("sdp")
-                .get("payload");
+        for (String product : new String[]{"dioxide", "ethereum2", "mychain", "fiscobcos", "unknown"}) {
+            context.setProduct(product);
+            Object payload = new UcpReportJsonBuilder().build(context)
+                    .getJSONObject("sdp")
+                    .get("payload");
 
-        Assert.assertTrue(payload instanceof String);
-        Assert.assertFalse(String.valueOf(payload).contains("monitorMessage"));
+            Assert.assertTrue(payload instanceof String);
+            Assert.assertFalse(String.valueOf(payload).contains("monitorMessage"));
+        }
     }
 
     @Test

@@ -8,4 +8,6 @@
 
 ## 2026-10-12
 
-执行 `20261012_expand_validated_consensus_hash.sql`，将验证共识状态的区块哈希列扩展到 128 个字符，以兼容 Dioxide 等非 32 字节区块哈希。
+`20261012_expand_validated_consensus_hash.sql` 保留早期将哈希列扩展到 128 个字符的方案，不再作为本分支 Dioxide 接入的必需升级步骤。
+
+当前委员会及监管节点对 `dioxide2`／`dioxide` 使用 SHA-256 数据库查询键，完整原始状态保留在 `raw_vcs`；由委员会 PTC 自行保存验证状态时，不需要因此扩容 Relayer 的表。不要自动执行该历史脚本；已有数据转换或其他 PTC 存储方式应单独评估。说明及显式维护工具见仓库根目录的 `tools/dioxide-consensus-hash/README.md`。

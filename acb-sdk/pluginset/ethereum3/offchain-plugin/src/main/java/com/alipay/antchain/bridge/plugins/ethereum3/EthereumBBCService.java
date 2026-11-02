@@ -554,11 +554,12 @@ public class EthereumBBCService extends AbstractBBCService {
             throw new RuntimeException("not set monitor verifier contract in monitor contract yet");
         }
 
+        acbEthClient.ensureMonitorVerifierConsumer(this.bbcContext.getMonitorContract().getContractAddress());
         acbEthClient.setPtcHubToMonitorVerifier(monitorVerifier, contractAddress);
 
         // 4. update monitor contract status
         try {
-            if (!"0x0000000000000000000000000000000000000000".equalsIgnoreCase(acbEthClient.getPtcHubFromMonitorVerifier(monitorVerifier)) &&
+            if (contractAddress.equalsIgnoreCase(acbEthClient.getPtcHubFromMonitorVerifier(monitorVerifier)) &&
                     !"0x0000000000000000000000000000000000000000".equalsIgnoreCase(acbEthClient.getProtocolFromMonitor(this.bbcContext.getMonitorContract().getContractAddress()))
                     && acbEthClient.getMonitorControlFromMonitor(this.bbcContext.getMonitorContract().getContractAddress()) != 0 ) {
                 this.bbcContext.getMonitorContract().setStatus(ContractStatusEnum.CONTRACT_READY);

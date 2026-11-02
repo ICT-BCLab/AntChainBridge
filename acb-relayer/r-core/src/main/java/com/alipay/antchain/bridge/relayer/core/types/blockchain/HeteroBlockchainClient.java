@@ -153,7 +153,9 @@ public class HeteroBlockchainClient extends AbstractBlockchainClient {
         List<CrossChainMessage> messages = this.bbcClient.readCrossChainMessagesByHeight(height);
 
         ConsensusState currConsensusState = null;
-        if (StrUtil.isNotEmpty(getBlockchainMeta().getProperties().getPtcContractAddress())) {
+        // Plain Dioxide has source consensus data despite using a V0 receiving AM.
+        if (StrUtil.isNotEmpty(getBlockchainMeta().getProperties().getPtcContractAddress())
+                || "dioxide".equalsIgnoreCase(getBlockchainMeta().getProduct())) {
             currConsensusState = this.bbcClient.readConsensusState(BigInteger.valueOf(height));
             currConsensusState.setDomain(new CrossChainDomain(getDomain()));
         }

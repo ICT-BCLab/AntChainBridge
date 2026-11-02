@@ -45,10 +45,10 @@ relayer:
 指标输出 `${logging.file.path}/antchain-bridge-relayer/experiment-metrics.log`，每行含 `EXPERIMENT_METRIC `。埋点默认关闭，外部平台上报默认开启，须在实验环境另行配置。Xun 使用受控监管模拟器：
 
 ```shell
-JAVA_OPTS="-Dmonitor.verify.delay.ms=1000" ./SimpleMonitorSystem/bin/start.sh
+JAVA_OPTS="-Dmonitor.verify.delay.ms=500" ./SimpleMonitorSystem/bin/start.sh
 ```
 
-延迟仅作用于监管 verify。正式实验前测量发送端和 Relayer 的时钟偏差；`formal=true` 要求两者配置值均在 ±20ms 内，工具不会代替 NTP 实测。
+正式 Xun 实验固定等待 **500ms** 并返回通过，延迟仅作用于监管 verify，不是整个链下阶段的固定耗时。保留模拟器实际启动命令和日志；此前 1000ms 的历史记录保持原条件，不混入本轮正式结果。正式实验前测量发送端和 Relayer 的时钟偏差；`formal=true` 要求两者配置值均在 ±20ms 内，工具不会代替 NTP 实测。
 
 ## 配置与发送前检查
 
@@ -115,7 +115,7 @@ java -jar tools/paper-experiment/runner/target/paper-experiment-runner-1.0-SNAPS
   /data/experiment-metrics.log
 ```
 
-可在末尾列出多个轮转指标文件。默认最多等待 900 秒达到终态，之后再观察 60 秒。查询原生区块／收据，记录应用、源域、作者、事件位置、原始载荷及哈希；Mychain／FISCO 使用其确定性共识提交高度，ETH 使用 RPC `finalized`。拒绝以最新但未确定区块替代 ETH finalized。
+可在末尾列出多个轮转指标文件。终态等待由 `terminal.wait.seconds` 配置控制，代码默认 900 秒；涉及 ETH 的方向设置为 `1500`（25 分钟），示例配置采用该值，之后再观察 60 秒。查询原生区块／收据，记录应用、源域、作者、事件位置、原始载荷及哈希；Mychain／FISCO 使用其确定性共识提交高度，ETH 使用 RPC `finalized`。拒绝以最新但未确定区块替代 ETH finalized。
 
 输出 `receptions.jsonl` 和 `reception-coverage.json`。扫描缺失、RPC 异常、基线／区块哈希变化均不输出完整通过。getter 仅作人工辅助；一次接收的结论限定于记录的确定区块观察区间，不能证明无限未来不会发生重复。旧 Mychain `amNotify` 本身不区分有序／无序，因此以固定的源端 unordered V1 调用及原目标收据关联为前提，记录 `orderEvidence=SOURCE_UNORDERED_V1`；其他接收事件记录 `APP_EVENT`，不伪造旧事件不存在的顺序标志。
 

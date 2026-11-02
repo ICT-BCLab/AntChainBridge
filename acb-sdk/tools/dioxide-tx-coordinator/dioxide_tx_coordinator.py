@@ -457,12 +457,16 @@ class CoordinatedDioxClient:
         args = {"code": [], "cargs": []}
         for filename, constructor in contracts.items():
             args["code"].append(Path(filename).read_text())
-            args["cargs"].append(json.dumps(constructor))
+            # Match DioxClient: an absent constructor is the empty string,
+            # whereas an explicitly supplied empty object must stay "{}".
+            args["cargs"].append("" if constructor is None else json.dumps(constructor))
         if compile_time is not None:
             args["time"] = compile_time
+        deploy_timeout_seconds = max(60, (compile_time or 0) * 6)
         tx_hash = self.send_transaction(delegator, "core.delegation.deploy_contracts", args,
-                                        delegatee=dapp_name, is_sync=True, operation_id=operation_id)
-        self.client.wait_for_deploy(tx_hash)
+                                        delegatee=dapp_name, is_sync=True,
+                                        timeout=deploy_timeout_seconds * 1000, operation_id=operation_id)
+        self.client.wait_for_deploy(tx_hash, deploy_timeout_seconds)
         return tx_hash
 
     def deploy_contract(self, dapp_name, delegator, file_path=None, source_code=None, construct_args=None,
@@ -470,10 +474,12 @@ class CoordinatedDioxClient:
         code = Path(file_path).read_text() if file_path else source_code
         if code is None:
             raise ValueError("contract source is required")
-        args = {"code": [code], "cargs": [json.dumps(construct_args)]}
+        args = {"code": [code], "cargs": ["" if construct_args is None else json.dumps(construct_args)]}
         if compile_time is not None:
             args["time"] = compile_time
+        deploy_timeout_seconds = max(60, (compile_time or 0) * 6)
         tx_hash = self.send_transaction(delegator, "core.delegation.deploy_contracts", args,
-                                        delegatee=dapp_name, is_sync=True, operation_id=operation_id)
-        self.client.wait_for_deploy(tx_hash)
+                                        delegatee=dapp_name, is_sync=True,
+                                        timeout=deploy_timeout_seconds * 1000, operation_id=operation_id)
+        self.client.wait_for_deploy(tx_hash, deploy_timeout_seconds)
         return tx_hash

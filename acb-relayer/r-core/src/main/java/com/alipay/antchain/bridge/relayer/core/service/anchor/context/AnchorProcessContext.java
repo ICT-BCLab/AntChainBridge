@@ -128,6 +128,11 @@ public class AnchorProcessContext {
     }
 
     public boolean isPtcSupport() {
+        // Source-side endorsement is independent of a PTC Hub on the receiving AM.
+        if ("dioxide".equalsIgnoreCase(anchorProduct)
+                && getBlockchainRepository().hasBta(new com.alipay.antchain.bridge.commons.core.base.CrossChainDomain(getBlockchainDomain()))) {
+            return true;
+        }
         return ObjectUtil.isNotNull(blockchainClientPool.getClient(anchorProduct, anchorBlockchainId).getPtcContract())
                 && ObjectUtil.isNotNull(getBlockchainMeta().getProperties().getBbcContext().getPtcContract())
                 && getBlockchainMeta().getProperties().getBbcContext().getPtcContract().getStatus() == ContractStatusEnum.CONTRACT_READY;

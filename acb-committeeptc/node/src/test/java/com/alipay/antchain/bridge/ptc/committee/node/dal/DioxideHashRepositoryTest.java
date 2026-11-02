@@ -120,8 +120,17 @@ public class DioxideHashRepositoryTest {
         assertTrue(repo.hasValidatedConsensusState(domain,BigInteger.valueOf(7)));
         assertNull(repo.getValidatedConsensusState(domain,"ab".repeat(52)));
     }
+    @Test public void plainDioxideWritesDigestAndReadsOriginalHash() throws Exception {
+        register("dioxide"); var state=state(12,52); byte[] raw=state.getValidatedConsensusState().encode();
+        repo.setValidatedConsensusState(state);
+        assertEquals(DioxideConsensusHash.digest(state.getValidatedConsensusState().getHash()),stored("hash",12));
+        assertEquals(DioxideConsensusHash.digest(state.getValidatedConsensusState().getParentHash()),stored("parent_hash",12));
+        assertArrayEquals(raw,repo.getValidatedConsensusState(domain,state.getValidatedConsensusState().getHashHex()).getValidatedConsensusState().encode());
+        assertArrayEquals(raw,repo.getValidatedConsensusState(domain,BigInteger.valueOf(12)).getValidatedConsensusState().encode());
+        assertArrayEquals(raw,repo.getLatestValidatedConsensusState(domain).getValidatedConsensusState().encode());
+    }
     @Test public void otherProductsPreserveOriginalIncludingDioxLikeDomain() throws Exception {
-        for(String product:List.of("ethereum3","fiscobcos3","mychain2","dioxide")) {
+        for(String product:List.of("ethereum3","fiscobcos3","mychain2","unknown-product")) {
             domain="diox-looking-"+UUID.randomUUID(); register(product); var state=state(8,32);
             repo.setValidatedConsensusState(state);
             assertEquals(state.getValidatedConsensusState().getHashHex(),stored("hash",8));

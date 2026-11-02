@@ -58,7 +58,7 @@ import tech.pegasys.teku.spec.datastructures.blocks.blockbody.common.BlockBodyFi
 
 public class AcbEthClient {
 
-    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(5L);
+    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(7L);
 
     private static final BigInteger SDP_MONITOR_ROUTING_VERSION = BigInteger.valueOf(3L);
 
@@ -464,7 +464,22 @@ public class AcbEthClient {
             );
         }
 
+        ensureMonitorVerifierConsumer(monitorContractAddress);
         return monitorContractAddress;
+    }
+
+    /** Complete the optimized verifier's consumer authorization after proxy creation. */
+    @SneakyThrows
+    public void ensureMonitorVerifierConsumer(String monitorContractAddress) {
+        String verifierAddress = getMonitorVerifierFromMonitor(monitorContractAddress);
+        MonitorVerifier verifier = MonitorVerifier.load(verifierAddress, web3j, rawTransactionManager,
+                new AcbGasProvider(contractGasPriceProvider, createEthCallGasLimitProvider(
+                        verifierAddress, new Function(MonitorVerifier.FUNC_SETMONITORADDRESS,
+                        ListUtil.toList(new org.web3j.abi.datatypes.Address(monitorContractAddress)),
+                        Collections.emptyList()))));
+        ContractAddressBinding.ensure(monitorContractAddress, verifier.monitorAddress().send(),
+                () -> verifier.setMonitorAddress(monitorContractAddress).send(),
+                () -> verifier.monitorAddress().send());
     }
 
     public String deployMonitorVerifierContract() {
@@ -539,20 +554,12 @@ public class AcbEthClient {
                 )
         );
 
-        // 3. set ptc hub to monitor verifier
         try {
-            var receipt = monitorVerifier.setPtcHubAddress(ptcHubContractAddress).send();
-            getBbcLogger().info(
-                    "set ptc hub {} to monitor verifier (address: {}) by tx {} ",
-                    ptcHubContractAddress, monitorVerifierContractAddress, receipt.getTransactionHash()
-            );
+            ContractAddressBinding.ensure(ptcHubContractAddress, monitorVerifier.getPtcHubAddress().send(),
+                    () -> monitorVerifier.setPtcHubAddress(ptcHubContractAddress).send(),
+                    () -> monitorVerifier.getPtcHubAddress().send());
         } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format(
-                            "failed to set ptc hub (address: %s) to monitor verifier %s",
-                            ptcHubContractAddress, monitorVerifierContractAddress
-                    ), e
-            );
+            throw new RuntimeException("failed to bind and verify PtcHub on MonitorVerifier", e);
         }
     }
 

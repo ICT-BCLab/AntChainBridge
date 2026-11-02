@@ -267,7 +267,7 @@ public class EndorseServiceRepositoryImpl implements IEndorseServiceRepository {
         if (products.size() != 1) {
             throw new IllegalStateException("Conflicting BTA products for domain " + domain);
         }
-        return products.contains("dioxide2");
+        return products.contains("dioxide2") || products.contains("dioxide");
     }
 
     @Override

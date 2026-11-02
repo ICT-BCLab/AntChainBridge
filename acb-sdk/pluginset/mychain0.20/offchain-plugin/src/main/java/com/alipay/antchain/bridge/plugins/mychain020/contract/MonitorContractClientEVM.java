@@ -26,7 +26,7 @@ import org.slf4j.Logger;
 @Setter
 public class MonitorContractClientEVM {
 
-    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 7;
+    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 9;
 
     private static final String MONITOR_EVM_CONTRACT_PREFIX = "MONITOR_EVM_CONTRACT_";
     private static final String MONITOR_EVM_RUNTIME_PATH = "/contract/v1/solidity/Monitor.bin-runtime";
@@ -119,7 +119,9 @@ public class MonitorContractClientEVM {
      * the compiler-sensitive assembly decoder so non-word-aligned business
      * payloads are preserved byte-for-byte on Mychain. Monitor V7 verifies the
      * monitor-node proof before delivery and restores Ethereum3-compatible
-     * rollback/error handling.
+     * rollback/error handling. Monitor V8 consumes a message-bound, one-use
+     * monitor proof result. Monitor V9 removes the V1 unordered auxiliary send
+     * event and avoids temporary encoding objects while preserving wire bytes.
      */
     public boolean ensureImplementationSupported() {
         if (isImplementationVersionSupported()) {

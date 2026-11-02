@@ -31,6 +31,7 @@ import com.alipay.antchain.bridge.plugins.dioxide.conf.DioxideConfig;
 import com.alipay.antchain.bridge.plugins.dioxide.conf.DioxideTypes;
 import com.alipay.antchain.bridge.plugins.dioxide.core.DioxideClient;
 import com.alipay.antchain.bridge.plugins.dioxide.core.DioxideTransaction;
+import com.alipay.antchain.bridge.plugins.dioxide.core.DioxideTransactionBlock;
 import com.alipay.antchain.bridge.plugins.lib.BBCService;
 import com.alipay.antchain.bridge.plugins.spi.bbc.AbstractBBCService;
 import lombok.Getter;
@@ -50,8 +51,7 @@ public class DioxideBBCService extends AbstractBBCService {
 
     @Override
     public void startup(AbstractBBCContext abstractBBCContext) {
-        getBBCLogger().info("Dioxide BBCService startup with context: {}",
-                new String(abstractBBCContext.getConfForBlockchainClient()));
+        getBBCLogger().info("Dioxide BBCService startup");
 
         if (ObjectUtil.isNull(abstractBBCContext)) {
             throw new RuntimeException("null bbc context");
@@ -119,6 +119,13 @@ public class DioxideBBCService extends AbstractBBCService {
                 this.bbcContext.getSdpContract() != null ? this.bbcContext.getSdpContract().getStatus() : ""
         );
 
+        // Persist discovered CIDs with the context; reopening must not use stale configuration.
+        if (bbcContext.getAuthMessageContract() != null) {
+            config.setAmContractAddressDeployed(bbcContext.getAuthMessageContract().getContractAddress());
+        }
+        if (bbcContext.getSdpContract() != null) {
+            config.setSdpContractAddressDeployed(bbcContext.getSdpContract().getContractAddress());
+        }
         this.bbcContext.setConfForBlockchainClient(this.config.toJsonString().getBytes(StandardCharsets.UTF_8));
         return this.bbcContext;
     }
@@ -367,8 +374,37 @@ public class DioxideBBCService extends AbstractBBCService {
 
     @Override
     public ConsensusState readConsensusState(BigInteger height) {
-        return null;
+        if (height == null || height.signum() < 0) {
+            throw new IllegalArgumentException("height must be non-negative");
+        }
+
+        DioxideTransactionBlock block = dioxideClient.getTransactionBlockInGlobalShardByHeight(height.longValueExact());
+        if (block == null) {
+            throw new RuntimeException("empty Dioxide transaction block at height " + height);
+        }
+        if (StrUtil.isEmpty(block.getHash())) {
+            throw new RuntimeException("empty Dioxide block hash at height " + height);
+        }
+
+        JSONObject consensusHeader = dioxideClient.getConsensusHeaderByHeight(height.longValueExact());
+        long timestamp = block.getTimestamp() == null
+                ? (consensusHeader == null ? 0L : consensusHeader.getLongValue("Timestamp"))
+                : block.getTimestamp();
+        byte[] stateData = consensusHeader == null
+                ? new byte[0]
+                : consensusHeader.toJSONString().getBytes(StandardCharsets.UTF_8);
+
+        return new ConsensusState(
+                BigInteger.valueOf(block.getHeight() == null ? height.longValueExact() : block.getHeight()),
+                block.getHash().getBytes(StandardCharsets.UTF_8),
+                StrUtil.nullToEmpty(block.getPrev()).getBytes(StandardCharsets.UTF_8),
+                timestamp,
+                stateData,
+                new byte[0],
+                new byte[0]
+        );
     }
+
 
     @Override
     public boolean hasTpBta(CrossChainLane tpbtaLane, int tpBtaVersion) {
@@ -407,17 +443,17 @@ public class DioxideBBCService extends AbstractBBCService {
 
     @Override
     public void setupPTCContract() {
-
+        throw new UnsupportedOperationException("Plain Dioxide uses the V0 trusted-relayer AM and has no PTC contract");
     }
 
     @Override
     public void setPtcContract(String ptcContractAddress) {
-
+        throw new UnsupportedOperationException("Plain Dioxide has no on-chain PTC contract");
     }
 
     @Override
     public void addTpBta(ThirdPartyBlockchainTrustAnchor tpbta) {
-
+        throw new UnsupportedOperationException("Plain Dioxide has no on-chain PTC contract");
     }
 
     @Override

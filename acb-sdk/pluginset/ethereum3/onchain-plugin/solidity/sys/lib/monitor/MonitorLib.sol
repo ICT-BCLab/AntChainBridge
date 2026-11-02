@@ -133,6 +133,29 @@ library MonitorLib {
     //     offset -= 4 + monitorMessage.message.length;
     // }
 
+    /** V1 source envelope with an empty monitorMsg, byte-exact with the legacy memory encoder. */
+    function encodeCalldata(uint32 control, bytes calldata message) internal pure returns (bytes memory pkg) {
+        uint256 length = message.length;
+        uint256 padded = ((length + 31) / 32) * 32;
+        pkg = new bytes(68 + padded);
+        assembly {
+            let data := add(pkg, 32)
+            // Reversed payload words precede the payload length and empty reason length.
+            mstore(add(data, padded), length)
+            mstore(add(data, add(padded, 32)), 0)
+            mstore(add(data, add(padded, 36)), and(control, 0xffffffff))
+            for { let pos := 0 } lt(pos, length) { pos := add(pos, 32) } {
+                let word := calldataload(add(message.offset, pos))
+                let remaining := sub(length, pos)
+                if lt(remaining, 32) {
+                    let shift := mul(sub(32, remaining), 8)
+                    word := shl(shift, shr(shift, word))
+                }
+                mstore(add(data, sub(sub(padded, 32), pos)), word)
+            }
+        }
+    }
+
     function encode(MonitorMessage memory monitorMessage) pure internal returns (bytes memory) {
 
         uint total_size = 4 + SizeOf.sizeOfString(monitorMessage.monitorMsg) + SizeOf.sizeOfBytes(monitorMessage.message);
@@ -197,12 +220,10 @@ library MonitorLib {
         for (uint256 logicalWord = 0; logicalWord < wordCount; logicalWord++) {
             uint256 sourceOffset = nextOffset + (wordCount - 1 - logicalWord) * 32;
             uint256 targetOffset = logicalWord * 32;
-            uint256 copyLength = length - targetOffset;
-            if (copyLength > 32) {
-                copyLength = 32;
-            }
-            for (uint256 i = 0; i < copyLength; i++) {
-                value[targetOffset + i] = rawMessage[sourceOffset + i];
+            // new bytes(length) reserves complete words, including the final padded word.
+            // Address payload bytes after their length slots; do not overwrite the length.
+            assembly {
+                mstore(add(add(value, 32), targetOffset), mload(add(add(rawMessage, 32), sourceOffset)))
             }
         }
     }

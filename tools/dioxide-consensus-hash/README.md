@@ -1,6 +1,6 @@
 # Dioxide2 consensus-state database hash keys
 
-Only BTA product `dioxide2` uses lowercase `SHA-256(original hash bytes)` in
+BTA products `dioxide2` and `dioxide` use lowercase `SHA-256(original hash bytes)` in
 `validated_consensus_states.hash` and `parent_hash`. These are database lookup
 keys, not replacement consensus hashes. Every other product retains its original
 hexadecimal columns. `raw_vcs` is never rewritten; signed encodings, original
@@ -12,6 +12,12 @@ Dioxide hash queries accept the original hexadecimal hash, search both digest an
 legacy keys, and check the decoded original hash before returning a single row.
 Duplicate or inconsistent candidates fail rather than silently selecting a row.
 Height/latest queries continue decoding `raw_vcs`.
+
+The plain `dioxide` extension is for the functional-test path documented in
+`acb-sdk/pluginset/dioxide/LOCAL_FUNCTIONAL_TESTING.md`; it does not add HCDVS
+verification. The historical maintenance CLI below still selects `dioxide2`
+records only. Do not assume it converts existing plain `dioxide` records, or run
+it automatically during deployment.
 
 ## Offline and isolated MySQL tests
 

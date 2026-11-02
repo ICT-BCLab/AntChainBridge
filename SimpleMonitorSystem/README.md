@@ -25,10 +25,10 @@ chmod +x init_tls_certs.sh bin/*.sh
 ./bin/stop.sh
 ```
 
-论文时延实验可只对监管验证接口增加固定延迟；默认值为`0`，正式Xun实验使用`1000ms`：
+论文时延实验可只对监管验证接口增加固定延迟；默认值为`0`，正式Xun实验使用`500ms`：
 
 ```shell
-JAVA_OPTS="-Dmonitor.verify.delay.ms=1000" ./bin/start.sh
+JAVA_OPTS="-Dmonitor.verify.delay.ms=500" ./bin/start.sh
 ```
 
 该参数仅作用于`verifyCrossChainMessageInMonitorSystem`，不会延迟旁路留存接口

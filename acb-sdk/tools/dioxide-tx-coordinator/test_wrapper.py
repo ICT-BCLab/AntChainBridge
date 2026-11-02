@@ -1,10 +1,97 @@
 import base64
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 from dioxide_tx_coordinator import CoordinatedDioxClient
 
 
 class WrapperTest(unittest.TestCase):
+    def test_batch_deploy_preserves_sdk_constructor_encoding(self):
+        wrapper = self.wrapper([])
+        wrapper.send_transaction = Mock(return_value="deployment-hash")
+        user = Mock(address="public-owner")
+        with tempfile.TemporaryDirectory() as directory:
+            contracts = {}
+            for name, constructor in [("Interface.gcl", None), ("Empty.gcl", {}),
+                                      ("App.gcl", {"owner": "public-owner", "label": "中文"})]:
+                path = Path(directory) / name
+                path.write_text(name, encoding="utf-8")
+                contracts[str(path)] = constructor
+            self.assertEqual("deployment-hash", wrapper.deploy_contracts(
+                "testapp", user, contracts, compile_time=20, operation_id="deploy:batch"))
+        wrapper.send_transaction.assert_called_once_with(
+            user, "core.delegation.deploy_contracts",
+            {"code": ["Interface.gcl", "Empty.gcl", "App.gcl"],
+             "cargs": ["", "{}", json.dumps({"owner": "public-owner", "label": "中文"})],
+             "time": 20}, delegatee="testapp", is_sync=True, timeout=120000,
+            operation_id="deploy:batch")
+        wrapper.client.wait_for_deploy.assert_called_once_with("deployment-hash", 120)
+
+    def test_single_deploy_preserves_sdk_constructor_encoding(self):
+        for constructor in [None, {}, {"owner": "public-owner"}]:
+            with self.subTest(constructor=constructor):
+                wrapper = self.wrapper([])
+                wrapper.send_transaction = Mock(return_value="deployment-hash")
+                user = Mock(address="public-owner")
+                self.assertEqual("deployment-hash", wrapper.deploy_contract(
+                    "testapp", user, source_code="interface I {}", construct_args=constructor,
+                    operation_id="deploy:single"))
+                expected = "" if constructor is None else json.dumps(constructor)
+                wrapper.send_transaction.assert_called_once_with(
+                    user, "core.delegation.deploy_contracts",
+                    {"code": ["interface I {}"], "cargs": [expected]},
+                    delegatee="testapp", is_sync=True, timeout=60000, operation_id="deploy:single")
+                wrapper.client.wait_for_deploy.assert_called_once_with("deployment-hash", 60)
+
+    def test_deployment_wait_limits_match_sdk_in_both_units(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "Interface.gcl"
+            path.write_text("interface I {}", encoding="utf-8")
+            for method in ["deploy_contract", "deploy_contracts"]:
+                for compile_time, seconds in [(None, 60), (0, 60), (10, 60), (20, 120), (30, 180)]:
+                    with self.subTest(method=method, compile_time=compile_time):
+                        wrapper = self.wrapper([])
+                        wrapper.send_transaction = Mock(return_value="original-hash")
+                        args = {"file_path": str(path)} if method == "deploy_contract" else {
+                            "contracts": {str(path): None}}
+                        self.assertEqual("original-hash", getattr(wrapper, method)(
+                            "testapp", Mock(address="owner"), compile_time=compile_time,
+                            operation_id="deploy:timeout-test", **args))
+                        wrapper.send_transaction.assert_called_once()
+                        self.assertEqual(seconds * 1000,
+                                         wrapper.send_transaction.call_args.kwargs["timeout"])
+                        self.assertEqual("deploy:timeout-test",
+                                         wrapper.send_transaction.call_args.kwargs["operation_id"])
+                        wrapper.client.wait_for_deploy.assert_called_once_with("original-hash", seconds)
+
+    def test_deployment_wait_failures_never_resubmit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "Interface.gcl"
+            path.write_text("interface I {}", encoding="utf-8")
+            for method in ["deploy_contract", "deploy_contracts"]:
+                for phase in ["confirmation", "deployment"]:
+                    for error in [TimeoutError("wait expired"), RuntimeError("execution failed")]:
+                        with self.subTest(method=method, phase=phase, error=type(error)):
+                            wrapper = self.wrapper([])
+                            wrapper.send_transaction = Mock(return_value="original-hash")
+                            if phase == "confirmation":
+                                wrapper.send_transaction.side_effect = error
+                            else:
+                                wrapper.client.wait_for_deploy.side_effect = error
+                            args = {"file_path": str(path)} if method == "deploy_contract" else {
+                                "contracts": {str(path): None}}
+                            with self.assertRaises(type(error)) as caught:
+                                getattr(wrapper, method)("testapp", Mock(address="owner"),
+                                    compile_time=20, operation_id="deploy:original", **args)
+                            self.assertIs(error, caught.exception)
+                            wrapper.send_transaction.assert_called_once()
+                            if phase == "confirmation":
+                                wrapper.client.wait_for_deploy.assert_not_called()
+                            else:
+                                wrapper.client.wait_for_deploy.assert_called_once_with("original-hash", 120)
+
     def test_dapp_setup_uses_coordinated_submission_and_checks_wait(self):
         wrapper = self.wrapper([])
         wrapper.send_transaction = Mock(return_value="same-hash")

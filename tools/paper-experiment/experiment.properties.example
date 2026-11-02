@@ -14,7 +14,8 @@ workload.rate=5
 workload.duration.seconds=30
 workload.workers=16
 source.wait.seconds=900
-terminal.wait.seconds=900
+# This ETH-MYC example allows 25 minutes for Ethereum finality.
+terminal.wait.seconds=1500
 
 source.product=ethereum3
 source.blockchain.id=eth04.id
