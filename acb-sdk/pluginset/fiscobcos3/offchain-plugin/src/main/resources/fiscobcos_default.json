@@ -1,12 +1,8 @@
 {
-  "certPath": "/path/to/sdk",
-  "caCert": "/path/to/sdk/ca.crt",
-  "sslCert": "/path/to/sdk/sdk.crt",
-  "sslKey": "/path/to/sdk/sdk.key",
+  "caCert": "-----BEGIN CERTIFICATE-----\nMIIDA……9EUcg=\n-----END CERTIFICATE-----\n",
+  "sslCert": "-----BEGIN CERTIFICATE-----\nMIIDF……oDejg==\n-----END CERTIFICATE-----\n",
+  "sslKey": "-----BEGIN PRIVATE KEY-----\nMIIEv……1yaTy\n-----END PRIVATE KEY-----\n",
+  "disableSsl": "true",
   "connectPeer": "127.0.0.1:20200",
-  "groupID": "1",
-  "useSMCrypto": "false",
-  "monitorCommitteeId": "default",
-  "monitorNodeId": "monitor-node",
-  "monitorNodeAddress": "0x0000000000000000000000000000000000000000"
+  "groupID": "group0"
 }

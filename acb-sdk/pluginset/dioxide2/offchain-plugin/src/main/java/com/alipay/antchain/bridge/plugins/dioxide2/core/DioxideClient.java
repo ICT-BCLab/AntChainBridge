@@ -104,6 +104,14 @@ public class DioxideClient {
 
     private static final String INVOCATION_SUCCESS = "IVKRET_SUCCESS";
 
+    static final int HIGH_GAS_LIMIT = 50_000_000;
+
+    private static final Set<String> HIGH_GAS_CONTRACT_FUNCTIONS = Set.of(
+            "updatePTCTrustRoot",
+            "updatePTCVerifyAnchor",
+            "addTpBta"
+    );
+
     public DioxideClient(DioxideConfig config, Logger bbcLogger) {
         this.bbcLogger = bbcLogger;
         this.config = config;
@@ -726,37 +734,221 @@ public class DioxideClient {
 
     public void setProtocolToAuthMsg(String protocolCidInString, String protocolType) {
         long protocolCid = Long.parseLong(protocolCidInString);
+        int protocolTypeValue = Integer.parseInt(protocolType);
         String protocolAddress = String.format("0x%016X:contract", protocolCid);
 
         try {
-            String txHash = sendTransaction(
-                    JSON.toJSONString(orderedMap(
-                    "sender", dioxideAccount.getAddressInString(),
-                    "function", String.format("%s.%s.%s",config.getDappName(), config.getAmContractName(), "setProtocol"),
-                    "args", orderedMap(
-                            "protocolID", protocolCid,
-                            "protocolAddress", protocolAddress,
-                            "protocolType", Integer.parseInt(protocolType)
-                    ))),
-                    true
+            String txHash = ensureProtocolBinding(
+                    protocolCid,
+                    protocolTypeValue,
+                    () -> getContractState(
+                            config.getDappName(), config.getAmContractName(), DioxideTypes.Scope.Global, ""
+                    ).getJSONObject("State"),
+                    () -> sendTransaction(
+                            JSON.toJSONString(orderedMap(
+                                    "sender", dioxideAccount.getAddressInString(),
+                                    "function", String.format(
+                                            "%s.%s.%s",
+                                            config.getDappName(), config.getAmContractName(), "setProtocol"
+                                    ),
+                                    "args", orderedMap(
+                                            "protocolID", protocolCid,
+                                            "protocolAddress", protocolAddress,
+                                            "protocolType", protocolTypeValue
+                                    ))),
+                            true
+                    )
             );
 
             if (StrUtil.isEmpty(txHash)) {
-                throw new RuntimeException("tx hash is empty");
+                getBbcLogger().info(
+                        "protocol already configured or concurrently completed "
+                                + "(cid: {}, address: {}, type: {}) in AM {}, skip transaction",
+                        protocolCid, protocolAddress, protocolTypeValue, config.getAmContractName()
+                );
+            } else {
+                getBbcLogger().info("set protocol (cid: {}, address: {}, type: {}) to AM {} by tx {} ",
+                        protocolCid, protocolAddress, protocolTypeValue, config.getAmContractName(), txHash
+                );
             }
-            getBbcLogger().info("set protocol (cid: {}, address: {}, type: {}) to AM {} by tx {} ",
-                    protocolCid, protocolAddress, protocolType, config.getAmContractName(), txHash
-            );
             JSONObject resp = getContractState(config.getDappName(), config.getAmContractName(), DioxideTypes.Scope.Global, "");
             getBbcLogger().info("result of am contract state: \n{}", JSON.toJSONString(resp, SerializerFeature.PrettyFormat));
         } catch (Exception e) {
             throw new RuntimeException(
                     String.format(
-                            "failed to set protocol (cid: %s, address: %s, type: %s) to AM %s",
-                            protocolCid, protocolAddress, protocolType, config.getAmContractName()
+                            "failed to set protocol (cid: %s, address: %s, type: %s) to AM %s: %s",
+                            protocolCid, protocolAddress, protocolType, config.getAmContractName(), e.getMessage()
                     ), e
             );
         }
+    }
+
+    @FunctionalInterface
+    interface CheckedSupplier<T> {
+        T get() throws Exception;
+    }
+
+    enum ProtocolBindingState {
+        UNCONFIGURED,
+        MATCHED,
+        CONFLICT
+    }
+
+    record ProtocolBindingInspection(ProtocolBindingState state, String detail) {
+    }
+
+    static String ensureProtocolBinding(
+            long protocolCid,
+            int protocolType,
+            CheckedSupplier<JSONObject> stateReader,
+            CheckedSupplier<String> submitter
+    ) throws Exception {
+        ProtocolBindingInspection initial = inspectProtocolBinding(stateReader.get(), protocolCid, protocolType);
+        if (initial.state() == ProtocolBindingState.MATCHED) {
+            return null;
+        }
+        if (initial.state() == ProtocolBindingState.CONFLICT) {
+            throw new IllegalStateException(initial.detail());
+        }
+
+        try {
+            String txHash = submitter.get();
+            if (StrUtil.isEmpty(txHash)) {
+                throw new IllegalStateException("setProtocol returned an empty transaction hash");
+            }
+            return txHash;
+        } catch (Exception submissionFailure) {
+            try {
+                ProtocolBindingInspection afterFailure = inspectProtocolBinding(
+                        stateReader.get(), protocolCid, protocolType
+                );
+                if (afterFailure.state() == ProtocolBindingState.MATCHED) {
+                    return null;
+                }
+                if (afterFailure.state() == ProtocolBindingState.CONFLICT) {
+                    submissionFailure.addSuppressed(new IllegalStateException(afterFailure.detail()));
+                }
+            } catch (Exception recheckFailure) {
+                submissionFailure.addSuppressed(recheckFailure);
+            }
+            throw submissionFailure;
+        }
+    }
+
+    static ProtocolBindingInspection inspectProtocolBinding(
+            JSONObject state,
+            long expectedProtocolCid,
+            int expectedProtocolType
+    ) {
+        if (expectedProtocolCid <= 0L) {
+            return conflict("invalid expected protocol CID " + expectedProtocolCid);
+        }
+        if (expectedProtocolType < 0) {
+            return conflict("invalid expected protocol type " + expectedProtocolType);
+        }
+        if (state == null) {
+            return conflict("AuthMsg global state is missing");
+        }
+
+        String typeKey = Integer.toString(expectedProtocolType);
+        String expectedAddress = String.format("0x%016X:contract", expectedProtocolCid);
+        JSONObject routes = state.getJSONObject("protocolRoutes");
+        JSONObject ids = state.getJSONObject("protocolIDs");
+        JSONObject subProtocols = state.getJSONObject("subProtocols");
+
+        boolean routePresent = routes != null && routes.containsKey(typeKey);
+        String routeAddress = routePresent ? routes.getString(typeKey) : null;
+        boolean idPresent = ids != null && ids.containsKey(typeKey);
+        Long routeCid = idPresent ? ids.getLong(typeKey) : null;
+
+        JSONObject matchingSubProtocol = null;
+        String matchingSubProtocolAddress = null;
+        JSONObject relatedSubProtocol = null;
+        String relatedSubProtocolAddress = null;
+        int relatedSubProtocolCount = 0;
+        if (subProtocols != null) {
+            for (String address : subProtocols.keySet()) {
+                JSONObject candidate = subProtocols.getJSONObject(address);
+                boolean related = address.equalsIgnoreCase(expectedAddress)
+                        || (candidate != null && Objects.equals(
+                                candidate.getInteger("protocolType"), expectedProtocolType
+                        ))
+                        || (candidate != null && Objects.equals(
+                                candidate.getLong("protocolID"), expectedProtocolCid
+                        ));
+                if (related) {
+                    relatedSubProtocolCount++;
+                    if (relatedSubProtocol == null) {
+                        relatedSubProtocolAddress = address;
+                        relatedSubProtocol = candidate;
+                    }
+                }
+                if (address.equalsIgnoreCase(expectedAddress)) {
+                    matchingSubProtocolAddress = address;
+                    matchingSubProtocol = candidate;
+                }
+            }
+        }
+
+        boolean subProtocolPresent = matchingSubProtocol != null;
+        if (!routePresent && !idPresent && relatedSubProtocolCount == 0) {
+            return new ProtocolBindingInspection(
+                    ProtocolBindingState.UNCONFIGURED,
+                    "protocol type " + expectedProtocolType + " is not configured"
+            );
+        }
+
+        boolean subProtocolExists = subProtocolPresent
+                && matchingSubProtocol.getBooleanValue("exist");
+        Integer subProtocolType = subProtocolPresent
+                ? matchingSubProtocol.getInteger("protocolType") : null;
+        Long subProtocolCid = subProtocolPresent
+                ? matchingSubProtocol.getLong("protocolID") : null;
+        String subProtocolAddress = subProtocolPresent
+                ? matchingSubProtocol.getString("protocolAddress") : null;
+
+        boolean matched = routePresent
+                && expectedAddress.equalsIgnoreCase(StrUtil.nullToEmpty(routeAddress))
+                && idPresent
+                && Objects.equals(routeCid, expectedProtocolCid)
+                && subProtocolExists
+                && Objects.equals(subProtocolType, expectedProtocolType)
+                && Objects.equals(subProtocolCid, expectedProtocolCid)
+                && expectedAddress.equalsIgnoreCase(StrUtil.nullToEmpty(subProtocolAddress))
+                && relatedSubProtocolCount == 1;
+        if (matched) {
+            return new ProtocolBindingInspection(
+                    ProtocolBindingState.MATCHED,
+                    "protocol type " + expectedProtocolType + " already points to " + expectedAddress
+            );
+        }
+
+        JSONObject reportedSubProtocol = matchingSubProtocol != null
+                ? matchingSubProtocol : relatedSubProtocol;
+        String reportedSubProtocolAddress = matchingSubProtocol != null
+                ? matchingSubProtocolAddress : relatedSubProtocolAddress;
+        return conflict(String.format(
+                "AuthMsg protocol binding conflict for type %d: expected cid=%d,address=%s; "
+                        + "actual route cid=%s,address=%s,relatedSubProtocols=%d,subProtocolKey=%s,"
+                        + "subProtocol cid=%s,type=%s,address=%s,exist=%s",
+                expectedProtocolType,
+                expectedProtocolCid,
+                expectedAddress,
+                routeCid,
+                StrUtil.nullToEmpty(routeAddress),
+                relatedSubProtocolCount,
+                StrUtil.nullToEmpty(reportedSubProtocolAddress),
+                reportedSubProtocol == null ? null : reportedSubProtocol.getLong("protocolID"),
+                reportedSubProtocol == null ? null : reportedSubProtocol.getInteger("protocolType"),
+                reportedSubProtocol == null ? "" : StrUtil.nullToEmpty(
+                        reportedSubProtocol.getString("protocolAddress")
+                ),
+                reportedSubProtocol != null && reportedSubProtocol.getBooleanValue("exist")
+        ));
+    }
+
+    private static ProtocolBindingInspection conflict(String detail) {
+        return new ProtocolBindingInspection(ProtocolBindingState.CONFLICT, detail);
     }
 
     public CrossChainMessageReceipt relayMsgToAuthMsg(byte[] rawMessage, String submissionId) {
@@ -771,7 +963,7 @@ public class DioxideClient {
                     "args",  orderedMap(
                             "pkg", toIntArray(rawMessage)
                     ),
-                    "gaslimit", 50000000)),
+                    "gaslimit", HIGH_GAS_LIMIT)),
                     false, submissionId
             );
 
@@ -1077,12 +1269,15 @@ public class DioxideClient {
             String contractName,
             String function,
             LinkedHashMap<String, Object> args) {
+        LinkedHashMap<String, Object> request = contractInvocationRequest(
+                dioxideAccount.getAddressInString(),
+                config.getDappName(),
+                contractName,
+                function,
+                args
+        );
         String txHash = sendTransaction(
-                JSON.toJSONString(orderedMap(
-                        "sender", dioxideAccount.getAddressInString(),
-                        "function", String.format("%s.%s.%s", config.getDappName(), contractName, function),
-                        "args", args
-                )),
+                JSON.toJSONString(request),
                 true
         );
         if (StrUtil.isEmpty(txHash)) {
@@ -1090,6 +1285,28 @@ public class DioxideClient {
         }
         getBbcLogger().info("invoke {}.{} by tx {}", contractName, function, txHash);
         return txHash;
+    }
+
+    static LinkedHashMap<String, Object> contractInvocationRequest(
+            String sender,
+            String dappName,
+            String contractName,
+            String function,
+            LinkedHashMap<String, Object> args) {
+        LinkedHashMap<String, Object> request = orderedMap(
+                "sender", sender,
+                "function", String.format("%s.%s.%s", dappName, contractName, function),
+                "args", args
+        );
+        Integer gasLimit = gasLimitForContractFunction(function);
+        if (gasLimit != null) {
+            request.put("gaslimit", gasLimit);
+        }
+        return request;
+    }
+
+    static Integer gasLimitForContractFunction(String function) {
+        return HIGH_GAS_CONTRACT_FUNCTIONS.contains(function) ? HIGH_GAS_LIMIT : null;
     }
 
     private byte[] concat(byte[] first, byte[] second) {
@@ -1401,6 +1618,33 @@ public class DioxideClient {
         boolean relayGroupFinalized = isTxFinalized(relayGroupTransaction);
         JSONArray eventRelays = relayGroup.getJSONArray("Relays");
         if (CollUtil.isEmpty(eventRelays)) {
+            // PK_RELAY_SINGLE responses describe the relay itself at the root and expose
+            // protocol-event transactions through Invocation.Relays.  Only grouped relay
+            // responses carry their members in the top-level Relays array.
+            if (relayGroupTransaction.getInvocation() != null) {
+                String invocationStatus = relayGroupTransaction.getInvocation().getStatus();
+                if (StrUtil.isNotEmpty(invocationStatus)
+                        && !StrUtil.equals(invocationStatus, INVOCATION_SUCCESS)) {
+                    return failedRelayEventInspection(
+                            relayGroupTxHash,
+                            String.format(
+                                    "invocation %s failed with status %s",
+                                    StrUtil.emptyToDefault(relayGroupTransaction.getFunction(), "unknown"),
+                                    invocationStatus
+                            )
+                    );
+                }
+                if (CollUtil.isNotEmpty(relayGroupTransaction.getInvocation().getRelays())) {
+                    return new RelayEventInspection(
+                            RelayEventState.READY,
+                            relayGroupTransaction.getInvocation().getRelays().stream()
+                                    .filter(StrUtil::isNotEmpty)
+                                    .distinct()
+                                    .toList(),
+                            ""
+                    );
+                }
+            }
             return relayGroupFinalized
                     ? failedRelayEventInspection(relayGroupTxHash, "contains no embedded relay invocations")
                     : new RelayEventInspection(RelayEventState.PENDING, List.of(), "");

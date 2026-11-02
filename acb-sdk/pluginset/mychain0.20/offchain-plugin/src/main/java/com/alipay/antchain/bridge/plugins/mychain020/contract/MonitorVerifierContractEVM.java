@@ -130,6 +130,18 @@ public class MonitorVerifierContractEVM {
         setPtcHubAddress(ptcHubContractName, null);
     }
 
+    /** Read by the original identity when a persisted context has lost its name. */
+    public Identity getPtcHubIdentity(Identity verifierContractIdentity) {
+        TransactionReceipt receipt = verifierContractIdentity == null
+                ? mychain020Client.localCallContract(contractAddress, new EVMParameter("getPtcHubAddress()"))
+                : mychain020Client.localCallContract(verifierContractIdentity, new EVMParameter("getPtcHubAddress()"));
+        if (receipt == null || receipt.getResult() != ErrorCode.SUCCESS.getErrorCode()
+                || receipt.getOutput() == null || receipt.getOutput().length != 32) {
+            throw new CallContractException(contractAddress, "", "monitor verifier PTC hub identity is unavailable");
+        }
+        return new Identity(new EVMOutput(Hex.toHexString(receipt.getOutput())).getIdentity());
+    }
+
     public void setPtcHubAddress(String ptcHubContractName, Identity verifierContractIdentity) {
         EVMParameter parameters = new EVMParameter(SET_PTC_HUB_ADDRESS_SIGN);
         parameters.addIdentity(Utils.getIdentityByName(ptcHubContractName, mychain020Client.getConfig().getMychainHashType()));

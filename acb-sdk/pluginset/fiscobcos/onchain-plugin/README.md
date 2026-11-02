@@ -8,12 +8,10 @@
   </p>
 </div>
 
-> FISCO BCOS平台完全兼容Solidity智能合约。如需了解链上插件合约的具体实现，请参考[Ethereum2.0链上插件合约示例](https://github.com/AntChainOpenLabs/AntChainBridge/tree/main/acb-sdk/pluginset/fiscobcos/onchain-plugin)。
+> FISCO BCOS 平台兼容 Solidity 智能合约。本插件的无监管系统合约以 Ethereum2 实现为唯一源码。
 
-本插件的 AuthMsg、SDP、PTC 与 Monitor 合约和 Ethereum3 插件共用同一套
-`ethereum3/onchain-plugin/solidity/sys` 源码，以避免不同 EVM 插件的协议实现漂移。
-当前 SDP 实现将 V1、V2、V3 的请求消息统一路由到 Monitor，ACK 消息保持直达；
-Monitor 在接收侧严格解封装后再调用业务合约。
+本插件的 AuthMsg、SDP 与 PTC wrapper 从
+`ethereum2/onchain-plugin/solidity/sys` 生成，不包含 Monitor 或 MonitorVerifier。
 
 ## 开发注意事项
 
@@ -38,13 +36,14 @@ FISCO-Java-SDK 在处理 bytes32 类型时存在限制。使用 Java 代码调�
 转换示例：
 
 ```bash
-bash contract2java.sh solidity -p com.alipay.antchain.bridge.plugins.fiscobcos -s ./contracts/solidity/sys --no-analysis
+bash contract2java.sh solidity -p com.alipay.antchain.bridge.plugins.fiscobcos.abi -s ./contracts/solidity/sys --no-analysis
 ```
 
 仓库提供了可重复生成脚本，参数为 FISCO Console 根目录：
 
 ```bash
-./generate_monitor_wrappers.sh /path/to/fisco-console
+./generate_wrappers.sh /path/to/fisco-console
 ```
 
-该脚本只更新 `SDPMsg`、`Monitor`、`MonitorVerifier` 三个 Java 包装类。
+该脚本更新 `AuthMsg`、`SDPMsg`、`PtcHub`、`CommitteePtcVerifier` 和 `AppContract` wrapper。
+为避免递归删除误伤，脚本会打印并保留 `mktemp` 生成目录；确认内容后可由操作人员清理。

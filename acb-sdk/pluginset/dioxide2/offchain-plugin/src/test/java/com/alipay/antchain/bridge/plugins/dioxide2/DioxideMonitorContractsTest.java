@@ -2,6 +2,11 @@ package com.alipay.antchain.bridge.plugins.dioxide2;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.lang.reflect.Field;
+
+import com.alipay.antchain.bridge.commons.bbc.DefaultBBCContext;
+import com.alipay.antchain.bridge.commons.bbc.syscontract.AuthMessageContract;
+import com.alipay.antchain.bridge.commons.bbc.syscontract.SDPContract;
 
 import com.alipay.antchain.bridge.plugins.dioxide2.conf.DioxideConfig;
 import com.alipay.antchain.bridge.plugins.dioxide2.gcl.Contracts;
@@ -10,6 +15,29 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class DioxideMonitorContractsTest {
+
+    @Test
+    public void contextPersistsFreshlyDeployedAmAndSdpCids() throws Exception {
+        DioxideBBCService service = new DioxideBBCService();
+        DioxideConfig config = new DioxideConfig();
+        DefaultBBCContext context = new DefaultBBCContext();
+        AuthMessageContract am = new AuthMessageContract();
+        am.setContractAddress("631378018305");
+        SDPContract sdp = new SDPContract();
+        sdp.setContractAddress("631379066881");
+        context.setAuthMessageContract(am);
+        context.setSdpContract(sdp);
+        Field configField = DioxideBBCService.class.getDeclaredField("config");
+        configField.setAccessible(true);
+        configField.set(service, config);
+        Field contextField = DioxideBBCService.class.getDeclaredField("bbcContext");
+        contextField.setAccessible(true);
+        contextField.set(service, context);
+        DioxideConfig persisted = DioxideConfig.fromJsonString(new String(
+                service.getContext().getConfForBlockchainClient(), StandardCharsets.UTF_8));
+        Assert.assertEquals(am.getContractAddress(), persisted.getAmContractAddressDeployed());
+        Assert.assertEquals(sdp.getContractAddress(), persisted.getSdpContractAddressDeployed());
+    }
 
     @Test
     public void generatedContractsContainMonitorProofAndRollbackFlow() {

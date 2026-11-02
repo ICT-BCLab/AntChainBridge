@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.0;
+
+import "./lib/monitor/MonitorProofContext.sol";
 pragma experimental ABIEncoderV2;
 
 import "./interfaces/ISDPMessage.sol";
@@ -11,7 +13,7 @@ import "./lib/utils/SizeOf.sol";
 import "./lib/utils/TypesToBytes.sol";
 
 contract Monitor is Ownable {
-    uint32 public constant IMPLEMENTATION_VERSION = 7;
+    uint32 public constant IMPLEMENTATION_VERSION = 9;
     uint32 public constant MONITOR_CLOSE = 1;
     uint32 public constant MONITOR_OPEN = 2;
     uint32 public constant MONITOR_ROLLBACK = 3;
@@ -120,12 +122,12 @@ contract Monitor is Ownable {
         identity receiverID,
         bytes calldata message
     ) external {
-        if (monitorControl == MONITOR_OPEN) {
+        uint32 control = monitorControl;
+        if (control == MONITOR_OPEN) {
             require(_preMonitoring(msg.sender, receiverID), "Monitor: pre monitoring blocked");
         }
-        bytes memory rawMonitorMessage = _encodeMonitorMessage(monitorControl, message);
+        bytes memory rawMonitorMessage = _encodeMonitorMessageCalldata(control, message);
         ISDPMessage(sdpAddress).sendUnorderedMessageFromMonitor(receiverDomain, receiverID, msg.sender, rawMonitorMessage);
-        emit MonitorMessageSent(msg.sender, receiverDomain, receiverID, monitorControl);
     }
 
     function sendMonitorMessageV2(
@@ -203,7 +205,7 @@ contract Monitor is Ownable {
     ) external onlySubProtocol {
         (uint32 monitorType, bytes memory message) = _decodeMonitorMessage(rawMessage);
         if (monitorType == MONITOR_OPEN) {
-            bool verified = _verifyMonitorNodeProof();
+            bool verified = _verifyMonitorNodeProof(senderDomain, author, receiverID, rawMessage);
             emit MonitorNodeProofVerified(senderDomain, author, receiverID, verified);
             if (!verified) {
                 bytes memory rollbackMessage = _encodeMonitorMessage(
@@ -233,7 +235,7 @@ contract Monitor is Ownable {
     ) external onlySubProtocol {
         (uint32 monitorType, bytes memory message) = _decodeMonitorMessage(rawMessage);
         if (monitorType == MONITOR_OPEN) {
-            bool verified = _verifyMonitorNodeProof();
+            bool verified = _verifyMonitorNodeProof(senderDomain, author, receiverID, rawMessage);
             emit MonitorNodeProofVerified(senderDomain, author, receiverID, verified);
             if (!verified) {
                 bytes memory rollbackMessage = _encodeMonitorMessage(
@@ -300,7 +302,7 @@ contract Monitor is Ownable {
     ) internal {
         (uint32 monitorType, bytes memory message) = _decodeMonitorMessage(rawMessage);
         if (monitorType == MONITOR_OPEN) {
-            bool verified = _verifyMonitorNodeProof();
+            bool verified = _verifyMonitorNodeProof(senderDomain, author, receiverID, rawMessage);
             emit MonitorNodeProofVerified(senderDomain, author, receiverID, verified);
             require(verified, "Monitor: mid monitoring not pass");
         }
@@ -343,6 +345,29 @@ contract Monitor is Ownable {
         );
     }
 
+    /** V1 source envelope with an empty monitorMsg, byte-exact with the legacy memory encoder. */
+    function _encodeMonitorMessageCalldata(uint32 control, bytes calldata message) internal pure returns (bytes memory pkg) {
+        uint256 length = message.length;
+        uint256 padded = ((length + 31) / 32) * 32;
+        pkg = new bytes(68 + padded);
+        assembly {
+            let data := add(pkg, 32)
+            // Reversed payload words precede the payload length and empty reason length.
+            mstore(add(data, padded), length)
+            mstore(add(data, add(padded, 32)), 0)
+            mstore(add(data, add(padded, 36)), and(control, 0xffffffff))
+            for { let pos := 0 } lt(pos, length) { pos := add(pos, 32) } {
+                let word := calldataload(add(message.offset, pos))
+                let remaining := sub(length, pos)
+                if lt(remaining, 32) {
+                    let shift := mul(sub(32, remaining), 8)
+                    word := shl(shift, shr(shift, word))
+                }
+                mstore(add(data, sub(sub(padded, 32), pos)), word)
+            }
+        }
+    }
+
     function _encodeMonitorMessage(uint32 monitorType, bytes memory message) internal pure returns (bytes memory) {
         return _encodeMonitorMessage(monitorType, new bytes(0), message);
     }
@@ -367,9 +392,9 @@ contract Monitor is Ownable {
         return rawMessage;
     }
 
-    function _verifyMonitorNodeProof() internal returns (bool) {
+    function _verifyMonitorNodeProof(string memory senderDomain, identity author, identity receiverID, bytes memory rawMessage) internal returns (bool) {
         require(monitorVerifierAddress != identity(0), "Monitor: verifier not set");
-        return IMonitorVerifier(monitorVerifierAddress).verifyMonitorNodeProofMessage();
+        return IMonitorVerifier(monitorVerifierAddress).verifyMonitorNodeProofMessage(MonitorProofContext.key(senderDomain, bytes32(author), bytes32(receiverID), rawMessage));
     }
 
     function _decodeMonitorMessage(bytes memory rawMessage)
@@ -398,8 +423,8 @@ contract Monitor is Ownable {
      * follows reverse-ordered 32-byte payload chunks. The assembly helper used
      * by the original Mychain runtime copied non-word-aligned payloads over the
      * bytes length slot, so a 36-byte body arrived as its last four bytes plus
-     * zero padding. Decode explicitly by byte to preserve the exact business
-     * payload across Ethereum/FISCO/Mychain compilers.
+     * zero padding. Copy complete words at explicit payload offsets to preserve the exact
+     * business bytes across Ethereum/FISCO/Mychain compilers.
      */
     function _decodeReversePaddedBytes(bytes memory rawMessage, uint256 endOffset)
         internal
@@ -417,12 +442,10 @@ contract Monitor is Ownable {
         for (uint256 logicalWord = 0; logicalWord < wordCount; logicalWord++) {
             uint256 sourceOffset = nextOffset + (wordCount - 1 - logicalWord) * 32;
             uint256 targetOffset = logicalWord * 32;
-            uint256 copyLength = length - targetOffset;
-            if (copyLength > 32) {
-                copyLength = 32;
-            }
-            for (uint256 i = 0; i < copyLength; i++) {
-                value[targetOffset + i] = rawMessage[sourceOffset + i];
+            // new bytes(length) reserves complete words, including the final padded word.
+            // Address payload bytes after their length slots; do not overwrite the length.
+            assembly {
+                mstore(add(add(value, 32), targetOffset), mload(add(add(rawMessage, 32), sourceOffset)))
             }
         }
     }

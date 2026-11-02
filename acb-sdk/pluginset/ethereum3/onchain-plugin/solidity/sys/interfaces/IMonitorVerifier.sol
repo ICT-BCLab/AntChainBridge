@@ -24,9 +24,9 @@ interface IMonitorVerifier {
         CrossChainLane calldata newCrossChainLane,
         string calldata newCommitteeId,
         CommitteeNodeProof calldata newMonitorNodeProof,
-        bytes calldata encodedToSign) external;
+        bytes calldata encodedToSign, bytes32 messageContext) external;
 
-    function verifyMonitorNodeProofMessage() external returns (bool);
+    function verifyMonitorNodeProofMessage(bytes32 messageContext) external returns (bool);
 
     function verifyMonitorOrder(string calldata committeeId, string calldata signAlgo, bytes calldata rawProof, bytes calldata rawMonitorOrder) external returns (bool);
 }

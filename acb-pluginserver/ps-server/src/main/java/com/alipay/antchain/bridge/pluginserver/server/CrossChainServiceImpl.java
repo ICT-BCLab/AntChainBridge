@@ -602,10 +602,8 @@ public class CrossChainServiceImpl extends CrossChainServiceGrpc.CrossChainServi
     }
 
     private Response handleReadConsensusState(IBBCService bbcService, ReadConsensusStateRequest request, String product, String domain) {
-        if (!checkBBCVersionSatisfiedV1(bbcService)) {
-            return ResponseBuilder.buildFailResp(ServerErrorCodeEnum.BBC_VERSION_NOT_SUPPORTED,
-                    StrUtil.format("bbc version not supported, please check plugin code for product {}", product));
-        }
+        // Reading consensus data does not require an on-chain PTC Hub. V0
+        // adapters may supply a real reader while retaining their V0 AM path.
         try {
             return ResponseBuilder.buildBBCSuccessResp(
                     CallBBCResponse.newBuilder()

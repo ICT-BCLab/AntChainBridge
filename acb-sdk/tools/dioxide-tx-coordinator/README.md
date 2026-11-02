@@ -57,6 +57,10 @@ python scripts/dioxide_send_message.py --operation-id test-20260904-001 \
 Python 的测试币准备、Dapp 创建也使用协调入口及独立阶段 ID。Dapp 等待失败会抛异常，
 不能把底层 SDK 的 false 返回值当作完成。首次部署前先确认相应脚本也使用同一版共享模块。
 
+协调部署入口保持原 Python SDK 的构造参数编码：`None` 表示没有构造参数，写入
+`cargs` 的元素为 `""`；显式 `{}` 仍编码为 `"{}"`。批量部署保留源码与参数的对应顺序，
+单合约部署使用相同规则，不能将 `None` 序列化成字符串 `"null"`。
+
 - SIGNED：签名和可恢复交易哈希已经持久化，可能尚未广播，也可能广播后进程退出。
 - UNKNOWN：广播结果未知；先查询链上 ISN，确认未接受时才重播原始签名字节，不得换 ISN。
 - REJECTED：节点明确拒绝且链上 ISN 未前进；同一 operationId 可用相同 ISN 创建新 attempt。
@@ -82,6 +86,11 @@ mailbox 的 32 次写入/等待/读回，结果不能串线。所有 fixture 表
 插件构建加 -Dexec.skip=true，使用已提交 GCL 包装资源，本次不生成或变更链上合约代码。
 
 ## 发布与回滚
+
+Python 单合约和批量部署沿用原 SDK 的等待规则：`max(60, (compile_time or 0) * 6)` 秒。
+协调提交的确认等待使用该值乘以 1000（毫秒）；SDK `wait_for_deploy` 使用原秒值。
+例如 `compile_time=20` 时两个阶段各最多等待 120 秒，`compile_time=10` 时各 60 秒。
+部署等待超时不会触发重新签名或广播；保留原 operation 和交易记录，先只读对账。
 
 先备份服务包、配置和新增协调表，暂停相关提交，确认在途请求收敛；先安装协调存储和配置，
 再部署服务包、插件、Python adapter，进行小批和并发验收。保留各文件 SHA-256、版本和测试 UCP。

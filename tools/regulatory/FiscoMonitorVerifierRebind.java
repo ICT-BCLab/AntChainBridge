@@ -2,10 +2,10 @@
 package tools.regulatory;
 
 import com.alipay.antchain.bridge.commons.bbc.DefaultBBCContext;
-import com.alipay.antchain.bridge.plugins.fiscobcos.FISCOBCOSBBCService;
-import com.alipay.antchain.bridge.plugins.fiscobcos.abi.Monitor;
-import com.alipay.antchain.bridge.plugins.fiscobcos.abi.MonitorVerifier;
-import com.alipay.antchain.bridge.plugins.fiscobcos.abi.PtcHub;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.FISCOBCOSBBCService;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.Monitor;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.MonitorVerifier;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.PtcHub;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.fisco.bcos.sdk.v3.model.TransactionReceipt;

@@ -26,7 +26,7 @@ import org.slf4j.Logger;
 @Setter
 public class MonitorContractClientEVM {
 
-    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 7;
+    public static final int SUPPORTED_IMPLEMENTATION_VERSION = 9;
 
     private static final String MONITOR_EVM_CONTRACT_PREFIX = "MONITOR_EVM_CONTRACT_";
     private static final String MONITOR_EVM_RUNTIME_PATH = "/contract/v1/solidity/Monitor.bin-runtime";
@@ -119,7 +119,9 @@ public class MonitorContractClientEVM {
      * the compiler-sensitive assembly decoder so non-word-aligned business
      * payloads are preserved byte-for-byte on Mychain. Monitor V7 verifies the
      * monitor-node proof before delivery and restores Ethereum3-compatible
-     * rollback/error handling.
+     * rollback/error handling. Monitor V8 consumes a message-bound, one-use
+     * monitor proof result. Monitor V9 removes the V1 unordered auxiliary send
+     * event and avoids temporary encoding objects while preserving wire bytes.
      */
     public boolean ensureImplementationSupported() {
         if (isImplementationVersionSupported()) {
@@ -150,6 +152,18 @@ public class MonitorContractClientEVM {
     }
 
     public Identity getMonitorVerifierIdentity() {
+        Identity identity = getMonitorVerifierIdentityOrZero();
+        if (identity.hexStrValue().matches("(?i)(?:0x)?0+")) {
+            throw new CallContractException(
+                    this.contractAddress,
+                    "",
+                    "monitor verifier identity is not configured");
+        }
+        return identity;
+    }
+
+    /** Distinguish a successful unset-binding read from an RPC/ABI failure. */
+    public Identity getMonitorVerifierIdentityOrZero() {
         TransactionReceipt receipt = mychain020Client.localCallContract(
                 this.contractAddress,
                 new EVMParameter(GET_MONITOR_VERIFIER_SIGN));
@@ -162,14 +176,7 @@ public class MonitorContractClientEVM {
                     "",
                     "monitor verifier identity is unavailable");
         }
-        Identity identity = new Identity(new Hash(receipt.getOutput()));
-        if (identity.hexStrValue().matches("(?i)(?:0x)?0+")) {
-            throw new CallContractException(
-                    this.contractAddress,
-                    "",
-                    "monitor verifier identity is not configured");
-        }
-        return identity;
+        return new Identity(new Hash(receipt.getOutput()));
     }
 
     public void setProtocol(String sdpContractName) {

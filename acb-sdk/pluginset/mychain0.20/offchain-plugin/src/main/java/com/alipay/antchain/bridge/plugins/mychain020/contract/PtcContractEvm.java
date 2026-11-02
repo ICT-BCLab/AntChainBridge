@@ -219,6 +219,18 @@ public class PtcContractEvm extends PTCContract implements AbstractPtcContract {
         logger.info("Set monitor verifier {} with tx {} successfully!", monitorVerifierName, result.getTxId());
     }
 
+    /** A zero identity is a valid read: it means this binding is not set yet. */
+    public com.alipay.mychain.sdk.domain.account.Identity getMonitorVerifierIdentity() {
+        TransactionReceipt receipt = mychain020Client.localCallContract(
+                getContractAddress(), new EVMParameter("getMonitorVerifier()"));
+        if (receipt == null || receipt.getResult() != ErrorCode.SUCCESS.getErrorCode()
+                || receipt.getOutput() == null || receipt.getOutput().length != 32) {
+            throw new CallContractException(getContractAddress(), "", "PTC hub monitor verifier identity is unavailable");
+        }
+        return new com.alipay.mychain.sdk.domain.account.Identity(
+                new EVMOutput(Hex.toHexString(receipt.getOutput())).getIdentity());
+    }
+
     public void setMonitorVerifier(com.alipay.mychain.sdk.domain.account.Identity monitorVerifierIdentity) {
         EVMParameter parameters = new EVMParameter("setMonitorVerifier(identity)");
         parameters.addIdentity(monitorVerifierIdentity);

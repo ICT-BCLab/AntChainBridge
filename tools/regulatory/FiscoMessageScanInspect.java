@@ -10,7 +10,7 @@ import com.alipay.antchain.bridge.commons.bbc.DefaultBBCContext;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.AuthMessageContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.ContractStatusEnum;
 import com.alipay.antchain.bridge.commons.core.base.CrossChainMessage;
-import com.alipay.antchain.bridge.plugins.fiscobcos.FISCOBCOSBBCService;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.FISCOBCOSBBCService;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;

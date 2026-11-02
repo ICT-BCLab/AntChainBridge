@@ -662,6 +662,25 @@ public class DioxideClient {
         long protocolCid = Long.parseLong(protocolCidInString);
         String protocolAddress = String.format("0x%016X:contract", protocolCid);
 
+        // Registration rechecks predeployed AM/SDP bindings. Do not submit the
+        // same setProtocol twice: the contract intentionally rejects duplicates.
+        JSONObject state = getContractState(config.getDappName(), config.getAmContractName(),
+                DioxideTypes.Scope.Global, "").getJSONObject("State");
+        if (state == null) {
+            throw new IllegalStateException("missing AuthMsg state before protocol binding");
+        }
+        JSONObject ids = state.getJSONObject("protocolIDs");
+        JSONObject routes = state.getJSONObject("protocolRoutes");
+        if ((ids != null && ids.containsKey(protocolType))
+                || (routes != null && routes.containsKey(protocolType))) {
+            if (ids != null && routes != null
+                    && Long.toString(protocolCid).equals(ids.getString(protocolType))
+                    && protocolAddress.equalsIgnoreCase(routes.getString(protocolType))) {
+                return;
+            }
+            throw new IllegalStateException("conflicting AuthMsg protocol binding for type " + protocolType);
+        }
+
         try {
             String txHash = sendTransaction(
                     JSON.toJSONString(orderedMap(
@@ -733,6 +752,19 @@ public class DioxideClient {
         long amContractCid = Long.parseLong(amContractCidInString);
         String amContractAddress = String.format("0x%016X:contract", amContractCid);
 
+        JSONObject current = getContractState(config.getDappName(), config.getSdpContractName(),
+                DioxideTypes.Scope.Global, "").getJSONObject("State");
+        if (current == null) {
+            throw new IllegalStateException("missing SDP state before AM binding");
+        }
+        if (current.getLongValue("amContractId") != 0L) {
+            if (current.getLongValue("amContractId") == amContractCid
+                    && amContractAddress.equalsIgnoreCase(current.getString("amAddress"))) {
+                return;
+            }
+            throw new IllegalStateException("conflicting SDP AM binding");
+        }
+
         try {
             String txHash = sendTransaction(
                     JSON.toJSONString(orderedMap(
@@ -762,6 +794,23 @@ public class DioxideClient {
     }
 
     public void setLocalDomainToSdp(String localDomain) {
+        JSONObject current = getContractState(config.getDappName(), config.getSdpContractName(),
+                DioxideTypes.Scope.Global, "").getJSONObject("State");
+        if (current == null) {
+            throw new IllegalStateException("missing SDP state before domain binding");
+        }
+        JSONArray existing = current.getJSONArray("localDomain");
+        if (existing != null && existing.size() == localDomain.getBytes(StandardCharsets.UTF_8).length) {
+            byte[] expected = localDomain.getBytes(StandardCharsets.UTF_8);
+            boolean equal = true;
+            for (int i = 0; i < expected.length; i++) {
+                equal &= existing.getIntValue(i) == (expected[i] & 0xff);
+            }
+            if (equal) {
+                return;
+            }
+        }
+
         try {
             int[] domainArray = toIntArray(localDomain.getBytes(StandardCharsets.UTF_8));
             String txHash = sendTransaction(

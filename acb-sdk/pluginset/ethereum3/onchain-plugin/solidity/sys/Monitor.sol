@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.0;
 
+import "./lib/monitor/MonitorProofContext.sol";
+
 import "./interfaces/IContractUsingSDP.sol";
 import "./interfaces/IContractUsingMonitor.sol";
 import "./interfaces/IContractWithAcks.sol";
@@ -16,7 +18,7 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
     // Version 4 fixes monitor-control handling: CLOSE/OPEN/ROLLBACK are stored
     // as the protocol enum instead of treating every non-zero value as OPEN.
     // Version 5 preserves non-word-aligned payloads emitted by MySolidity chains.
-    uint32 public constant IMPLEMENTATION_VERSION = 5;
+    uint32 public constant IMPLEMENTATION_VERSION = 7;
 
     using MonitorLib for MonitorOrder;
     using MonitorLib for MonitorMessage;
@@ -132,24 +134,18 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
     function sendUnorderedMonitorMessage(string calldata receiverDomain, bytes32 receiverID, bytes calldata message) external {
         _beforeSendUnordered(receiverDomain, receiverID, message);
 
+        uint32 control = monitorControl;
+
         // 执行事前监管的检查
-        if (monitorControl == MonitorLib.MONITOR_OPEN) {
+        if (control == MonitorLib.MONITOR_OPEN) {
             bool monitorResult = false;
-            monitorResult = PreMonitoring(msg.sender, receiverDomain, receiverID, message);
+            monitorResult = _preMonitoring(msg.sender, receiverDomain, receiverID, false);
             if(monitorResult == false) {
                 revert("beforehand Monitor disapproval");
             }
         }
 
-        MonitorMessage memory monitorMessage = MonitorMessage(
-            {
-                monitorType: monitorControl,
-                monitorMsg: "",
-                message: message
-            }
-        );
-
-        bytes memory rawMsg = monitorMessage.encode();
+        bytes memory rawMsg = MonitorLib.encodeCalldata(control, message);
 
         ISDPMessage(sdpAddress).sendUnorderedMessage(receiverDomain, receiverID, msg.sender, rawMsg);
 
@@ -240,7 +236,7 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
         
         if (monitorMessage.monitorType == MonitorLib.MONITOR_OPEN) {
             // 验证监管节点的签名
-            bool res = IMonitorVerifier(monitorVerifierAddress).verifyMonitorNodeProofMessage();
+            bool res = IMonitorVerifier(monitorVerifierAddress).verifyMonitorNodeProofMessage(MonitorProofContext.key(senderDomain, author, bytes32(uint256(uint160(receiverID))), message));
             emit VerifyMonitorNodeProofMessage(senderDomain, author, receiverID, res);
             // 监管不通过 构造回滚消息(仅修改监管字段 对原文不修改)
             if (res == false) {
@@ -269,7 +265,7 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
         
         if (monitorMessage.monitorType == MonitorLib.MONITOR_OPEN) {
             // 验证监管节点的签名
-            bool res = IMonitorVerifier(monitorVerifierAddress).verifyMonitorNodeProofMessage();
+            bool res = IMonitorVerifier(monitorVerifierAddress).verifyMonitorNodeProofMessage(MonitorProofContext.key(senderDomain, author, bytes32(uint256(uint160(receiverID))), message));
             emit VerifyMonitorNodeProofMessage(senderDomain, author, receiverID, res);
             // 监管不通过 构造回滚消息(仅修改监管字段 对原文不修改)
             if (res == false) {
@@ -341,7 +337,7 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
         MonitorMessage memory monitorMessage;
         monitorMessage.decode(rawMessage);
         if (monitorMessage.monitorType == MonitorLib.MONITOR_OPEN) {
-            bool verified = IMonitorVerifier(monitorVerifierAddress).verifyMonitorNodeProofMessage();
+            bool verified = IMonitorVerifier(monitorVerifierAddress).verifyMonitorNodeProofMessage(MonitorProofContext.key(senderDomain, author, bytes32(uint256(uint160(receiverID))), rawMessage));
             emit VerifyMonitorNodeProofMessage(senderDomain, author, receiverID, verified);
             require(verified, "Monitor_Msg: MidMonitoring not pass");
         } else {
@@ -408,6 +404,11 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
     }
 
     function PreMonitoring(address senderAddress, string calldata receiverDomain, bytes32 receiverID, bytes calldata message) internal returns (bool) {
+        return _preMonitoring(senderAddress, receiverDomain, receiverID, true);
+    }
+
+    // Only V1 unordered source sends omit the auxiliary success event.
+    function _preMonitoring(address senderAddress, string calldata receiverDomain, bytes32 receiverID, bool emitApproval) internal returns (bool) {
         bool result = false;
 
         // 事前监管逻辑
@@ -426,9 +427,9 @@ contract Monitor is IMonitor, IContractUsingMonitor, Ownable, Initializable {
                     MonitorLib.MAJOR_TYPE_CONTRACT_ADDRESS,
                     MonitorLib.RECEIVER_IN_BLACKLIST);
             } else {
-                emit MonitorApproval(senderID,
-                    receiverDomain,
-                    receiverID);
+                if (emitApproval) {
+                    emit MonitorApproval(senderID, receiverDomain, receiverID);
+                }
                 return true;
             }
         }

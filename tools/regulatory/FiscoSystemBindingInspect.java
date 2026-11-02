@@ -2,10 +2,13 @@
 package tools.regulatory;
 
 import com.alipay.antchain.bridge.commons.bbc.DefaultBBCContext;
-import com.alipay.antchain.bridge.plugins.fiscobcos.FISCOBCOSBBCService;
-import com.alipay.antchain.bridge.plugins.fiscobcos.abi.Monitor;
-import com.alipay.antchain.bridge.plugins.fiscobcos.abi.MonitorVerifier;
-import com.alipay.antchain.bridge.plugins.fiscobcos.abi.PtcHub;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.FISCOBCOSBBCService;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.Monitor;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.MonitorVerifier;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.PtcHub;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.AuthMsg;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.SDPMsg;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -36,6 +39,20 @@ public final class FiscoSystemBindingInspect {
             System.out.println("monitor.verifier=" + verifierAddress);
             System.out.println("ptc.monitorVerifier=" + ptcHub.getMonitorVerifier());
             System.out.println("verifier.ptcHub=" + verifier.getPtcHubAddress());
+            SDPMsg sdp = SDPMsg.load(monitor.sdpAddress(), service.getClient(), service.getKeyPair());
+            AuthMsg am = AuthMsg.load(sdp.getAmAddress(), service.getClient(), service.getKeyPair());
+            System.out.println("sdp.am=" + sdp.getAmAddress());
+            System.out.println("sdp.monitor=" + sdp.getMonitorAddress());
+            System.out.println("am.sdp=" + am.getProtocol(BigInteger.ZERO));
+            System.out.println("am.ptc=" + am.ptcHubAddr());
+            if (!args[2].equalsIgnoreCase(sdp.getMonitorAddress())
+                    || !monitor.sdpAddress().equalsIgnoreCase(am.getProtocol(BigInteger.ZERO))
+                    || !args[1].equalsIgnoreCase(am.ptcHubAddr())
+                    || !verifierAddress.equalsIgnoreCase(ptcHub.getMonitorVerifier())
+                    || !args[1].equalsIgnoreCase(verifier.getPtcHubAddress())
+                    || !BigInteger.valueOf(2).equals(monitor.getMonitorControl())) {
+                throw new IllegalStateException("FISCO system binding/control mismatch");
+            }
         } finally {
             if (started) {
                 service.shutdown();

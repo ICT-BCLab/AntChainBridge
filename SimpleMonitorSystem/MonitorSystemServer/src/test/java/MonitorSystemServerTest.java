@@ -9,6 +9,8 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.concurrent.atomic.AtomicInteger;
+
 public class MonitorSystemServerTest {
 
     private MonitorSystemServer server;
@@ -102,6 +104,60 @@ public class MonitorSystemServerTest {
         Assert.assertEquals(0, responseAfterInternalError.getCode());
         Assert.assertEquals("", responseAfterInternalError.getErrorMsg());
         Assert.assertFalse(responseAfterInternalError.hasVerifyCrossChainMessageInMonitorSystemResp());
+    }
+
+    @Test
+    public void testDelayAppliesOnlyToVerify() {
+        AtomicInteger calls = new AtomicInteger();
+        AtomicInteger requestedMillis = new AtomicInteger();
+        MonitorSystemServer delayedServer = new MonitorSystemServer(37L, delayMillis -> {
+            calls.incrementAndGet();
+            requestedMillis.set((int) delayMillis);
+        });
+        MonitorSystemServer.MonitorSystemServiceImpl delayedService =
+                delayedServer.new MonitorSystemServiceImpl();
+
+        delayedService.buildVerifyResponse(verifyRequest(validRawUcp));
+        Assert.assertEquals(1, calls.get());
+        Assert.assertEquals(37, requestedMillis.get());
+
+        delayedService.buildRelayResponse(
+                RelayUcpToMonitorSystemRequest.newBuilder()
+                        .setRawUcp(ByteString.copyFrom(validRawUcp))
+                        .setUcpId("ucp-id")
+                        .build()
+        );
+        Assert.assertEquals(1, calls.get());
+    }
+
+    @Test
+    public void testDelayPropertyDefaultsToZeroAndRejectsInvalidValues() {
+        String original = System.getProperty(MonitorSystemServer.VERIFY_DELAY_PROPERTY);
+        try {
+            System.clearProperty(MonitorSystemServer.VERIFY_DELAY_PROPERTY);
+            Assert.assertEquals(0L, MonitorSystemServer.readVerifyDelayMillis());
+
+            System.setProperty(MonitorSystemServer.VERIFY_DELAY_PROPERTY, "-1");
+            assertInvalidDelayProperty();
+
+            System.setProperty(MonitorSystemServer.VERIFY_DELAY_PROPERTY, "not-a-number");
+            assertInvalidDelayProperty();
+        } finally {
+            if (original == null) {
+                System.clearProperty(MonitorSystemServer.VERIFY_DELAY_PROPERTY);
+            } else {
+                System.setProperty(MonitorSystemServer.VERIFY_DELAY_PROPERTY, original);
+            }
+        }
+    }
+
+    private void assertInvalidDelayProperty() {
+        try {
+            MonitorSystemServer.readVerifyDelayMillis();
+            Assert.fail("expected invalid delay property to be rejected");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue(expected.getMessage().contains(MonitorSystemServer.VERIFY_DELAY_PROPERTY));
+        }
     }
 
     private VerifyCrossChainMessageInMonitorSystemRequest verifyRequest(byte[] rawUcp) {

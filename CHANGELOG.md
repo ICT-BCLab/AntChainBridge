@@ -1,5 +1,20 @@
 # 本分支新增功能总结
 
+## 2026.10.09 FISCO BCOS 3.x 本地真链验收
+- 为 `fiscobcos` 和 `fiscobcos3` 增加默认关闭、从外部 SDK 目录读取 TLS 证书的低写入量真链测试入口，普通 `mvn test` 不依赖链节点。
+- 在 FISCO BCOS 3.11.0 标准四节点链完成 Base 的 PTC/收发闭环，以及 Xun 的 Monitor V5、SDP routing V3、有效签名放行、空签名回滚和 CLOSE 放行闭环；测试结束后停止全部节点。
+
+## 2026.10.08 FISCO BCOS 3.x 基础版与监管版插件拆分
+- 将 `fiscobcos` 恢复为对齐 Ethereum2 的无监管插件，保留完整 PTC、HCDVS、TpBTA 和 SDP V1/V2/V3 能力，不部署 Monitor/MonitorVerifier。
+- 将原完整 FISCO BCOS 3.x 监管实现迁移到 `fiscobcos3`，对齐 Ethereum3 的 Monitor V5 与 Committee PTC 监管证明流程；旧 FISCO BCOS 2.x 继续由 `fiscobcos2` 承担。
+- 同步监管验收工具和论文实验发送器：监管工具固定使用 `fiscobcos3`，实验 Base/Xun 分别使用 `fiscobcos`/`fiscobcos3`。
+
+## 2026.10.06 论文跨链事务时延实验支持
+- 为Relayer增加默认关闭、独立落盘的`t1/t2/t3`结构化指标，覆盖本地UCP入库、目的链首次提交、立即确认、异步确认、远端回执和失败终态，不改变数据库结构与跨链编码。
+- 为SimpleMonitorSystem增加仅作用于监管验证接口的可配置延迟，正式Xun实验可固定为1000ms，默认不延迟。
+- 增加ETH、Mychain、FISCO三种源链开环发送适配器、512B确定性载荷、5 TPS/30秒调度、时钟偏差门禁、原始记录与manifest输出。
+- 增加`t0～t3`日志聚合及逐笔/轮次CSV统计，支持乱序、重复、缺失、失败、负时延与最多15分钟终态等待；补充Base/Xun六条有向路径的实验操作文档。
+
 ## 2026.08.17 Mychain基础版与监管版插件拆分
 - 保持`mychain0.10`基础插件不变，将带监管能力的实现独立为`mychain0.20`，使用`mychain2`产品类型、`plugin-mychain2`插件标识和`mychain020-bbc`构建产物，支持两套插件按需独立部署。
 
@@ -121,7 +136,7 @@ message MonitorOrder {
 ```
 监管节点会解析出监管指令各字段，并构造包含监管指令的交易发送到指定区块链的监管合约，最终由监管合约更新监管规则。该结构各字段含义如下：
 - product
-  - 监管指令要下发到的区块链的类型，例如etherum2，fiscobcos等
+  - 监管指令要下发到的区块链类型，例如 `ethereum3`、`fiscobcos3` 等；无监管产品 `ethereum2`、`fiscobcos` 不接收监管指令
 - domain
   - 监管指令要下发到的区块链的域名
 - monitorOrderType

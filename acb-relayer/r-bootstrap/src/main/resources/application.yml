@@ -42,3 +42,6 @@ relayer:
     api_key_path: file:conf-local/platform-report-api-key
     connect_timeout_ms: 3000
     read_timeout_ms: 5000
+  # Paper experiment timestamps. Disabled by default and does not perform network I/O.
+  experiment_metrics:
+    enabled: false

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.0;
+
+import "../monitor/MonitorProofContext.sol";
 pragma experimental ABIEncoderV2;
 
 import "./PtcLib.sol";
@@ -183,7 +185,7 @@ library CommitteeLib {
                     // if it is monitor node proof, trans it to MonitorPTC
                     if (checkMonitorNode(info.nodeId)) {
                         isMonitorNode = true;
-                        IMonitorVerifier(monitorPtcAddr).receiveMonitorNodeProofMessage(tpBta.crossChainLane, cer.committeeId, ceProof.sigs[j], encodedToSign);
+                        _cacheMonitorProof(tpBta, tpProof, ceProof.sigs[j], monitorPtcAddr, encodedToSign, cer.committeeId);
                         res = true;
                         break;
                     }
@@ -208,6 +210,14 @@ library CommitteeLib {
         }
 
         return cer.policy.threshold.check(optinalCorrect);
+    }
+
+    function _cacheMonitorProof(TpBta memory tpBta, ThirdPartyProof memory tpProof,
+        CommitteeNodeProof memory monitorProof, address verifier, bytes memory encodedToSign, string memory committeeId) private {
+        IMonitorVerifier(verifier).receiveMonitorNodeProofMessage(
+            tpBta.crossChainLane, committeeId,
+            monitorProof, encodedToSign,
+            MonitorProofContext.fromResponse(tpProof.tpbtaCrossChainLane.channel.senderDomain, tpProof.resp.body));
     }
 
     function checkMonitorNode(string memory nodeId) internal pure returns (bool) {

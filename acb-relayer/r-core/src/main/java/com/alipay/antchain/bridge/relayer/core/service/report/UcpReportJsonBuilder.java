@@ -156,7 +156,8 @@ public class UcpReportJsonBuilder {
     }
 
     private boolean isMonitorProduct(String product) {
-        return "dioxide2".equalsIgnoreCase(product) || "ethereum3".equalsIgnoreCase(product);
+        return "dioxide2".equalsIgnoreCase(product) || "ethereum3".equalsIgnoreCase(product)
+                || "mychain2".equalsIgnoreCase(product) || "fiscobcos3".equalsIgnoreCase(product);
     }
 
     private boolean isStructurallyValidMonitorMessage(byte[] payload) {

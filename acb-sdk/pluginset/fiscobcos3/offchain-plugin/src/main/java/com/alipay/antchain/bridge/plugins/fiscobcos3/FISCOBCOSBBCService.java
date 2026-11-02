@@ -16,51 +16,64 @@
 package com.alipay.antchain.bridge.plugins.fiscobcos3;
 
 import cn.hutool.core.collection.ListUtil;
+import cn.hutool.core.thread.ThreadUtil;
 import cn.hutool.core.util.HexUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.fastjson.JSON;
-import com.alibaba.fastjson2.JSONObject;
+import com.alibaba.fastjson.JSONObject;
 import com.alipay.antchain.bridge.commons.bbc.AbstractBBCContext;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.AuthMessageContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.ContractStatusEnum;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.MonitorContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.PTCContract;
 import com.alipay.antchain.bridge.commons.bbc.syscontract.SDPContract;
+import com.alipay.antchain.bridge.commons.bcdns.AbstractCrossChainCertificate;
+import com.alipay.antchain.bridge.commons.bcdns.CrossChainCertificateTypeEnum;
+import com.alipay.antchain.bridge.commons.bcdns.utils.CrossChainCertificateUtil;
 import com.alipay.antchain.bridge.commons.core.base.*;
 import com.alipay.antchain.bridge.commons.core.ptc.*;
 import com.alipay.antchain.bridge.commons.core.rcc.ReliableCrossChainMessage;
+import com.alipay.antchain.bridge.commons.utils.crypto.SignAlgoEnum;
 import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.AuthMsg;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.CommitteePtcVerifier;
 import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.Monitor;
 import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.MonitorVerifier;
+import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.PtcHub;
 import com.alipay.antchain.bridge.plugins.fiscobcos3.abi.SDPMsg;
 import com.alipay.antchain.bridge.plugins.lib.BBCService;
 import com.alipay.antchain.bridge.plugins.spi.bbc.AbstractBBCService;
+import com.alipay.antchain.bridge.ptc.committee.types.basic.CommitteeEndorseProof;
+import com.alipay.antchain.bridge.ptc.committee.types.basic.CommitteeNodeProof;
+import com.alipay.antchain.bridge.ptc.committee.types.trustroot.CommitteeVerifyAnchor;
+import com.webank.wedpr.crypto.NativeInterface;
 import lombok.Getter;
 import lombok.SneakyThrows;
-import org.fisco.bcos.sdk.BcosSDK;
-import org.fisco.bcos.sdk.abi.ABICodecException;
-import org.fisco.bcos.sdk.client.Client;
-import org.fisco.bcos.sdk.client.protocol.response.BcosBlock;
-import org.fisco.bcos.sdk.client.protocol.response.BcosBlockHeader;
-import org.fisco.bcos.sdk.client.protocol.response.BlockNumber;
-import org.fisco.bcos.sdk.client.protocol.response.TransactionReceiptWithProof;
-import org.fisco.bcos.sdk.config.ConfigOption;
-import org.fisco.bcos.sdk.config.model.*;
-import org.fisco.bcos.sdk.crypto.keypair.CryptoKeyPair;
-import org.fisco.bcos.sdk.model.MerkleProofUnit;
-import org.fisco.bcos.sdk.model.TransactionReceipt;
-import org.fisco.bcos.sdk.transaction.codec.decode.TransactionDecoderInterface;
-import org.fisco.bcos.sdk.transaction.codec.decode.TransactionDecoderService;
-import org.fisco.bcos.sdk.transaction.manager.AssembleTransactionProcessor;
-import org.fisco.bcos.sdk.transaction.manager.TransactionProcessorFactory;
-import org.fisco.bcos.sdk.transaction.model.dto.TransactionResponse;
+import org.fisco.bcos.sdk.v3.BcosSDK;
+import org.fisco.bcos.sdk.v3.client.Client;
+import org.fisco.bcos.sdk.v3.client.protocol.response.BcosBlock;
+import org.fisco.bcos.sdk.v3.client.protocol.response.BcosBlockHeader;
+import org.fisco.bcos.sdk.v3.codec.ContractCodec;
+import org.fisco.bcos.sdk.v3.codec.ContractCodecException;
+import org.fisco.bcos.sdk.v3.codec.datatypes.DynamicBytes;
+import org.fisco.bcos.sdk.v3.config.ConfigOption;
+import org.fisco.bcos.sdk.v3.config.model.*;
+import org.fisco.bcos.sdk.v3.crypto.keypair.CryptoKeyPair;
+import org.fisco.bcos.sdk.v3.eventsub.EventSubParams;
+import org.fisco.bcos.sdk.v3.eventsub.EventSubscribe;
+import org.fisco.bcos.sdk.v3.model.EventLog;
+import org.fisco.bcos.sdk.v3.model.TransactionReceipt;
+import org.fisco.bcos.sdk.v3.transaction.codec.decode.TransactionDecoderInterface;
+import org.fisco.bcos.sdk.v3.transaction.codec.decode.TransactionDecoderService;
+import org.fisco.bcos.sdk.v3.transaction.manager.AssembleTransactionProcessor;
+import org.fisco.bcos.sdk.v3.transaction.manager.TransactionProcessorFactory;
+import org.fisco.bcos.sdk.v3.transaction.model.dto.TransactionResponse;
 
 import java.io.IOException;
 import java.math.BigInteger;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.stream.Collectors;
 
 import static com.alipay.antchain.bridge.plugins.fiscobcos3.abi.AuthMsg.SENDAUTHMESSAGE_EVENT;
@@ -69,26 +82,47 @@ import static com.alipay.antchain.bridge.plugins.fiscobcos3.abi.AuthMsg.SENDAUTH
 @Getter
 public class FISCOBCOSBBCService extends AbstractBBCService {
 
-    static private String TX_RECEIPT_STATUS_SUCCESS = "0x0";
+    private static final BigInteger SDP_MONITOR_ROUTING_VERSION = BigInteger.valueOf(3L);
 
-    private static final BigInteger SDP_MONITOR_ROUTING_VERSION = BigInteger.valueOf(2L);
+    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(5L);
 
-    private static final BigInteger MONITOR_IMPLEMENTATION_VERSION = BigInteger.valueOf(3L);
+    private static final String ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
+    /**
+     * The legacy generated wrapper declares SendAuthMessage(bytes), while the
+     * FISCO Solidity interface deployed by this repository emits
+     * SendAuthMessage(string) containing a hex-encoded AM package.  Keep both
+     * event ABIs so existing deployments remain readable during upgrades.
+     */
+    private static final String SEND_AUTH_MESSAGE_STRING_EVENT_ABI =
+            "[{\"anonymous\":false,\"inputs\":[{\"indexed\":false,"
+                    + "\"internalType\":\"string\",\"name\":\"pkgHex\","
+                    + "\"type\":\"string\"}],\"name\":\"SendAuthMessage\","
+                    + "\"type\":\"event\"}]";
 
     private FISCOBCOSConfig config;
 
     private BcosSDK sdk;
     private Client client;
     private CryptoKeyPair keyPair;
+    private ContractCodec contractCodec;
     private AssembleTransactionProcessor transactionProcessorAM;
     private AssembleTransactionProcessor transactionProcessorSDP;
+    private AssembleTransactionProcessor transactionProcessorPTC;
 
     private AbstractBBCContext bbcContext;
 
     @Override
     @SneakyThrows
     public void startup(AbstractBBCContext abstractBBCContext) {
-        getBBCLogger().info("BSN~FISCO-BCOS BBCService startup with context: {}", new String(abstractBBCContext.getConfForBlockchainClient()));
+        getBBCLogger().info("FISCO-BCOS BBCService startup requested");
+
+        // init NativeInterface
+        Future<?> future = ThreadUtil.execAsync(() -> {
+            Thread.currentThread().setContextClassLoader(this.getClass().getClassLoader());
+            NativeInterface.secp256k1GenKeyPair();
+        });
+        future.get();
 
         if (ObjectUtil.isNull(abstractBBCContext)) {
             throw new RuntimeException("null bbc context");
@@ -100,9 +134,20 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         // 1. obtain the configuration information
         try {
             config = FISCOBCOSConfig.fromJsonString(new String(abstractBBCContext.getConfForBlockchainClient()));
-            getBBCLogger().info("BSN~ startup with config: {}", JSON.toJSONString(config));
         } catch (IOException e) {
             throw new RuntimeException(e);
+        }
+
+        if (StrUtil.isEmpty(config.getCaCert())) {
+            throw new RuntimeException("CA certification is empty");
+        }
+
+        if (StrUtil.isEmpty(config.getSslCert())) {
+            throw new RuntimeException("SSL certification is empty");
+        }
+
+        if (StrUtil.isEmpty(config.getSslKey())) {
+            throw new RuntimeException("SSL key is empty");
         }
 
         if (StrUtil.isEmpty(config.getConnectPeer())) {
@@ -119,20 +164,14 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
             // 实例化 cryptoMaterial
             Map<String, Object> cryptoMaterial = new HashMap<>();
-            cryptoMaterial.put("certPath", config.getCertPath());// certPath: 证书路径
-            cryptoMaterial.put("caCert", config.getCaCert());// caCert: CA证书路径
-            cryptoMaterial.put("sslCert", config.getSslCert());// sslCert: SDK证书
-            cryptoMaterial.put("sslKey", config.getSslKey());// sslKey: SDK私钥
-            cryptoMaterial.put("enSslCert", config.getEnSslCert());// enSslCert: 国密SSL的SDK证书
-            cryptoMaterial.put("enSslKey", config.getEnSslKey());// enSslKey: 国密SSL的SDK私钥
-            cryptoMaterial.put("sslCryptoType", StrUtil.equals("true", config.getUseSMCrypto()) ? "1" : "0");// 0非国密  1 国密
             cryptoMaterial.put("useSMCrypto", config.getUseSMCrypto());
-            cryptoMaterial.put("disableSsl", "false");
+            cryptoMaterial.put("disableSsl", config.getDisableSsl());
             configProperty.cryptoMaterial = cryptoMaterial;
 
             // 实例化 network
             Map<String, Object> network = new HashMap<>();
             network.put("messageTimeout", config.getMessageTimeout());
+            network.put("defaultGroup", config.getDefaultGroup());
             network.put("peers", new ArrayList<>(Collections.singletonList(config.getConnectPeer())));
             configProperty.network = network;
 
@@ -140,27 +179,24 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             Map<String, Object> account = new HashMap<>();
             account.put("keyStoreDir", config.getKeyStoreDir());
             account.put("accountFileFormat", config.getAccountFileFormat());
-            if (StrUtil.isNotEmpty(config.getAccountAddress())) {
-                account.put("accountAddress", config.getAccountAddress());
+            if (StrUtil.isNotBlank(config.getAccountFilePath())) {
+                account.put("accountFilePath", config.getAccountFilePath());
             }
+            account.put("password", config.getAccountPassword());
             configProperty.account = account;
 
             // 实例化 threadPool
             configProperty.threadPool = new HashMap<>();
-            if (StrUtil.isNotEmpty(config.getThreadPoolSize())) {
-                configProperty.threadPool.put("threadPoolSize", config.getThreadPoolSize());
-            }
 
             // 实例化 amop
             configProperty.amop = new ArrayList<>();
 
-            ConfigOption configOption = new ConfigOption(configProperty);
+            ConfigOption configOption = new ConfigOption();
 
-            CryptoMaterialConfig cryptoMaterialConfig = new CryptoMaterialConfig(configProperty, config.isGm() ? 1 : 0);
-            cryptoMaterialConfig.setCaCertPath(config.getCaCert());
-            cryptoMaterialConfig.setSdkCertPath(config.getSslCert());
-            cryptoMaterialConfig.setSdkPrivateKeyPath(config.getSslKey());
-
+            CryptoMaterialConfig cryptoMaterialConfig = new CryptoMaterialConfig();
+            cryptoMaterialConfig.setCaCert(config.getCaCert());
+            cryptoMaterialConfig.setSdkCert(config.getSslCert());
+            cryptoMaterialConfig.setSdkPrivateKey(config.getSslKey());
             configOption.setCryptoMaterialConfig(cryptoMaterialConfig);
 
             configOption.setAccountConfig(new AccountConfig(configProperty));
@@ -168,37 +204,45 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             configOption.setNetworkConfig(new NetworkConfig(configProperty));
             configOption.setThreadPoolConfig(new ThreadPoolConfig(configProperty));
 
-            getBBCLogger().info("BSN~FISCO-BCOS connect peer : {} start", config.getConnectPeer());
+            configOption.setJniConfig(configOption.generateJniConfig());
+            configOption.setConfigProperty(configProperty);
+
             // Initialize BcosSDK
             sdk = new BcosSDK(configOption);
-            getBBCLogger().info("BSN~FISCO-BCOS connect peer : {} end", config.getConnectPeer());
-            getBBCLogger().info("BSN~FISCO-BCOS get client : {} start", config.getGroupID());
             // Initialize the client for the group
-            client = sdk.getClient(Integer.valueOf(config.getGroupID()));
-            getBBCLogger().info("BSN~FISCO-BCOS get client : {} end", config.getGroupID());
+            client = sdk.getClient(config.getGroupID());
 
         } catch (Exception e) {
-            getBBCLogger().info(e.toString());
             throw new RuntimeException(String.format("failed to connect fisco-bcos to peer:%s, group:%s", config.getConnectPeer(), config.getGroupID()), e);
         }
 
         // 3. initialize keypair and create transaction processor
         this.keyPair = client.getCryptoSuite().getCryptoKeyPair();
-
+        // AM
         this.transactionProcessorAM = TransactionProcessorFactory.createAssembleTransactionProcessor(
                 client,
-                this.keyPair,
+                keyPair,
                 "AuthMsg",
-                AuthMsg.ABI_ARRAY[0],
-                config.isGm() ? AuthMsg.SM_BINARY_ARRAY[0] : AuthMsg.BINARY_ARRAY[0]
+                AuthMsg.ABI,
+                AuthMsg.BINARY
         );
+        // SDP
         this.transactionProcessorSDP = TransactionProcessorFactory.createAssembleTransactionProcessor(
                 client,
-                this.keyPair,
+                keyPair,
                 "SDPMsg",
-                SDPMsg.ABI_ARRAY[0],
-                config.isGm() ? SDPMsg.SM_BINARY_ARRAY[0] : SDPMsg.BINARY_ARRAY[0]
+                SDPMsg.ABI,
+                SDPMsg.BINARY
         );
+        // PtcHub
+        this.transactionProcessorPTC = TransactionProcessorFactory.createAssembleTransactionProcessor(
+                client,
+                keyPair,
+                "PtcHub",
+                PtcHub.ABI,
+                PtcHub.BINARY
+        );
+        this.contractCodec = new ContractCodec(client.getCryptoSuite(), false);
 
         // 4. set context
         this.bbcContext = abstractBBCContext;
@@ -220,8 +264,20 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             this.bbcContext.setSdpContract(sdpContract);
         }
 
-        if (ObjectUtil.isNotNull(abstractBBCContext.getMonitorContract())) {
-            this.bbcContext.setMonitorContract(abstractBBCContext.getMonitorContract());
+        if (ObjectUtil.isNull(abstractBBCContext.getPtcContract())
+                && StrUtil.isNotEmpty(this.config.getPtcHubContractAddressDeployed())) {
+            PTCContract ptcContract = new PTCContract();
+            ptcContract.setContractAddress(this.config.getPtcHubContractAddressDeployed());
+            ptcContract.setStatus(ContractStatusEnum.CONTRACT_READY);
+            this.bbcContext.setPtcContract(ptcContract);
+        }
+
+        if (ObjectUtil.isNull(abstractBBCContext.getMonitorContract())
+                && StrUtil.isNotEmpty(this.config.getMonitorContractAddressDeployed())) {
+            MonitorContract monitorContract = new MonitorContract();
+            monitorContract.setContractAddress(this.config.getMonitorContractAddressDeployed());
+            monitorContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
+            this.bbcContext.setMonitorContract(monitorContract);
         }
 
         getBBCLogger().info("FISCO-BCOS BBCService startup success for {}", this.config.getConnectPeer());
@@ -229,22 +285,23 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
     @Override
     public void shutdown() {
-        getBBCLogger().info("BSN~ shutdown FISCO-BCOS BBCService!");
+        getBBCLogger().info("shut down FISCO-BCOS BBCService!");
         this.client.stop();
     }
 
     @Override
     public AbstractBBCContext getContext() {
-        getBBCLogger().info("BSN~ getContext FISCO-BCOS BBCService!");
         if (ObjectUtil.isNull(this.bbcContext)) {
             throw new RuntimeException("empty bbc context");
         }
 
-        getBBCLogger().debug("FISCO-BCOS BBCService context (amAddr: {}, amStatus: {}, sdpAddr: {}, sdpStatus: {})",
+        getBBCLogger().debug("FISCO-BCOS BBCService context (amAddr: {}, amStatus: {}, sdpAddr: {}, sdpStatus: {}, ptcAddr: {}, ptcStatus: {})",
                 this.bbcContext.getAuthMessageContract() != null ? this.bbcContext.getAuthMessageContract().getContractAddress() : "",
                 this.bbcContext.getAuthMessageContract() != null ? this.bbcContext.getAuthMessageContract().getStatus() : "",
                 this.bbcContext.getSdpContract() != null ? this.bbcContext.getSdpContract().getContractAddress() : "",
-                this.bbcContext.getSdpContract() != null ? this.bbcContext.getSdpContract().getStatus() : ""
+                this.bbcContext.getSdpContract() != null ? this.bbcContext.getSdpContract().getStatus() : "",
+                this.bbcContext.getPtcContract() != null ? this.bbcContext.getPtcContract().getContractAddress() : "",
+                this.bbcContext.getPtcContract() != null ? this.bbcContext.getPtcContract().getStatus() : ""
         );
 
         return this.bbcContext;
@@ -252,12 +309,11 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
     @Override
     public CrossChainMessageReceipt readCrossChainMessageReceipt(String txHash) {
-        getBBCLogger().info("BSN~ readCrossChainMessageReceipt txHash：{}",txHash);
         // 1. Obtain FISCO-BCOS receipt according to transaction hash
         TransactionReceipt transactionReceipt;
 
         try {
-            transactionReceipt = client.getTransactionReceipt(txHash).getTransactionReceipt().get();
+            transactionReceipt = client.getTransactionReceipt(txHash, false).getTransactionReceipt();
         } catch (Exception e) {
             throw new RuntimeException(
                     String.format(
@@ -274,7 +330,6 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
     }
 
     private CrossChainMessageReceipt getCrossChainMessageReceipt(TransactionReceipt transactionReceipt) {
-        getBBCLogger().info("BSN~ getCrossChainMessageReceipt transactionReceipt：{}",JSON.toJSONString(transactionReceipt));
         CrossChainMessageReceipt crossChainMessageReceipt = new CrossChainMessageReceipt();
         if (transactionReceipt == null) {
             // If the transaction is not packaged, the return receipt is empty
@@ -285,8 +340,24 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             return crossChainMessageReceipt;
         }
 
-        SDPMsg sdpMsg = SDPMsg.load(config.getSdpContractAddressDeployed(), client, keyPair);
+        // Check if the transaction is confirmed by comparing with current block number
+        BigInteger currBlockNum = BigInteger.valueOf(queryLatestHeight());
+        if (transactionReceipt.getBlockNumber().compareTo(currBlockNum) > 0) {
+            crossChainMessageReceipt.setConfirmed(false);
+            crossChainMessageReceipt.setSuccessful(true);
+            crossChainMessageReceipt.setTxhash(transactionReceipt.getTransactionHash());
+            crossChainMessageReceipt.setErrorMsg("");
+            return crossChainMessageReceipt;
+        }
+
+        // Load SDP contract and get events
+        SDPMsg sdpMsg = SDPMsg.load(
+                this.bbcContext.getSdpContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
         List<SDPMsg.ReceiveMessageEventResponse> receiveMessageEventResponses = sdpMsg.getReceiveMessageEvents(transactionReceipt);
+
         if (ObjectUtil.isNotEmpty(receiveMessageEventResponses)) {
             SDPMsg.ReceiveMessageEventResponse response = receiveMessageEventResponses.get(0);
             crossChainMessageReceipt.setConfirmed(true);
@@ -297,11 +368,16 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
                             "SDP calls biz contract: {}", response.result ? "SUCCESS" : response.errMsg
                     ) : StrUtil.emptyToDefault(transactionReceipt.getMessage(), "")
             );
+
             getBBCLogger().info(
                     "event receiveMessage from SDP contract is found in tx {} of block {} : " +
                             "( send_domain: {}, sender: {}, receiver: {}, biz_call: {}, err_msg: {} )",
-                    transactionReceipt.getTransactionHash(), transactionReceipt.getBlockNumber(),
-                    response.senderDomain, HexUtil.encodeHexStr(response.senderID), response.receiverID, response.result.toString(),
+                    transactionReceipt.getTransactionHash(),
+                    transactionReceipt.getBlockNumber(),
+                    response.senderDomain,
+                    HexUtil.encodeHexStr(response.senderID),
+                    response.receiverID,
+                    response.result.toString(),
                     response.errMsg
             );
             return crossChainMessageReceipt;
@@ -315,21 +391,8 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         return crossChainMessageReceipt;
     }
 
-    public void myDemo() throws ABICodecException {
-
-        TransactionDecoderInterface decoder =
-                new TransactionDecoderService(client.getCryptoSuite());
-        List<TransactionReceipt.Logs> logs = new ArrayList<>();
-        TransactionReceipt.Logs logs1 = new TransactionReceipt.Logs();
-        logs1.setAddress("0x7ba07500c98055c1169ff07f4f316877877a6eff");
-        logs1.setData("0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000048800000019000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000343037337a727a79622e7469616e79616f686f6e6774752e636861696e000000ffffffff4631324246444437323835413130313141464433394131443341423300000000000000000000000000000000000000000000000000000000000003957b5c2273796d5c223a5c2231626566393866353136396361633333653138343430343730653336323030325c222c5c22736c78786a6d5c223a5c2230343232363130623635393133333033323433656232663466653933396138323930616532656139336636393534383734663365336133663764396534323032396563396333643263653131633332376530623162366137623835653538616436646232363962333131613661356463396238336234343363646466666534353838336163376635613236323831326366316434666630363566376431366465656335363465643334633235376262306565333365313965323164383536666531623139333561353139343334626536386263313838653330393764393036333530356430663833663738393133666661616162353164646266643661363538313734633864316638656336613530396661316132356361633263666635623530353737623563613237333431646166363235373365643538626533323339616565613334666531613466653237353833653634373762363536623366376332656561643634396431383133346434623233663261353332363533353265373965636263396361633230363238363834326564613233313635376638383238636334633633643831646566343636323331303966306465343533303462386263646234323638646639363233353033626262366662633032616236333164306638316438613465313365653030306439376663303265316336313830643531653134336564663631393731336431323532346561353334663532323136333365346264616137313434343932636333393433366432393432313533353932653839306234316361623861623339396530613561616537616461396431396662396134376539396162323432353733326635313963303931613361313334646366323635323133633063633731373139313366616536333762396131353466383563663139656431333365313631613331323763663663366637363338623933333832333666376139613165363538363138353562623338323334316234393361616564653838356531376534363166346536353265636138363764336131623032363632373361383663333034666635366636653130383935326562323463613463366666333533646238353964643863655c222c5c227977685c223a5c226c2b4559724d51596b54413553446d4461556c5937673d3d5c227d0000000000000000000000000000000000000000000000000000000000000000000000000000000000042400000000000000000000000000000000a297b33df32c39d5831f6ed26fbc8d8f71ed120900000001000000000000000000000000000000000000000000000000");
-        logs.add(logs1);
-        decoder.decodeEvents(AuthMsg.ABI_ARRAY[0], logs);
-    }
-
     @Override
     public List<CrossChainMessage> readCrossChainMessagesByHeight(long height) {
-        getBBCLogger().info("BSN~ readCrossChainMessagesByHeight:{}", height);
         if (ObjectUtil.isNull(this.bbcContext)) {
             throw new RuntimeException("empty bbc context");
         }
@@ -338,80 +401,31 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             throw new RuntimeException("empty am contract in bbc context");
         }
 
-        List<CrossChainMessage> messageList = ListUtil.toList();
-        String amContractAddress = this.bbcContext.getAuthMessageContract().getContractAddress();
         try {
+            // 2. get block
+            BcosBlock.Block block = client.getBlockByNumber(BigInteger.valueOf(height), false, true).getBlock();
+            if (block == null) {
+                getBBCLogger().info("Block not found at height {}", height);
+                return ListUtil.empty();
+            }
 
-            // 1. get block
-            BcosBlock.Block block = client.getBlockByNumber(BigInteger.valueOf(height), false).getBlock();
-                TransactionDecoderInterface decoder =
-                        new TransactionDecoderService(client.getCryptoSuite());
+            // 3. read messages according to scan policy
+            List<CrossChainMessage> messageList;
+            switch (config.getMsgScanPolicy()) {
+                case BLOCK_SCAN:
+                    messageList = readMessagesFromEntireBlock(block);
+                    break;
+                case LOG_FILTER:
+                    messageList = readMessagesByFilter(block);
+                    break;
+                default:
+                    throw new IllegalArgumentException("Unsupported message scan policy: " + config.getMsgScanPolicy());
+            }
 
-                // 2. get crosschain msgs
-            messageList.addAll(
-                    // 2.1 get txHashes in block
-                    block.getTransactions().stream()
-                            .map(txHash -> {
-                                // 2.2 get transaction receipt
-                                String txHashHex = txHash.get().toString();
-                                TransactionReceiptWithProof.ReceiptAndProof receiptAndProof = client
-                                        .getTransactionReceiptByHashWithProof(txHashHex)
-                                        .getTransactionReceiptWithProof();
-                                if (receiptAndProof == null || receiptAndProof.getReceipt() == null) {
-                                    return Collections.<CrossChainMessage>emptyList();
-                                }
-                                TransactionReceipt receipt = receiptAndProof.getReceipt();
-                                List<TransactionReceipt.Logs> authMessageLogs = receipt.getLogs().stream()
-                                        .filter(log -> StrUtil.equalsIgnoreCase(log.getAddress(), amContractAddress))
-                                        .collect(Collectors.toList());
-                                if (authMessageLogs.isEmpty()) {
-                                    return Collections.<CrossChainMessage>emptyList();
-                                }
-                                // 2.3 decode events from transaction receipt
-                                Map<String, List<List<Object>>> events = null;
-                                getBBCLogger().info("read cross chain receipt.getLogs: {}", authMessageLogs);
-                                try {
-                                    events = decoder.decodeEvents(AuthMsg.ABI_ARRAY[0], authMessageLogs);
-                                } catch (Exception e) {
-                                    throw new RuntimeException(e);
-                                }
-
-
-                                List<List<Object>> sendAuthMessage = events.getOrDefault("SendAuthMessage", Collections.emptyList());
-
-                                return sendAuthMessage.stream()
-                                        .map(event -> {
-                                            String s = event.get(0).toString();
-                                            getBBCLogger().info("read cross chain event.get(0): {}",s);
-                                            /*byte[] decode = Base64.getDecoder().decode(s);
-                                            getBBCLogger().info("read cross Base64.getDecoder()");*/
-                                            byte[] decode = HexUtil.decodeHex(s);
-                                            byte[] ledgerData = JSON.toJSONString(receipt).getBytes();
-                                            Map<String, Object> proofMap = new HashMap<>();
-                                            proofMap.put("receiptProof", Optional.ofNullable(receiptAndProof.getReceiptProof()).orElse(ListUtil.empty()));
-                                            proofMap.put("receiptsRoot", block.getReceiptsRoot());
-                                            proofMap.put("receiptHash", calculateReceiptHash(receiptAndProof.getReceiptProof()));
-                                            byte[] proof = JSON.toJSONString(proofMap).getBytes();
-                                            // 2.4 create crosschain msg
-                                            return CrossChainMessage.createCrossChainMessage(
-                                                    CrossChainMessage.CrossChainMessageType.AUTH_MSG,
-                                                    Long.parseLong(receipt.getBlockNumber().substring(2), 16),
-                                                    Long.parseLong(block.getTimestamp().substring(2), 16),
-                                                    HexUtil.decodeHex(StrUtil.removePrefix(block.getHash().trim(), "0x")),
-                                                    decode,
-                                                    ledgerData,
-                                                    proof,
-                                                    HexUtil.decodeHex(txHashHex.replaceFirst("^0x", ""))
-                                            );
-                                        }).collect(Collectors.toList());
-                            })
-                            .flatMap(List::stream) // flatten from List<List<CrossChainMessage>> to List<CrossChainMessage>
-                            .collect(Collectors.toList())
-            );
-
+            // 4. log results
             if (!messageList.isEmpty()) {
                 getBBCLogger().info("read cross chain messages (height: {}, msg_size: {})", height, messageList.size());
-                getBBCLogger().info("read cross chain messages (height: {}, msgs: {})",
+                getBBCLogger().debug("read cross chain messages (height: {}, msgs: {})",
                         height,
                         messageList.stream().map(JSON::toJSONString).collect(Collectors.joining(","))
                 );
@@ -419,7 +433,6 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
             return messageList;
         } catch (Exception e) {
-            getBBCLogger().info("failed to readCrossChainMessagesByHeight Exception: {}", e.getMessage());
             throw new RuntimeException(
                     String.format(
                             "failed to readCrossChainMessagesByHeight (Height: %d, contractAddr: %s, topic: %s)",
@@ -431,28 +444,375 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         }
     }
 
-    private String calculateReceiptHash(List<MerkleProofUnit> receiptProof) {
-        if (ObjectUtil.isNull(receiptProof) || receiptProof.isEmpty()) {
-            return "";
+    private List<CrossChainMessage> readMessagesByFilter(BcosBlock.Block block) {
+        List<CrossChainMessage> messageList = new ArrayList<>();
+        String contractAddress = this.bbcContext.getAuthMessageContract().getContractAddress();
+
+        // 创建事件订阅参数
+        EventSubParams params = new EventSubParams();
+        params.setFromBlock(BigInteger.valueOf(block.getNumber()));  // 从当前区块开始
+        params.setToBlock(BigInteger.valueOf(block.getNumber()));    // 到当前区块结束
+        params.addAddress(contractAddress);      // 指定合约地址
+
+        try {
+            // 初始化事件订阅
+            EventSubscribe eventSubscribe = EventSubscribe.build(client.getGroup(), client.getConfigOption());
+            eventSubscribe.start();
+
+            // 创建信号量用于同步
+            Semaphore semaphore = new Semaphore(1, true);
+            semaphore.acquire();
+
+            // 注册事件回调
+            eventSubscribe.subscribeEvent(params, (eventId, status, logs) -> {
+                try {
+                    if (status == 0 && logs != null) {  // 正常推送
+                        for (EventLog eventLog : logs) {
+                            try {
+                                byte[] rawAuthMessage = decodeSendAuthMessage(eventLog);
+
+                                if (rawAuthMessage != null) {
+                                    String txHash = eventLog.getTransactionHash();
+                                    // 获取带证明的交易收据
+                                    TransactionReceipt receipt = client.getTransactionReceipt(txHash, true).getTransactionReceipt();
+
+                                    // 构造ledgerData：直接使用收据JSON序列化
+                                    byte[] ledgerData = JSON.toJSONString(receipt).getBytes();
+
+                                    // 构造proof：包含receiptHash、txReceiptProof和receiptsRoot
+                                    Map<String, Object> proofMap = new HashMap<>();
+                                    proofMap.put("receiptHash", receipt.getReceiptHash());
+                                    proofMap.put("txReceiptProof", receipt.getTxReceiptProof());
+                                    proofMap.put("receiptsRoot", block.getReceiptsRoot());
+
+                                    byte[] proof = JSON.toJSONString(proofMap).getBytes();
+
+                                    // 创建跨链消息
+                                    messageList.add(CrossChainMessage.createCrossChainMessage(
+                                            CrossChainMessage.CrossChainMessageType.AUTH_MSG,
+                                            block.getNumber(),
+                                            block.getTimestamp(),
+                                            HexUtil.decodeHex(StrUtil.removePrefix(block.getHash().trim(), "0x")),
+                                            rawAuthMessage,
+                                            ledgerData,
+                                            proof,
+                                            HexUtil.decodeHex(txHash.replaceFirst("^0x", ""))
+                                    ));
+
+                                    getBBCLogger().debug("成功解析SendAuthMessage事件: txHash={}", txHash);
+                                }
+                            } catch (Exception e) {
+                                getBBCLogger().warn("解析SendAuthMessage事件失败: {}", e.getMessage());
+                            }
+                        }
+                    }
+                } finally {
+                    if (status == 1) {  // 推送完成
+                        semaphore.release();
+                    }
+                }
+            });
+
+            // 等待事件处理完成
+            semaphore.acquire();
+            semaphore.release();
+
+            // 停止事件订阅
+            eventSubscribe.stop();
+
+        } catch (Exception e) {
+            getBBCLogger().error("事件订阅处理失败: {}", e.getMessage());
         }
-        return "";
+
+        return messageList;
     }
+
+    /**
+     * 读取区块中的跨链消息并添加正确的交易证明
+     *
+     * @param block 要扫描的区块
+     * @return 跨链消息列表
+     */
+    private List<CrossChainMessage> readMessagesFromEntireBlock(BcosBlock.Block block) {
+        if (ObjectUtil.isNull(this.bbcContext)) {
+            throw new RuntimeException("empty bbc context");
+        }
+
+        if (ObjectUtil.isNull(this.bbcContext.getAuthMessageContract())) {
+            throw new RuntimeException("empty am contract in bbc context");
+        }
+
+        // Validate before scanning: a missing AM must never turn into an unfiltered scan.
+        String amAddress = requireAmAddress(this.bbcContext.getAuthMessageContract().getContractAddress());
+        List<CrossChainMessage> messageList = new ArrayList<>();
+        TransactionDecoderInterface decoder =
+                new TransactionDecoderService(client.getCryptoSuite().getHashImpl(), false);
+
+        // 处理区块中的所有交易
+        for (String txHash : block.getTransactionHashes().stream()
+                .map(hash -> hash.get())
+                .collect(Collectors.toList())) {
+
+            try {
+                // 正确获取带证明的交易收据 - 关键是第二个参数为true
+                TransactionReceipt receipt = client.getTransactionReceipt(txHash, true).getTransactionReceipt();
+
+                if (receipt == null) {
+                    continue;
+                }
+
+                for (byte[] rawAuthMessage : decodeSendAuthMessages(decoder, receipt.getLogEntries(), amAddress)) {
+                    try {
+                        // 构造ledgerData: 直接使用收据JSON序列化
+                        byte[] ledgerData = JSON.toJSONString(receipt).getBytes();
+
+                        // 构造proof: 直接使用收据的txReceiptProof
+                        Map<String, Object> proofMap = new HashMap<>();
+                        proofMap.put("receiptHash", receipt.getReceiptHash());
+                        proofMap.put("txReceiptProof", receipt.getTxReceiptProof());
+                        proofMap.put("receiptsRoot", block.getReceiptsRoot());
+
+                        byte[] proof = JSON.toJSONString(proofMap).getBytes();
+
+                        // 创建跨链消息对象
+                        CrossChainMessage message = CrossChainMessage.createCrossChainMessage(
+                                CrossChainMessage.CrossChainMessageType.AUTH_MSG,
+                                receipt.getBlockNumber().longValue(),
+                                block.getTimestamp(),
+                                HexUtil.decodeHex(StrUtil.removePrefix(block.getHash().trim(), "0x")),
+                                rawAuthMessage,
+                                ledgerData,
+                                proof,
+                                HexUtil.decodeHex(txHash.replaceFirst("^0x", ""))
+                        );
+
+                        messageList.add(message);
+                    } catch (Exception e) {
+                        getBBCLogger().error("Failed to process auth message: " + e.getMessage(), e);
+                    }
+                }
+            } catch (Exception e) {
+                getBBCLogger().error("Failed to process transaction: " + txHash, e);
+            }
+        }
+
+        return messageList;
+    }
+
+    private byte[] decodeSendAuthMessage(EventLog eventLog) {
+        for (String abi : Arrays.asList(AuthMsg.ABI, SEND_AUTH_MESSAGE_STRING_EVENT_ABI)) {
+            try {
+                List<Object> values = contractCodec.decodeEventByTopic(abi, "SendAuthMessage", eventLog);
+                if (!values.isEmpty()) {
+                    return decodeAuthMessageEventPayload(values.get(0));
+                }
+            } catch (Exception ignored) {
+                // The other compatibility ABI may match this topic.
+            }
+        }
+        return null;
+    }
+
+    static List<byte[]> decodeSendAuthMessages(
+            TransactionDecoderInterface decoder,
+            List<TransactionReceipt.Logs> logs,
+            String amAddress) throws ContractCodecException {
+        List<TransactionReceipt.Logs> amLogs = filterLogsByAmAddress(logs, amAddress);
+        List<byte[]> messages = new ArrayList<>();
+        if (amLogs.isEmpty()) {
+            return messages;
+        }
+        for (String abi : Arrays.asList(AuthMsg.ABI, SEND_AUTH_MESSAGE_STRING_EVENT_ABI)) {
+            Map<String, List<List<Object>>> events = decoder.decodeEvents(abi, amLogs);
+            for (List<Object> event : events.getOrDefault("SendAuthMessage", Collections.emptyList())) {
+                if (!event.isEmpty()) {
+                    messages.add(decodeAuthMessageEventPayload(event.get(0)));
+                }
+            }
+        }
+        return messages;
+    }
+
+    static List<TransactionReceipt.Logs> filterLogsByAmAddress(
+            List<TransactionReceipt.Logs> logs, String amAddress) {
+        String expected = requireAmAddress(amAddress);
+        List<TransactionReceipt.Logs> selected = new ArrayList<>();
+        if (logs != null) {
+            for (TransactionReceipt.Logs log : logs) {
+                if (log != null && expected.equals(normalizeAmAddress(log.getAddress()))) {
+                    selected.add(log);
+                }
+            }
+        }
+        // Keep the original receipt and log order intact for ledgerData/proof verification.
+        return selected;
+    }
+
+    private static String requireAmAddress(String address) {
+        String normalized = normalizeAmAddress(address);
+        if (normalized == null) {
+            throw new IllegalArgumentException("invalid AM contract address in bbc context");
+        }
+        return normalized;
+    }
+
+    private static String normalizeAmAddress(String address) {
+        if (address == null) {
+            return null;
+        }
+        String hex = StrUtil.removePrefixIgnoreCase(address.trim(), "0x");
+        return hex.matches("[0-9a-fA-F]{40}") ? hex.toLowerCase(Locale.ROOT) : null;
+    }
+
+    static byte[] decodeAuthMessageEventPayload(Object payload) {
+        if (payload instanceof byte[]) {
+            return (byte[]) payload;
+        }
+        if (payload instanceof String) {
+            String hex = StrUtil.removePrefixIgnoreCase(((String) payload).trim(), "0x");
+            if (hex.isEmpty() || (hex.length() & 1) != 0 || !hex.matches("[0-9a-fA-F]+")) {
+                throw new IllegalArgumentException("SendAuthMessage string payload is not valid hex");
+            }
+            return HexUtil.decodeHex(hex);
+        }
+        throw new IllegalArgumentException(
+                "unsupported SendAuthMessage payload type: "
+                        + (payload == null ? "null" : payload.getClass().getName()));
+    }
+
+    @Override
+    public ConsensusState readConsensusState(BigInteger height) {
+        getBBCLogger().info("🔍 开始获取高度 {} 的共识状态", height);
+
+        try {
+            // 1. 获取指定高度的区块信息
+            BcosBlock.Block block = this.client.getBlockByNumber(BigInteger.valueOf(height.longValue()), false, false).getBlock();
+            if (block == null) {
+                getBBCLogger().warn("😠 无法获取高度为 {} 的区块", height);
+                throw new RuntimeException("无法获取高度为 " + height + " 的区块");
+            }
+
+            // 2. 获取区块哈希
+            byte[] blockHash = HexUtil.decodeHex(StrUtil.removePrefix(block.getHash(), "0x"));
+
+            // 3. 获取父区块哈希
+            List<BcosBlockHeader.ParentInfo> parentInfo = block.getParentInfo();
+            byte[] parentHash = new byte[0];
+            if (!parentInfo.isEmpty()) {
+                parentHash = HexUtil.decodeHex(StrUtil.removePrefix(parentInfo.get(0).getBlockHash(), "0x"));
+            }
+
+            // 4. 获取区块时间戳（处理十六进制格式）
+            long timestamp;
+            String timestampStr = String.valueOf(block.getTimestamp());
+            if (StrUtil.startWith(timestampStr, "0x")) {
+                timestamp = Long.parseLong(StrUtil.removePrefix(timestampStr, "0x"), 16);
+            } else {
+                try {
+                    timestamp = Long.parseLong(timestampStr);
+                } catch (NumberFormatException e) {
+                    getBBCLogger().warn("⚠️ 时间戳格式解析失败: {}, 使用当前时间", timestampStr);
+                    timestamp = System.currentTimeMillis();
+                }
+            }
+
+            // 5. 简化stateData ：用三个关键哈希值表示区块头
+            JSONObject blockHeaderJson = new JSONObject();
+            blockHeaderJson.put("transactionsRoot", block.getTransactionsRoot());
+            blockHeaderJson.put("receiptsRoot", block.getReceiptsRoot());
+            blockHeaderJson.put("stateRoot", block.getStateRoot());
+
+            byte[] stateData = blockHeaderJson.toJSONString().getBytes();
+
+            // 6. 获取共识节点信息
+            byte[] consensusNodeInfo = getConsensusNodeInfo(block);
+
+            // 7. 获取区块背书信息
+            byte[] endorsements = getBlockEndorsements(block);
+
+            // 8. 构造并返回共识状态
+            ConsensusState consensusState = new ConsensusState(
+                    height,
+                    blockHash,
+                    parentHash,
+                    timestamp,
+                    stateData,
+                    consensusNodeInfo,
+                    endorsements
+            );
+
+            getBBCLogger().info("🎉 成功获取高度 {} 的共识状态", height);
+            return consensusState;
+        } catch (Exception e) {
+            getBBCLogger().error("🤯 获取共识状态失败: {}", e.getMessage(), e);
+            throw new RuntimeException(
+                    StrUtil.format("获取高度 %s 的共识状态失败", height),
+                    e
+            );
+        }
+    }
+
+    /**
+     * 获取共识节点信息
+     *
+     * @param block 区块
+     * @return 共识节点信息的字节数组
+     */
+    private byte[] getConsensusNodeInfo(BcosBlock.Block block) {
+        try {
+            // 获取当前区块的共识节点列表
+            List<String> sealerList = new ArrayList<>();
+
+            // 从区块中获取共识节点信息
+            if (block.getSealerList() != null && !block.getSealerList().isEmpty()) {
+                sealerList.addAll(block.getSealerList());
+            } else {
+                getBBCLogger().warn("⚠️ 区块中无共识节点列表信息，使用空列表");
+            }
+
+            // 构建共识节点信息JSON
+            JSONObject consensusInfo = new JSONObject();
+            consensusInfo.put("sealerList", sealerList);
+
+            return consensusInfo.toJSONString().getBytes();
+        } catch (Exception e) {
+            getBBCLogger().warn("⚠️ 获取共识节点信息失败，使用空字节", e);
+            return "{}".getBytes();
+        }
+    }
+
+    /**
+     * 获取区块背书信息
+     *
+     * @param block 区块
+     * @return 背书信息的字节数组
+     */
+    private byte[] getBlockEndorsements(BcosBlock.Block block) {
+        try {
+            // 获取区块签名列表
+            List<BcosBlockHeader.Signature> signatureList = block.getSignatureList();
+            if (signatureList == null || signatureList.isEmpty()) {
+                return "[]".getBytes();
+            }
+
+            // 构建背书信息JSON
+            JSONObject endorsements = new JSONObject();
+            endorsements.put("signatures", signatureList);
+
+            return endorsements.toJSONString().getBytes();
+        } catch (Exception e) {
+            getBBCLogger().warn("⚠️ 获取区块背书信息失败，使用空字节", e);
+            return "{}".getBytes();
+        }
+    }
+
 
     @Override
     public Long queryLatestHeight() {
         Long l;
         try {
-            if(client==null){
-                getBBCLogger().info("queryLatestHeight client is null!");
-            }
-            BlockNumber blockNumber = client.getBlockNumber();
-            if(blockNumber==null){
-                getBBCLogger().info("queryLatestHeight blockNumber is null!");
-            }
-            BigInteger blockNumber1 = blockNumber.getBlockNumber();
-            l = blockNumber1.longValue();
+            l = client.getBlockNumber().getBlockNumber().longValue();
         } catch (Exception e) {
-            getBBCLogger().info("queryLatestHeight node: {}， Exception： {}", config.getConnectPeer(), e);
             throw new RuntimeException("failed to query latest height", e);
         }
         getBBCLogger().info("node: {}, latest height: {}", config.getConnectPeer(), l);
@@ -461,7 +821,6 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
     @Override
     public long querySDPMessageSeq(String senderDomain, String senderID, String receiverDomain, String receiverID) {
-        getBBCLogger().info("BSN~ querySDPMessageSeq:{} :{} :{} :{}", senderDomain,senderID,receiverDomain,receiverID);
         // 1. check context
         if (ObjectUtil.isNull(this.bbcContext)) {
             throw new RuntimeException("empty bbc context");
@@ -480,12 +839,12 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         // 3. query sequence
         long seq;
         try {
-            seq = Long.parseLong(sdpMsg.querySDPMessageSeq(
+            seq = sdpMsg.querySDPMessageSeq(
                     senderDomain,
                     HexUtil.decodeHex(senderID),
                     receiverDomain,
                     HexUtil.decodeHex(receiverID)
-            ).getOutput().replace("0x", ""));
+            ).longValue();
 
             getBBCLogger().info("sdpMsg seq: {} (senderDomain: {}, senderID: {}, receiverDomain: {}, receiverID: {})",
                     seq,
@@ -509,7 +868,6 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
     @Override
     public void setProtocol(String protocolAddress, String protocolType) {
-        getBBCLogger().info("BSN~ setProtocol:{} :{}", protocolAddress,protocolType);
         // 1. check context
         if (ObjectUtil.isNull(this.bbcContext)) {
             throw new RuntimeException("empty bbc context");
@@ -525,41 +883,31 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
                 this.keyPair
         );
 
-        // 3. set protocol to am
+        BigInteger protocolTypeValue = BigInteger.valueOf(Long.parseLong(protocolType));
+
+        // 3. set protocol to am, but keep reconciliation idempotent. A failed
+        // owner transaction must never be mistaken for a ready AM merely
+        // because an older protocol route is still present.
         try {
-            String owner = am.owner();
-            TransactionReceipt receipt = am.setProtocol(protocolAddress, BigInteger.valueOf(Long.parseLong(protocolType)));
-            //TransactionReceipt receipt = client.getTransactionReceipt("0xbebc4dcd64bb3848142f6771699a50fba2b1e3b2f26b3d2c223fdce41baf072b").getTransactionReceipt().get();
-            getBBCLogger().info(
-                    "set protocol result receipt: {}",
-                    JSONObject.toJSONString(receipt)
-            );
-            int status;
-            if(isHexadecimal(receipt.getStatus())){
-                status= Integer.parseInt(receipt.getStatus().substring(2), 16); // 转换为10进制数
-            }else {
-                status= Integer.valueOf(receipt.getStatus());
-            }
-
-            getBBCLogger().info(
-                    "set protocol (owner:{}, statusMsg: {}, message: {}) ",owner,
-                    receipt.getStatusMsg(), receipt.getMessage()
-            );
-
-            if (status == 0) {
+            String currentProtocol = am.getProtocol(protocolTypeValue);
+            if (!protocolAddress.equalsIgnoreCase(currentProtocol)) {
+                TransactionReceipt receipt = am.setProtocol(protocolAddress, protocolTypeValue);
+                requireSuccessfulReceipt(receipt, "set protocol on AuthMsg");
                 getBBCLogger().info(
-                        "set protocol (address: {}, type: {}) to AM {} by tx {} ",
-                        protocolAddress, protocolType,
-                        this.bbcContext.getAuthMessageContract().getContractAddress(),
-                        receipt.getTransactionHash()
-                );
-            } else {
-                getBBCLogger().info(
-                        "set protocol failed, receipt status code: {}",
-                        receipt.getStatus()
+                    "set protocol (address: {}, type: {}) to AM {} by tx {} ",
+                    protocolAddress, protocolType,
+                    this.bbcContext.getAuthMessageContract().getContractAddress(),
+                    receipt.getTransactionHash()
                 );
             }
-
+            String verifiedProtocol = am.getProtocol(protocolTypeValue);
+            if (!protocolAddress.equalsIgnoreCase(verifiedProtocol)) {
+                throw new IllegalStateException(
+                        String.format(
+                                "AM protocol route mismatch: expected %s but found %s",
+                                protocolAddress,
+                                verifiedProtocol));
+            }
         } catch (Exception e) {
             throw new RuntimeException(
                     String.format(
@@ -571,7 +919,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
         // 4. update am contract status
         try {
-            if (!StrUtil.isEmpty(am.getProtocol(BigInteger.ZERO))) {
+            if (protocolAddress.equalsIgnoreCase(am.getProtocol(protocolTypeValue))) {
                 this.bbcContext.getAuthMessageContract().setStatus(ContractStatusEnum.CONTRACT_READY);
             }
         } catch (Exception e) {
@@ -584,8 +932,298 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
     }
 
     @Override
+    public void setAmContract(String contractAddress) {
+        // 1. check context
+        if (ObjectUtil.isNull(this.bbcContext)) {
+            throw new RuntimeException("empty bbc context");
+        }
+        if (ObjectUtil.isNull(this.bbcContext.getSdpContract())) {
+            throw new RuntimeException("empty sdp contract in bbc context");
+        }
+
+        // 2. load sdp contract
+        SDPMsg sdp = SDPMsg.load(
+                this.bbcContext.getSdpContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        // 3. set am to sdp
+        try {
+            TransactionReceipt receipt = sdp.setAmContract(contractAddress);
+            if (receipt.getStatus() == 0) {
+                getBBCLogger().info(
+                        "set am contract (address: {}) to SDP {} by tx {}",
+                        contractAddress,
+                        this.bbcContext.getSdpContract().getContractAddress(),
+                        receipt.getTransactionHash()
+                );
+            } else {
+                getBBCLogger().info(
+                        "set am contract failed, receipt status code: {}",
+                        receipt.getStatus()
+                );
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format(
+                            "failed to set am contract (address: %s) to SDP %s",
+                            contractAddress,
+                            this.bbcContext.getSdpContract().getContractAddress()
+                    ), e
+            );
+        }
+
+        // 4. update sdp contract status
+        try {
+            if (isSdpReady(sdp)) {
+                this.bbcContext.getSdpContract().setStatus(ContractStatusEnum.CONTRACT_READY);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format(
+                            "failed to update sdp contract status (address: %s)",
+                            this.bbcContext.getSdpContract().getContractAddress()
+                    ), e);
+        }
+    }
+
+    @Override
+    public void setLocalDomain(String domain) {
+        // 1. check context
+        if (ObjectUtil.isNull(this.bbcContext)) {
+            throw new RuntimeException("empty bbc context");
+        }
+        if (StrUtil.isEmpty(this.bbcContext.getSdpContract().getContractAddress())) {
+            throw new RuntimeException("none sdp contract address");
+        }
+
+        // 2. load sdp contract
+        SDPMsg sdp = SDPMsg.load(
+                this.bbcContext.getSdpContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        // 3. set domain to sdp
+        try {
+            TransactionReceipt receipt = sdp.setLocalDomain(domain);
+            if (receipt.getStatus() == 0) {
+                getBBCLogger().info(
+                        "set domain ({}) to SDP {} by tx {}",
+                        domain,
+                        this.bbcContext.getSdpContract().getContractAddress(),
+                        receipt.getTransactionHash()
+                );
+            } else {
+                getBBCLogger().info(
+                        "set domain failed, receipt status code: {}",
+                        receipt.getStatus()
+                );
+            }
+
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format(
+                            "failed to set domain (%s) to SDP %s",
+                            domain,
+                            this.bbcContext.getSdpContract().getContractAddress()
+                    ), e
+            );
+        }
+
+        // 4. update sdp contract status
+        try {
+            if (isSdpReady(sdp)) {
+                this.bbcContext.getSdpContract().setStatus(ContractStatusEnum.CONTRACT_READY);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format(
+                            "failed to update sdp contract status (address: %s)",
+                            this.bbcContext.getSdpContract().getContractAddress()
+                    ), e);
+        }
+    }
+
+    @Override
+    public void setMonitorContract(String contractAddress) {
+        if (ObjectUtil.isNull(this.bbcContext)
+                || ObjectUtil.isNull(this.bbcContext.getSdpContract())) {
+            throw new RuntimeException("SDP contract not ready in bbc context");
+        }
+
+        SDPMsg sdp = SDPMsg.load(
+                this.bbcContext.getSdpContract().getContractAddress(),
+                this.client,
+                this.keyPair);
+        try {
+            requireSuccessfulReceipt(
+                    sdp.setMonitorContract(contractAddress),
+                    "set Monitor contract on SDP");
+            if (isSdpReady(sdp)) {
+                this.bbcContext.getSdpContract().setStatus(ContractStatusEnum.CONTRACT_READY);
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format(
+                            "failed to set Monitor %s on FISCO SDP %s",
+                            contractAddress,
+                            this.bbcContext.getSdpContract().getContractAddress()),
+                    e);
+        }
+    }
+
+    @Override
+    public void setProtocolInMonitor(String contractAddress) {
+        Monitor monitor = loadMonitorFromContext();
+        try {
+            requireSuccessfulReceipt(
+                    monitor.setProtocol(contractAddress),
+                    "set SDP protocol on Monitor");
+            updateMonitorContractStatusIfReady();
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format("failed to set protocol %s on FISCO Monitor", contractAddress),
+                    e);
+        }
+    }
+
+    @Override
+    public void setMonitorControl(int monitorType) {
+        Monitor monitor = loadMonitorFromContext();
+        BigInteger onChainMonitorType = requireProtocolMonitorControl(monitorType);
+        try {
+            requireSuccessfulReceipt(
+                    monitor.setMonitorControl(onChainMonitorType),
+                    "set Monitor control");
+            updateMonitorContractStatusIfReady();
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format("failed to set FISCO Monitor control to %d", monitorType),
+                    e);
+        }
+    }
+
+    static BigInteger requireProtocolMonitorControl(int monitorType) {
+        if (monitorType < 1 || monitorType > 3) {
+            throw new IllegalArgumentException(
+                    String.format(
+                            "invalid FISCO Monitor control %d: expected 1 (close), 2 (open), or 3 (rollback)",
+                            monitorType));
+        }
+        return BigInteger.valueOf(monitorType);
+    }
+
+    @Override
+    public void setPtcHubInMonitorVerifier(String contractAddress) {
+        Monitor monitor = loadMonitorFromContext();
+        try {
+            String verifierAddress = monitor.getMonitorVerifier();
+            if (StrUtil.isEmpty(verifierAddress) || ZERO_ADDRESS.equalsIgnoreCase(verifierAddress)) {
+                throw new IllegalStateException("MonitorVerifier address is empty");
+            }
+            requireSuccessfulReceipt(
+                    MonitorVerifier.load(verifierAddress, client, keyPair)
+                            .setPtcHubAddress(contractAddress),
+                    "set PTC Hub on MonitorVerifier");
+            PtcHub ptcHub = PtcHub.load(contractAddress, client, keyPair);
+            if (!verifierAddress.equalsIgnoreCase(ptcHub.getMonitorVerifier())) {
+                requireSuccessfulReceipt(
+                        ptcHub.setMonitorVerifier(verifierAddress),
+                        "set MonitorVerifier on PTC Hub");
+            }
+            if (!contractAddress.equalsIgnoreCase(
+                    MonitorVerifier.load(verifierAddress, client, keyPair).getPtcHubAddress())) {
+                throw new IllegalStateException("MonitorVerifier PTC Hub binding did not persist");
+            }
+            if (!verifierAddress.equalsIgnoreCase(ptcHub.getMonitorVerifier())) {
+                throw new IllegalStateException("PTC Hub MonitorVerifier binding did not persist");
+            }
+            updateMonitorContractStatusIfReady();
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format(
+                            "failed to set PTC Hub %s on FISCO MonitorVerifier",
+                            contractAddress),
+                    e);
+        }
+    }
+
+    @Override
+    public CrossChainMessageReceipt relayMonitorOrder(
+            String committeeId,
+            String signAlgo,
+            byte[] rawProof,
+            byte[] rawMonitorOrder) {
+        Monitor monitor = loadMonitorFromContext();
+        try {
+            TransactionReceipt receipt = monitor.recvMonitorOrder(
+                    committeeId,
+                    signAlgo,
+                    rawProof,
+                    rawMonitorOrder);
+            CrossChainMessageReceipt result = new CrossChainMessageReceipt();
+            result.setTxhash(receipt.getTransactionHash());
+            result.setConfirmed(true);
+            result.setSuccessful(receipt.isStatusOK());
+            result.setErrorMsg(receipt.isStatusOK() ? "" : "FISCO Monitor order execution failed");
+            return result;
+        } catch (Exception e) {
+            throw new RuntimeException("failed to relay FISCO Monitor order", e);
+        }
+    }
+
+    private Monitor loadMonitorFromContext() {
+        if (ObjectUtil.isNull(this.bbcContext)
+                || ObjectUtil.isNull(this.bbcContext.getMonitorContract())
+                || StrUtil.isEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
+            throw new RuntimeException("Monitor contract not ready in bbc context");
+        }
+        return Monitor.load(
+                this.bbcContext.getMonitorContract().getContractAddress(),
+                this.client,
+                this.keyPair);
+    }
+
+    private boolean isSdpReady(SDPMsg sdp) throws Exception {
+        return !StrUtil.isEmpty(sdp.getAmAddress())
+                && !ZERO_ADDRESS.equalsIgnoreCase(sdp.getAmAddress())
+                && !isByteArrayZero(sdp.getLocalDomain())
+                && !ZERO_ADDRESS.equalsIgnoreCase(sdp.getMonitorAddress());
+    }
+
+    private void updateMonitorContractStatusIfReady() throws Exception {
+        Monitor monitor = loadMonitorFromContext();
+        String protocol = monitor.getProtocol();
+        String verifierAddress = monitor.getMonitorVerifier();
+        boolean verifierReady = false;
+        if (!StrUtil.isEmpty(verifierAddress) && !ZERO_ADDRESS.equalsIgnoreCase(verifierAddress)) {
+            String ptcHub = MonitorVerifier.load(verifierAddress, client, keyPair)
+                    .getPtcHubAddress();
+            verifierReady = !StrUtil.isEmpty(ptcHub) && !ZERO_ADDRESS.equalsIgnoreCase(ptcHub);
+        }
+        if (!StrUtil.isEmpty(protocol)
+                && !ZERO_ADDRESS.equalsIgnoreCase(protocol)
+                && monitor.getMonitorControl().intValue() != 0
+                && verifierReady) {
+            this.bbcContext.getMonitorContract().setStatus(ContractStatusEnum.CONTRACT_READY);
+        }
+    }
+
+    private void requireSuccessfulReceipt(TransactionReceipt receipt, String action) {
+        if (ObjectUtil.isNull(receipt) || !receipt.isStatusOK()) {
+            throw new IllegalStateException(
+                    String.format(
+                            "%s failed with receipt status %s",
+                            action,
+                            ObjectUtil.isNull(receipt) ? "null" : receipt.getStatus()));
+        }
+    }
+
+    @Override
     public CrossChainMessageReceipt relayAuthMessage(byte[] rawMessage) {
-        getBBCLogger().info("BSN~ relayAuthMessage:{}", HexUtil.encodeHexStr(rawMessage));
         // 1. check context
         if (ObjectUtil.isNull(this.bbcContext)) {
             throw new RuntimeException("empty bbc context");
@@ -594,36 +1232,80 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             throw new RuntimeException("empty am contract in bbc context");
         }
 
-        getBBCLogger().info("relay AM {} to {} ",
-                HexUtil.encodeHexStr(rawMessage), this.bbcContext.getAuthMessageContract().getContractAddress());
+        String amContractAddress = this.bbcContext.getAuthMessageContract().getContractAddress();
+        getBBCLogger().debug("relay AM {} to {} ", HexUtil.encodeHexStr(rawMessage), amContractAddress);
 
-        // 2. creat Transaction
-        CrossChainMessageReceipt crossChainMessageReceipt = new CrossChainMessageReceipt();
         try {
-            // 2.1 async send tx
-            TransactionResponse response =
-                    transactionProcessorAM.sendTransactionAndGetResponse(
-                            this.bbcContext.getAuthMessageContract().getContractAddress(),
-                            AuthMsg.ABI_ARRAY[0],
-                            AuthMsg.FUNC_RECVPKGFROMRELAYER,
-                            Collections.singletonList(rawMessage));
+            // 2. create Transaction
+            CrossChainMessageReceipt crossChainMessageReceipt = new CrossChainMessageReceipt();
 
-            crossChainMessageReceipt.setConfirmed(response.getTransactionReceipt().isStatusOK());
-            crossChainMessageReceipt.setSuccessful(response.getTransactionReceipt().isStatusOK());
-            crossChainMessageReceipt.setTxhash(response.getTransactionReceipt().getTransactionHash());
-            crossChainMessageReceipt.setErrorMsg(response.getReceiptMessages());
+            /*FISCO BCOS在使用sendCall预执行交易部分仍存在问题，待FISCO BCOS版本更新后升级该部分代码*/
+//            // 2.1 预执行交易，检查是否会被回滚
+//            CallResponse preExecResponse = transactionProcessorAM.sendCall(
+//                    this.keyPair.getAddress(),  // from: 使用当前SDK的密钥对地址，确保与实际交易一致
+//                    amContractAddress,     // to: 合约地址
+//                    AuthMsg.ABI_ARRAY[0],  // abi: 合约ABI定义
+//                    AuthMsg.FUNC_RECVPKGFROMRELAYER, // functionName: 要调用的合约函数名
+//                    Collections.singletonList(new DynamicBytes(rawMessage)) // paramsList: 函数参数列表
+//            );
+//
+//            // 2.2 如果预执行失败，设置相应的返回值
+//            if (preExecResponse.getReturnCode() != 0 || preExecResponse.getReturnObject() == null) {
+//                String errorMsg = preExecResponse.getReturnMessage();
+//                getBBCLogger().error("call am contract {} reverted, reason: {}", amContractAddress, errorMsg);
+//
+//                // 检查是否是因为消息已处理导致的失败
+//                boolean isNonceProcessed = StrUtil.contains(errorMsg, "nonce has been processed");
+//
+//                crossChainMessageReceipt.setSuccessful(false);
+//                crossChainMessageReceipt.setConfirmed(isNonceProcessed); // 如果是已处理的消息，设置为已确认
+//                crossChainMessageReceipt.setErrorMsg(errorMsg);
+//                return crossChainMessageReceipt;
+//            }
 
-            getBBCLogger().info("relay AM to {} result: {}, {} ",
-                    this.bbcContext.getAuthMessageContract().getContractAddress(),
-                    crossChainMessageReceipt.isSuccessful(),
-                    crossChainMessageReceipt.getErrorMsg());
+            // 2.1 发送实际交易
+            TransactionResponse response = transactionProcessorAM.sendTransactionAndGetResponse(
+                    amContractAddress,
+                    AuthMsg.ABI,
+                    AuthMsg.FUNC_RECVPKGFROMRELAYER,
+                    Collections.singletonList(new DynamicBytes(rawMessage)));
 
-            // 2.2 return crossChainMessageReceipt
+            // 2.2 检查交易结果
+            if (ObjectUtil.isNull(response)) {
+                throw new RuntimeException("send transaction with null result");
+            }
+
+            TransactionReceipt receipt = response.getTransactionReceipt();
+            if (ObjectUtil.isNull(receipt)) {
+                throw new RuntimeException("transaction receipt is null");
+            }
+
+            if (StrUtil.isEmpty(receipt.getTransactionHash())) {
+                throw new RuntimeException("transaction hash is empty");
+            }
+
+            // 2.3 设置返回值 注意：FISCO BCOS的交易是同步的，已经有了交易回执就可以直接设置confirmed为true
+            crossChainMessageReceipt.setConfirmed(true);
+            crossChainMessageReceipt.setSuccessful(receipt.isStatusOK());
+            crossChainMessageReceipt.setTxhash(receipt.getTransactionHash());
+
+            // 如果交易失败，记录详细错误信息
+            if (!receipt.isStatusOK()) {
+                String errorMsg = StrUtil.emptyToDefault(response.getReceiptMessages(), "Unknown error");
+                crossChainMessageReceipt.setErrorMsg(errorMsg);
+                getBBCLogger().error("relay AM to {} failed: {}", amContractAddress, errorMsg);
+            } else {
+                crossChainMessageReceipt.setErrorMsg("");
+                getBBCLogger().info("relay AM to {} success, tx: {}", amContractAddress, receipt.getTransactionHash());
+            }
+
             return crossChainMessageReceipt;
         } catch (Exception e) {
             throw new RuntimeException(
-                    String.format("failed to relay AM %s to %s",
-                            HexUtil.encodeHexStr(rawMessage), this.bbcContext.getAuthMessageContract().getContractAddress()
+                    String.format("failed to relay AM %s to %s: %s",
+                            HexUtil.encodeHexStr(rawMessage),
+                            amContractAddress,
+                            e.getMessage()
                     ), e
             );
         }
@@ -631,7 +1313,6 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
     @Override
     public void setupAuthMessageContract() {
-        getBBCLogger().info("BSN~ setupAuthMessageContract");
         // 1. check context
         if (ObjectUtil.isNull(this.bbcContext)) {
             throw new RuntimeException("empty bbc context");
@@ -655,7 +1336,7 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         TransactionReceipt transactionReceipt = authMsg.getDeployReceipt();
 
         // 4. check whether the deployment is successful
-        if (!ObjectUtil.isNull(transactionReceipt) && StrUtil.equals(transactionReceipt.getStatus(), TX_RECEIPT_STATUS_SUCCESS)) {
+        if (!ObjectUtil.isNull(transactionReceipt) && transactionReceipt.getStatus() == 0) {
             AuthMessageContract authMessageContract = new AuthMessageContract();
             authMessageContract.setContractAddress(authMsg.getContractAddress());
             authMessageContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
@@ -668,7 +1349,6 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
 
     @Override
     public void setupSDPMessageContract() {
-        getBBCLogger().info("BSN~ setupSDPMessageContract");
         // 1. check context
         if (ObjectUtil.isNull(this.bbcContext)) {
             throw new RuntimeException("empty bbc context");
@@ -698,14 +1378,12 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         TransactionReceipt transactionReceipt = sdpMsg.getDeployReceipt();
 
         // 4. check whether the deployment is successful
-        if (!ObjectUtil.isNull(transactionReceipt) && StrUtil.equals(transactionReceipt.getStatus(), TX_RECEIPT_STATUS_SUCCESS)) {
+        if (!ObjectUtil.isNull(transactionReceipt) && transactionReceipt.getStatus() == 0) {
             SDPContract sdpContract = new SDPContract();
             sdpContract.setContractAddress(sdpMsg.getContractAddress());
             sdpContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
             bbcContext.setSdpContract(sdpContract);
             config.setSdpContractAddressDeployed(sdpMsg.getContractAddress());
-            bbcContext.setConfForBlockchainClient(
-                    config.toJsonString().getBytes(StandardCharsets.UTF_8));
             getBBCLogger().info("setup sdp contract successful: {}", sdpMsg.getContractAddress());
         } else {
             throw new RuntimeException("failed to get deploy sdpMsg tx receipt");
@@ -713,9 +1391,711 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
     }
 
     @Override
-    public void setAmContract(String contractAddress) {
-        getBBCLogger().info("BSN~ setAmContract  contractAddress：{}",contractAddress);
+    public void setupMonitorContract() {
+        if (ObjectUtil.isNull(this.bbcContext)) {
+            throw new RuntimeException("empty bbc context");
+        }
+        if (ObjectUtil.isNull(this.bbcContext.getSdpContract())
+                || StrUtil.isEmpty(this.bbcContext.getSdpContract().getContractAddress())) {
+            throw new RuntimeException("SDP contract must be deployed before Monitor");
+        }
+        String reusableMonitorVerifierAddress = null;
+        if (ObjectUtil.isNotNull(this.bbcContext.getMonitorContract())
+                && StrUtil.isNotEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
+            String existingMonitorAddress = this.bbcContext.getMonitorContract().getContractAddress();
+            try {
+                assertMonitorImplementationSupported(existingMonitorAddress);
+                return;
+            } catch (IllegalStateException e) {
+                getBBCLogger().warn(
+                        "replace legacy FISCO Monitor {} during explicit BBC reconciliation",
+                        existingMonitorAddress);
+                reusableMonitorVerifierAddress = findReusableMonitorVerifier(existingMonitorAddress);
+            }
+        }
+
+        final MonitorVerifier monitorVerifier;
+        final Monitor monitor;
+        try {
+            if (StrUtil.isNotEmpty(reusableMonitorVerifierAddress)) {
+                monitorVerifier = MonitorVerifier.load(
+                        reusableMonitorVerifierAddress,
+                        client,
+                        keyPair);
+                getBBCLogger().info(
+                        "reuse legacy FISCO MonitorVerifier {} so existing TPBTA monitor-node "
+                                + "endorsements remain available",
+                        reusableMonitorVerifierAddress);
+            } else {
+                monitorVerifier = MonitorVerifier.deploy(client, keyPair);
+                requireSuccessfulReceipt(
+                        monitorVerifier.getDeployReceipt(),
+                        "deploy MonitorVerifier");
+            }
+
+            monitor = Monitor.deploy(client, keyPair);
+            requireSuccessfulReceipt(monitor.getDeployReceipt(), "deploy Monitor");
+            requireSuccessfulReceipt(
+                    monitor.setMonitorVerifier(monitorVerifier.getContractAddress()),
+                    "wire MonitorVerifier into Monitor");
+        } catch (Exception e) {
+            throw new RuntimeException("failed to deploy FISCO Monitor contracts", e);
+        }
+
+        MonitorContract monitorContract = new MonitorContract();
+        monitorContract.setContractAddress(monitor.getContractAddress());
+        monitorContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
+        this.bbcContext.setMonitorContract(monitorContract);
+        config.setMonitorContractAddressDeployed(monitor.getContractAddress());
+        getBBCLogger().info(
+                "setup monitor contracts successful: Monitor={}, MonitorVerifier={}",
+                monitor.getContractAddress(),
+                monitorVerifier.getContractAddress());
+    }
+
+    private String findReusableMonitorVerifier(String monitorAddress) {
+        try {
+            String candidate = Monitor.load(monitorAddress, client, keyPair).getMonitorVerifier();
+            if (StrUtil.isEmpty(candidate) || ZERO_ADDRESS.equalsIgnoreCase(candidate)) {
+                return null;
+            }
+            String verifierPtcHub = MonitorVerifier.load(candidate, client, keyPair).getPtcHubAddress();
+            if (StrUtil.isEmpty(verifierPtcHub) || ZERO_ADDRESS.equalsIgnoreCase(verifierPtcHub)) {
+                return null;
+            }
+            if (ObjectUtil.isNotNull(this.bbcContext.getPtcContract())
+                    && StrUtil.isNotEmpty(this.bbcContext.getPtcContract().getContractAddress())) {
+                String expectedPtcHub = this.bbcContext.getPtcContract().getContractAddress();
+                String ptcMonitorVerifier = PtcHub.load(expectedPtcHub, client, keyPair)
+                        .getMonitorVerifier();
+                if (!expectedPtcHub.equalsIgnoreCase(verifierPtcHub)
+                        || !candidate.equalsIgnoreCase(ptcMonitorVerifier)) {
+                    getBBCLogger().warn(
+                            "legacy FISCO MonitorVerifier {} is not the active verifier of PTC Hub {}",
+                            candidate,
+                            expectedPtcHub);
+                    return null;
+                }
+            }
+            return candidate;
+        } catch (Exception e) {
+            getBBCLogger().warn(
+                    "unable to reuse MonitorVerifier from legacy FISCO Monitor {}",
+                    monitorAddress,
+                    e);
+            return null;
+        }
+    }
+
+    private void assertSdpMonitorRoutingSupported(String sdpAddress) {
+        try {
+            BigInteger routingVersion = SDPMsg.load(sdpAddress, client, keyPair)
+                    .getMonitorRoutingVersion();
+            if (!SDP_MONITOR_ROUTING_VERSION.equals(routingVersion)) {
+                throw new IllegalStateException(
+                        String.format(
+                                "unsupported FISCO SDP monitor routing version %s at %s",
+                                routingVersion,
+                                sdpAddress));
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    String.format(
+                            "FISCO SDP %s does not route SDP V1/V2/V3 requests through Monitor",
+                            sdpAddress),
+                    e);
+        }
+    }
+
+    private void assertMonitorImplementationSupported(String monitorAddress) {
+        try {
+            BigInteger implementationVersion = Monitor.load(monitorAddress, client, keyPair)
+                    .getImplementationVersion();
+            if (!MONITOR_IMPLEMENTATION_VERSION.equals(implementationVersion)) {
+                throw new IllegalStateException(
+                        String.format(
+                                "unsupported FISCO Monitor implementation version %s at %s",
+                                implementationVersion,
+                                monitorAddress));
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    String.format(
+                            "FISCO Monitor %s lacks exact envelope decode or receive-side routing",
+                            monitorAddress),
+                    e);
+        }
+    }
+
+    @Override
+    public void setupPTCContract() {
+        // 1. Check context
+        if (ObjectUtil.isNull(this.bbcContext)) {
+            throw new RuntimeException("empty bbc context");
+        }
+        if (ObjectUtil.isNotNull(this.bbcContext.getPtcContract())
+                && StrUtil.isNotEmpty(this.bbcContext.getPtcContract().getContractAddress())) {
+            String existingPtc = this.bbcContext.getPtcContract().getContractAddress();
+            try {
+                ensurePtcMonitorVerifierBinding(existingPtc);
+                getBBCLogger().info("PTC contract has been deployed with Monitor support: {}", existingPtc);
+                return;
+            } catch (Exception e) {
+                getBBCLogger().warn(
+                        "replace legacy FISCO PTC Hub {} without bidirectional MonitorVerifier support",
+                        existingPtc);
+            }
+        }
+
+        AbstractCrossChainCertificate bcdnsRootCert = CrossChainCertificateUtil.readCrossChainCertificateFromPem(
+                this.config.getBcdnsRootCertPem().getBytes()
+        );
+
+        if (bcdnsRootCert.getType() != CrossChainCertificateTypeEnum.BCDNS_TRUST_ROOT_CERTIFICATE) {
+            getBBCLogger().error("bcdns root cert in config is incorrect: {}", this.config.getBcdnsRootCertPem());
+            throw new RuntimeException("incorrect bcdns root cert");
+        }
+
+        // 2. Deploy CommitteePtcVerifier contract
+        String committeePtcVerifierAddr;
+        CommitteePtcVerifier committeePtcVerifier;
+        try {
+            committeePtcVerifier = CommitteePtcVerifier.deploy(client, keyPair);
+            TransactionReceipt verifierReceipt = committeePtcVerifier.getDeployReceipt();
+            if (!ObjectUtil.isNull(verifierReceipt) && verifierReceipt.getStatus() == 0) {
+                committeePtcVerifierAddr = committeePtcVerifier.getContractAddress();
+                getBBCLogger().info("deploy contract committee verifier: {}", committeePtcVerifierAddr);
+            } else {
+                throw new RuntimeException("failed to get deploy CommitteePtcVerifier tx receipt");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("failed to deploy CommitteePtcVerifier contract", e);
+        }
+
+        // 3. Deploy PTC Hub contract
+        String ptcHubAddr;
+        try {
+            PtcHub ptcHub = PtcHub.deploy(client, keyPair, bcdnsRootCert.encode());
+            TransactionReceipt hubReceipt = ptcHub.getDeployReceipt();
+            if (!ObjectUtil.isNull(hubReceipt) && hubReceipt.getStatus() == 0) {
+                ptcHubAddr = ptcHub.getContractAddress();
+                getBBCLogger().info("deploy contract ptc hub: {}", ptcHubAddr);
+            } else {
+                throw new RuntimeException("failed to get deploy PTC Hub tx receipt");
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("failed to deploy PTC Hub contract", e);
+        }
+
+        // 4. Add CommitteePtcVerifier to PTC Hub
+        try {
+            PtcHub ptcHub = PtcHub.load(ptcHubAddr, client, keyPair);
+            TransactionReceipt addVerifierReceipt = ptcHub.addPtcVerifier(committeePtcVerifierAddr);
+            if (!ObjectUtil.isNull(addVerifierReceipt) && addVerifierReceipt.getStatus() == 0) {
+                getBBCLogger().info(
+                        "set committee verifier {} to ptc hub {} by tx {}",
+                        committeePtcVerifierAddr,
+                        ptcHubAddr,
+                        addVerifierReceipt.getTransactionHash()
+                );
+            } else {
+                throw new RuntimeException(
+                        StrUtil.format(
+                                "transaction {} shows failed when set committee verifier {} to ptc hub {}",
+                                addVerifierReceipt.getTransactionHash(),
+                                committeePtcVerifierAddr,
+                                ptcHubAddr
+                        )
+                );
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format(
+                            "unexpected failure when setting committee verifier %s to ptc hub %s",
+                            committeePtcVerifierAddr,
+                            ptcHubAddr
+                    ),
+                    e
+            );
+        }
+
+        // 5. Update context
+        PTCContract ptcContract = new PTCContract();
+        ptcContract.setContractAddress(ptcHubAddr);
+        ptcContract.setStatus(ContractStatusEnum.CONTRACT_READY);
+        bbcContext.setPtcContract(ptcContract);
+
+        config.setPtcHubContractAddressDeployed(ptcHubAddr);
+
+        ensurePtcMonitorVerifierBinding(ptcHubAddr);
+
+        getBBCLogger().info("setup ptc contract successful: {}", ptcHubAddr);
+    }
+
+    private void ensurePtcMonitorVerifierBinding(String ptcHubAddress) {
+        if (ObjectUtil.isNull(this.bbcContext.getMonitorContract())
+                || StrUtil.isEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
+            throw new IllegalStateException("Monitor contract must be deployed before PTC Hub reconciliation");
+        }
+        try {
+            Monitor monitor = loadMonitorFromContext();
+            String verifierAddress = monitor.getMonitorVerifier();
+            if (StrUtil.isEmpty(verifierAddress) || ZERO_ADDRESS.equalsIgnoreCase(verifierAddress)) {
+                throw new IllegalStateException("MonitorVerifier address is empty");
+            }
+            PtcHub ptcHub = PtcHub.load(ptcHubAddress, client, keyPair);
+            if (!verifierAddress.equalsIgnoreCase(ptcHub.getMonitorVerifier())) {
+                requireSuccessfulReceipt(
+                        ptcHub.setMonitorVerifier(verifierAddress),
+                        "set MonitorVerifier on PTC Hub");
+            }
+            if (!verifierAddress.equalsIgnoreCase(ptcHub.getMonitorVerifier())) {
+                throw new IllegalStateException("PTC Hub MonitorVerifier binding did not persist");
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    String.format("FISCO PTC Hub %s lacks MonitorVerifier routing", ptcHubAddress),
+                    e);
+        }
+    }
+
+    @Override
+    public void setPtcContract(String ptcContractAddress) {
         // 1. check context
+        if (ObjectUtil.isNull(this.bbcContext)) {
+            throw new RuntimeException("empty bbc context");
+        }
+        if (ObjectUtil.isNull(this.bbcContext.getAuthMessageContract())) {
+            throw new RuntimeException("empty am contract in bbc context");
+        }
+
+        // 2. load AM contract
+        AuthMsg am = AuthMsg.load(
+                this.bbcContext.getAuthMessageContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        // 3. set PTC contract address to AM
+        try {
+            TransactionReceipt receipt = am.setPtcHub(ptcContractAddress);
+
+            if (receipt.getStatus() == 0) {
+                getBBCLogger().info(
+                        "set PTC contract (address: {}) to AM {} by tx {}",
+                        ptcContractAddress,
+                        this.bbcContext.getAuthMessageContract().getContractAddress(),
+                        receipt.getTransactionHash()
+                );
+
+                // 4. initialize PTC contract in context if not exists
+                if (ObjectUtil.isNull(this.bbcContext.getPtcContract())) {
+                    this.bbcContext.setPtcContract(new PTCContract());
+                }
+
+                // 5. set contract address and status
+                this.bbcContext.getPtcContract().setContractAddress(ptcContractAddress);
+                this.bbcContext.getPtcContract().setStatus(ContractStatusEnum.CONTRACT_READY);
+            } else {
+                getBBCLogger().error(
+                        "set PTC contract failed, receipt status code: {}",
+                        receipt.getStatus()
+                );
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format(
+                            "failed to set PTC contract (address: %s) to AM %s",
+                            ptcContractAddress,
+                            this.bbcContext.getAuthMessageContract().getContractAddress()
+                    ), e
+            );
+        }
+    }
+
+    @Override
+    public void updatePTCTrustRoot(PTCTrustRoot ptcTrustRoot) {
+        // 1. Check PTC contract status
+        checkPtcContract();
+
+        // 2. Load PTC Hub contract
+        PtcHub ptcHub = PtcHub.load(
+                this.bbcContext.getPtcContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        try {
+            // 3. Call contract to update PTC trust root
+            TransactionReceipt receipt = ptcHub.updatePTCTrustRoot(ptcTrustRoot.encode());
+
+            // 4. Check transaction result
+            if (receipt.getStatus() == 0) {
+                getBBCLogger().info(
+                        "update PTC trust root successful by tx {} ",
+                        receipt.getTransactionHash()
+                );
+            } else {
+                throw new RuntimeException(StrUtil.format(
+                        "transaction failed: tx={}, status={}, message={}, output={}",
+                        receipt.getTransactionHash(),
+                        receipt.getStatus(),
+                        receipt.getMessage(),
+                        receipt.getOutput()
+                ));
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("failed to update PTC trust root", e);
+        }
+    }
+
+    @Override
+    public void addTpBta(ThirdPartyBlockchainTrustAnchor tpbta) {
+        // 1. Check PTC contract status
+        checkPtcContract();
+
+        try {
+            // 2. Verify TP-BTA
+            // 2.1 Check if PTC trust root exists
+            if (!hasPTCTrustRoot(tpbta.getSignerPtcCredentialSubject().getApplicant())) {
+                throw new RuntimeException("no ptc trust root found");
+            }
+
+            // 2.2 Check if PTC verify anchor exists
+            if (!hasPTCVerifyAnchor(tpbta.getSignerPtcCredentialSubject().getApplicant(), tpbta.getPtcVerifyAnchorVersion())) {
+                throw new RuntimeException("no ptc verify anchor found");
+            }
+
+            // 2.3 Get PTC verify anchor and check version
+            PTCVerifyAnchor ptcVerifyAnchor = getPTCVerifyAnchor(tpbta.getSignerPtcCredentialSubject().getApplicant(), tpbta.getPtcVerifyAnchorVersion());
+            if (!ptcVerifyAnchor.getVersion().equals(tpbta.getPtcVerifyAnchorVersion())) {
+                throw new RuntimeException("verify anchor version not equal");
+            }
+
+            // 2.4 Verify committee endorsement
+            CommitteeVerifyAnchor committeeVerifyAnchor = CommitteeVerifyAnchor.decode(ptcVerifyAnchor.getAnchor());
+            CommitteeEndorseProof committeeEndorseProof = CommitteeEndorseProof.decode(tpbta.getEndorseProof());
+
+            // 2.5 Check committee ID
+            if (!StrUtil.equals(committeeVerifyAnchor.getCommitteeId(), committeeEndorseProof.getCommitteeId())) {
+                throw new RuntimeException("committee id in proof not equal with the one in verify anchor");
+            }
+
+            // 2.6 Verify signatures
+            byte[] encodedToSign = tpbta.getEncodedToSign();
+            int correct = 0;
+            for (int i = 0; i < committeeEndorseProof.getSigs().size(); i++) {
+                CommitteeNodeProof info = committeeEndorseProof.getSigs().get(i);
+                for (int j = 0; j < committeeVerifyAnchor.getAnchors().size(); j++) {
+                    if (StrUtil.equals(info.getNodeId(), committeeVerifyAnchor.getAnchors().get(j).getNodeId())) {
+                        boolean res = false;
+                        for (int k = 0; k < committeeVerifyAnchor.getAnchors().get(j).getNodePublicKeys().size(); k++) {
+                            res = SignAlgoEnum.getByName(info.getSignAlgo().getName())
+                                    .getSigner()
+                                    .verify(committeeVerifyAnchor.getAnchors().get(j).getNodePublicKeys().get(k).getPublicKey(), encodedToSign, info.getSig());
+                            if (res) {
+                                break;
+                            }
+                        }
+                        if (res) {
+                            correct++;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            // 2.7 Check if enough signatures
+            if (3*correct <= 2*committeeVerifyAnchor.getAnchors().size()) {
+                throw new RuntimeException("the number of signatures is less than 2/3");
+            }
+
+            // 3. Load PTC Hub contract and add TP-BTA
+            PtcHub ptcHub = PtcHub.load(
+                    this.bbcContext.getPtcContract().getContractAddress(),
+                    this.client,
+                    this.keyPair
+            );
+
+            // 4. Call contract to add TpBTA
+            TransactionReceipt receipt = ptcHub.addTpBta(tpbta.encode());
+
+            // 5. Check transaction result
+            if (receipt.getStatus() != 0) {
+                throw new RuntimeException("transaction failed with status: " + receipt.getStatus());
+            }
+
+            getBBCLogger().info(
+                    "add TpBTA successful by tx {} ",
+                    receipt.getTransactionHash()
+            );
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format("failed to add tp-bta: %s", HexUtil.encodeHexStr(tpbta.encode())), e
+            );
+        }
+    }
+
+    @Override
+    public ThirdPartyBlockchainTrustAnchor getTpBta(CrossChainLane tpbtaLane, int tpBtaVersion) {
+        // 1. Check PTC contract status
+        checkPtcContract();
+
+        // 2. Load PTC Hub contract
+        PtcHub ptcHub = PtcHub.load(
+                this.bbcContext.getPtcContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        ThirdPartyBlockchainTrustAnchor thirdPartyBlockchainTrustAnchor = null;
+        try {
+            getBBCLogger().info("call to get tpbta {}:{}", tpbtaLane.getLaneKey(), tpBtaVersion);
+
+            // 3. Call contract to get TpBTA using encoded lane data
+            byte[] tpBtaBytes = ptcHub.getTpBta(tpbtaLane.encode(), BigInteger.valueOf(tpBtaVersion));
+
+            // Convert bytes to ThirdPartyBlockchainTrustAnchor object if not empty
+            if (ObjectUtil.isNotEmpty(tpBtaBytes)) {
+                thirdPartyBlockchainTrustAnchor = ThirdPartyBlockchainTrustAnchor.decode(tpBtaBytes);
+                getBBCLogger().info("Third party blockchain trust anchor: {} ",
+                        HexUtil.encodeHexStr(thirdPartyBlockchainTrustAnchor.encode()));
+            } else {
+                getBBCLogger().info("No third party blockchain trust anchor found for lane {}:{}",
+                        tpbtaLane.getLaneKey(), tpBtaVersion);
+            }
+        } catch (Exception e) {
+            getBBCLogger().error("[FISCOBCOSBBCService] call ptc hub to get tpbta {}:{} failed",
+                    tpbtaLane.getLaneKey(), tpBtaVersion, e);
+            throw new RuntimeException(
+                    StrUtil.format("[FISCOBCOSBBCService] call ptc hub to get tpbta {}:{} failed",
+                            tpbtaLane.getLaneKey(), tpBtaVersion), e
+            );
+        }
+        return thirdPartyBlockchainTrustAnchor;
+    }
+
+    @Override
+    public boolean hasTpBta(CrossChainLane tpbtaLane, int tpBtaVersion) {
+        // 1. Check PTC contract status
+        checkPtcContract();
+
+        // 2. Load PTC Hub contract
+        PtcHub ptcHub = PtcHub.load(
+                this.bbcContext.getPtcContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        try {
+            getBBCLogger().info("call to check if tpbta exist {}:{}", tpbtaLane.getLaneKey(), tpBtaVersion);
+
+            // 3. Call contract to check if TpBTA exists using encoded lane data
+            return ptcHub.hasTpBta(tpbtaLane.encode(), BigInteger.valueOf(tpBtaVersion));
+        } catch (Exception e) {
+            throw new RuntimeException(StrUtil.format(
+                    "unexpected exception when checking tpbta {}:{} from ptc hub",
+                    tpbtaLane.getLaneKey(), tpBtaVersion
+            ), e);
+        }
+    }
+
+    @Override
+    public PTCTrustRoot getPTCTrustRoot(ObjectIdentity ptcOwnerOid) {
+        // 1. Check PTC contract status
+        checkPtcContract();
+
+        // 2. Load PTC Hub contract
+        PtcHub ptcHub = PtcHub.load(
+                this.bbcContext.getPtcContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        try {
+            byte[] rawOid = ptcOwnerOid.encode();
+            getBBCLogger().info("call to get ptc trust root for {}", HexUtil.encodeHexStr(rawOid));
+
+            // 3. Call contract to get PTC trust root
+            byte[] raw = ptcHub.getPTCTrustRoot(rawOid);
+
+            // 4. Convert bytes to PTCTrustRoot object if not empty
+            if (ObjectUtil.isNotEmpty(raw)) {
+                return PTCTrustRoot.decode(raw);
+            }
+            return null;
+        } catch (Exception e) {
+            throw new RuntimeException(StrUtil.format(
+                    "unexpected exception when getting ptc trust root for oid {} from ptc hub",
+                    HexUtil.encodeHexStr(ptcOwnerOid.encode())
+            ), e);
+        }
+    }
+
+    @Override
+    public boolean hasPTCTrustRoot(ObjectIdentity ptcOwnerOid) {
+        // 1. Check PTC contract status
+        checkPtcContract();
+
+        // 2. Load PTC Hub contract
+        PtcHub ptcHub = PtcHub.load(
+                this.bbcContext.getPtcContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        try {
+            byte[] rawOid = ptcOwnerOid.encode();
+            getBBCLogger().info("call to check if has ptc trust root for {}", HexUtil.encodeHexStr(rawOid));
+
+            // 3. Call contract to check if PTC trust root exists
+            return ptcHub.hasPTCTrustRoot(rawOid);
+        } catch (Exception e) {
+            throw new RuntimeException(StrUtil.format(
+                    "unexpected exception when checking ptc trust root for oid {} from ptc hub",
+                    HexUtil.encodeHexStr(ptcOwnerOid.encode())
+            ), e);
+        }
+    }
+
+    @Override
+    public PTCVerifyAnchor getPTCVerifyAnchor(ObjectIdentity ptcOwnerOid, BigInteger version) {
+        // 1. Check PTC contract status
+        checkPtcContract();
+
+        // 2. Load PTC Hub contract
+        PtcHub ptcHub = PtcHub.load(
+                this.bbcContext.getPtcContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        try {
+            byte[] rawOid = ptcOwnerOid.encode();
+            getBBCLogger().info("get ptc verify anchor for {}", HexUtil.encodeHexStr(rawOid));
+
+            // 3. Call contract to get PTC verify anchor
+            byte[] raw = ptcHub.getPTCVerifyAnchor(rawOid, version);
+
+            // 4. Convert bytes to PTCVerifyAnchor object if not empty
+            if (ObjectUtil.isNotEmpty(raw)) {
+                return PTCVerifyAnchor.decode(raw);
+            }
+            return null;
+        } catch (Exception e) {
+            throw new RuntimeException(StrUtil.format(
+                    "unexpected exception when getting ptc verify anchor for oid {} from ptc hub",
+                    HexUtil.encodeHexStr(ptcOwnerOid.encode())
+            ), e);
+        }
+    }
+
+    @Override
+    public boolean hasPTCVerifyAnchor(ObjectIdentity ptcOwnerOid, BigInteger version) {
+        // 1. Check PTC contract status
+        checkPtcContract();
+
+        // 2. Load PTC Hub contract
+        PtcHub ptcHub = PtcHub.load(
+                this.bbcContext.getPtcContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        try {
+            byte[] rawOid = ptcOwnerOid.encode();
+            getBBCLogger().info("call to check if ptc verify anchor exists for {}", HexUtil.encodeHexStr(rawOid));
+
+            // 3. Call contract to check if PTC verify anchor exists
+            return ptcHub.hasPTCVerifyAnchor(rawOid, version);
+        } catch (Exception e) {
+            throw new RuntimeException(StrUtil.format(
+                    "unexpected exception when checking ptc verify anchor for oid {} from ptc hub",
+                    HexUtil.encodeHexStr(ptcOwnerOid.encode())
+            ), e);
+        }
+    }
+
+    @Override
+    public Set<PTCTypeEnum> getSupportedPTCType() {
+        // 1. Check PTC contract status
+        checkPtcContract();
+
+        // 2. Load PTC Hub contract
+        PtcHub ptcHub = PtcHub.load(
+                this.bbcContext.getPtcContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        try {
+            getBBCLogger().info("call to get supported ptc types");
+
+            // 3. Call contract to get supported PTC types
+            List<BigInteger> types = ptcHub.getSupportedPTCType();
+
+            // 4. Convert BigInteger types to PTCTypeEnum
+            return types.stream()
+                    .map(x -> PTCTypeEnum.valueOf(x.byteValueExact()))
+                    .collect(Collectors.toSet());
+        } catch (Exception e) {
+            throw new RuntimeException(StrUtil.format(
+                    "unexpected exception when getting supported ptc types from ptc hub"
+            ), e);
+        }
+    }
+
+    /**
+     * Decode ThirdPartyProof from raw message
+     *
+     * @param proofsData raw message data
+     * @return ThirdPartyProof object
+     */
+    private ThirdPartyProof decodeTpProofFromMsg(byte[] proofsData) {
+        int _len = proofsData.length;
+        int _offset = 0;
+        // hints len
+        byte[] hints_len_bytes = new byte[4];
+        System.arraycopy(proofsData, _offset, hints_len_bytes, 0, 4);
+        _offset += 4;
+        int hints_len = (int) extractUint32(hints_len_bytes, 4);
+        // hints
+        byte[] hints = new byte[hints_len];
+        System.arraycopy(proofsData, _offset, hints, 0, hints_len);
+        _offset += hints_len;
+
+        // proof lens
+        byte[] proof_len_bytes = new byte[4];
+        System.arraycopy(proofsData, _offset, proof_len_bytes, 0, 4);
+        _offset += 4;
+        int proof_len = (int) extractUint32(proof_len_bytes, 4);
+        // proof
+        byte[] proof = new byte[proof_len];
+        System.arraycopy(proofsData, _offset, proof, 0, proof_len);
+        _offset += proof_len;
+
+        return ThirdPartyProof.decode(proof);
+    }
+
+    /**
+     * Extract uint32 value from byte array
+     *
+     * @param b byte array
+     * @param offset offset in byte array
+     * @return uint32 value
+     */
+    private long extractUint32(byte[] b, int offset) {
+        long l = 0;
+        for (int bit = 4; bit > 0; bit--) {
+            l <<= 8;
+            l |= b[offset - bit] & 0xFF;
+        }
+        return l;
+    }
+
+    @Override
+    public BlockState queryValidatedBlockStateByDomain(CrossChainDomain recvDomain) {
+        // 1. Check context
         if (ObjectUtil.isNull(this.bbcContext)) {
             throw new RuntimeException("empty bbc context");
         }
@@ -723,57 +2103,124 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
             throw new RuntimeException("empty sdp contract in bbc context");
         }
 
-        // 2. load sdp contract
-        SDPMsg sdp = SDPMsg.load(
+        // 2. Load SDP contract
+        SDPMsg sdpMsg = SDPMsg.load(
                 this.bbcContext.getSdpContract().getContractAddress(),
                 this.client,
                 this.keyPair
         );
 
-        // 3. set am to sdp
         try {
-            TransactionReceipt receipt = sdp.setAmContract(contractAddress);
-            int status;
-            if(isHexadecimal(receipt.getStatus())){
-                status= Integer.parseInt(receipt.getStatus().substring(2), 16); // 转换为10进制数
-            }else {
-                status= Integer.valueOf(receipt.getStatus());
+            getBBCLogger().info("querying validated block state for domain {}", recvDomain.getDomain());
+
+            // 3. Call contract to query validated block state and get result directly
+            SDPMsg.BlockState result = sdpMsg.queryValidatedBlockStateByDomain(recvDomain.getDomain());
+
+            // 4. Return null if result is empty
+            if (ObjectUtil.isNull(result)) {
+                return null;
             }
-            if (status == 0) {
+
+            // 5. Create BlockState using constructor with the domain and result values
+            return new BlockState(recvDomain, result.blockHash, result.blockHeight, result.blockTimestamp.longValue());
+        } catch (Exception e) {
+            throw new RuntimeException(
+                    String.format("failed to query validated block state for domain %s", recvDomain.getDomain()),
+                    e
+            );
+        }
+    }
+
+    @Override
+    public CrossChainMessageReceipt recvOffChainException(String exceptionMsgAuthor, byte[] exceptionMsgPkg) {
+        // 1. Check context
+        if (ObjectUtil.isNull(this.bbcContext)) {
+            throw new RuntimeException("empty bbc context");
+        }
+        if (ObjectUtil.isNull(this.bbcContext.getSdpContract())) {
+            throw new RuntimeException("empty sdp contract in bbc context");
+        }
+
+        getBBCLogger().info("rollback sdp msg from {} now", exceptionMsgAuthor);
+        getBBCLogger().debug("exceptionMsgPkg: {}", HexUtil.encodeHexStr(exceptionMsgPkg));
+
+        // 2. Convert exception message author from hex string to bytes
+        byte[] sender = HexUtil.decodeHex(exceptionMsgAuthor);
+
+        // 3. Load SDP contract
+        SDPMsg sdpMsg = SDPMsg.load(
+                this.bbcContext.getSdpContract().getContractAddress(),
+                this.client,
+                this.keyPair
+        );
+
+        try {
+            // 4. Call contract to handle exception message - pass byte[] instead of String
+            TransactionReceipt receipt = sdpMsg.recvOffChainException(
+                    sender,
+                    exceptionMsgPkg
+            );
+
+            // 5. Create response
+            CrossChainMessageReceipt crossChainMessageReceipt = new CrossChainMessageReceipt();
+
+            // Check for null receipt
+            if (ObjectUtil.isNull(receipt)) {
+                crossChainMessageReceipt.setErrorMsg("null receipt after sent tx");
+                return crossChainMessageReceipt;
+            }
+
+            crossChainMessageReceipt.setTxhash(receipt.getTransactionHash());
+            crossChainMessageReceipt.setConfirmed(true);
+
+            if (receipt.isStatusOK()) {
                 getBBCLogger().info(
-                        "set am contract (address: {}) to SDP {} by tx {}",
-                        contractAddress,
+                        "successful to rollback sdp msg from {} to sdp {} by tx {}",
+                        exceptionMsgAuthor,
                         this.bbcContext.getSdpContract().getContractAddress(),
                         receipt.getTransactionHash()
                 );
+                crossChainMessageReceipt.setSuccessful(true);
             } else {
-                getBBCLogger().info(
-                        "set am contract failed, receipt status code: {}",
-                        receipt.getStatus()
+                getBBCLogger().error(
+                        "failed to rollback sdp msg from {} to sdp {} by tx {}",
+                        exceptionMsgAuthor,
+                        this.bbcContext.getSdpContract().getContractAddress(),
+                        receipt.getTransactionHash()
                 );
+                crossChainMessageReceipt.setSuccessful(false);
+                crossChainMessageReceipt.setErrorMsg(StrUtil.emptyToDefault(receipt.getMessage(), ""));
             }
+
+            return crossChainMessageReceipt;
 
         } catch (Exception e) {
             throw new RuntimeException(
                     String.format(
-                            "failed to set am contract (address: %s) to SDP %s",
-                            contractAddress,
+                            "failed to process rollback sdp msg from %s to sdp %s",
+                            exceptionMsgAuthor,
                             this.bbcContext.getSdpContract().getContractAddress()
-                    ), e
+                    ),
+                    e
             );
         }
+    }
 
-        // 4. update sdp contract status
-        try {
-            if (!StrUtil.isEmpty(sdp.getAmAddress()) && !isByteArrayZero(sdp.getLocalDomain())) {
-                this.bbcContext.getSdpContract().setStatus(ContractStatusEnum.CONTRACT_READY);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format(
-                            "failed to update sdp contract status (address: %s)",
-                            this.bbcContext.getSdpContract().getContractAddress()
-                    ), e);
+    @Override
+    public CrossChainMessageReceipt reliableRetry(ReliableCrossChainMessage msg) {
+        throw new UnsupportedOperationException("not supported");
+    }
+
+    private void checkPtcContract() {
+        // 1. check context
+        if (ObjectUtil.isNull(this.bbcContext)) {
+            throw new RuntimeException("empty bbc context");
+        }
+        if (ObjectUtil.isNull(this.bbcContext.getPtcContract())) {
+            throw new RuntimeException("empty ptc contract in bbc context");
+        }
+        if (this.bbcContext.getPtcContract().getStatus() != ContractStatusEnum.CONTRACT_READY) {
+            throw new RuntimeException("ptc hub is not ready");
         }
     }
 
@@ -785,632 +2232,4 @@ public class FISCOBCOSBBCService extends AbstractBBCService {
         }
         return true;
     }
-
-    @Override
-    public void setLocalDomain(String domain) {
-        getBBCLogger().info("BSN~ setLocalDomain  domain：{}",domain);
-        // 1. check context
-        if (ObjectUtil.isNull(this.bbcContext)) {
-            throw new RuntimeException("empty bbc context");
-        }
-        if (StrUtil.isEmpty(this.bbcContext.getSdpContract().getContractAddress())) {
-            throw new RuntimeException("none sdp contract address");
-        }
-
-        // 2. load sdp contract
-        SDPMsg sdp = SDPMsg.load(
-                this.bbcContext.getSdpContract().getContractAddress(),
-                this.client,
-                this.keyPair
-        );
-
-        // 3. set domain to sdp
-
-        try {
-            String owner = sdp.owner();
-            TransactionReceipt receipt = sdp.setLocalDomain(domain);
-            //TransactionReceipt receipt = client.getTransactionReceipt("0x3661887e7ae9be48a79485aebbc46a174cb00897e84d52628fbab8c9bce97270").getTransactionReceipt().get();
-            int status;
-            if(isHexadecimal(receipt.getStatus())){
-                // 转换为10进制数
-
-                status= Integer.parseInt(receipt.getStatus().substring(2), 16);
-            }else {
-                status= Integer.valueOf(receipt.getStatus());
-            }
-            getBBCLogger().info(
-                    "set setLocalDomain (owner:{}, statusMsg: {}, message: {}) ", owner,
-                    receipt.getStatusMsg(), receipt.getMessage()
-            );
-            getBBCLogger().info(
-                    "set setLocalDomain result receipt: {}",
-                    JSONObject.toJSONString(receipt)
-            );
-            if (status == 0) {
-                getBBCLogger().info(
-                        "set domain ({}) to SDP {} by tx {}",
-                        domain,
-                        this.bbcContext.getSdpContract().getContractAddress(),
-                        receipt.getTransactionHash()
-                );
-            } else {
-                getBBCLogger().info(
-                        "set domain failed, receipt status code: {}",
-                        receipt.getStatus()
-                );
-            }
-
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format(
-                            "failed to set domain (%s) to SDP %s",
-                            domain,
-                            this.bbcContext.getSdpContract().getContractAddress()
-                    ), e
-            );
-        }
-
-        // 4. update sdp contract status
-        try {
-            if (!StrUtil.isEmpty(sdp.getAmAddress()) && !ObjectUtil.isEmpty(sdp.getLocalDomain())) {
-                this.bbcContext.getSdpContract().setStatus(ContractStatusEnum.CONTRACT_READY);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format(
-                            "failed to update sdp contract status (address: %s)",
-                            this.bbcContext.getSdpContract().getContractAddress()
-                    ), e);
-        }
-    }
-
-
-
-    public  boolean isHexadecimal(String str) {
-        if(str.startsWith("0x")){
-            return true;
-        }else{
-            return false;
-        }
-    }
-
-    // ─── Monitor Contract Methods ─────────────────────────────────────────────
-
-    /**
-     * Deploy Monitor.sol and MonitorVerifier.sol, then wire them together and
-     * link Monitor into SDPMsg.
-     *
-     * Call order:
-     *   1. setupMonitorContract()       — deploys both contracts
-     *   2. setMonitorContract(sdpAddr)  — tells SDPMsg who the Monitor is
-     */
-    @Override
-    public void setupMonitorContract() {
-        getBBCLogger().info("setupMonitorContract: deploying Monitor and MonitorVerifier");
-
-        if (ObjectUtil.isNull(this.bbcContext)) {
-            throw new RuntimeException("empty bbc context");
-        }
-        if (ObjectUtil.isNull(this.bbcContext.getSdpContract())
-                || StrUtil.isEmpty(this.bbcContext.getSdpContract().getContractAddress())) {
-            throw new RuntimeException("SDP contract must be deployed first");
-        }
-        if (ObjectUtil.isNotNull(this.bbcContext.getMonitorContract())
-                && StrUtil.isNotEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
-            try {
-                assertMonitorImplementationSupported(
-                        this.bbcContext.getMonitorContract().getContractAddress());
-                return;
-            } catch (IllegalStateException e) {
-                getBBCLogger().warn(
-                        "replace legacy FISCO Monitor {} during explicit BBC reconciliation",
-                        this.bbcContext.getMonitorContract().getContractAddress());
-            }
-        }
-
-        // 1. Deploy MonitorVerifier
-        MonitorVerifier monitorVerifier;
-        try {
-            monitorVerifier = MonitorVerifier.deploy(client, keyPair);
-        } catch (Exception e) {
-            throw new RuntimeException("failed to deploy MonitorVerifier", e);
-        }
-        TransactionReceipt mvReceipt = monitorVerifier.getDeployReceipt();
-        if (ObjectUtil.isNull(mvReceipt) || !StrUtil.equals(mvReceipt.getStatus(), TX_RECEIPT_STATUS_SUCCESS)) {
-            throw new RuntimeException("failed to get MonitorVerifier deploy receipt");
-        }
-        String monitorVerifierAddress = monitorVerifier.getContractAddress();
-        getBBCLogger().info("MonitorVerifier deployed at: {}", monitorVerifierAddress);
-
-        if (StrUtil.isNotEmpty(config.getMonitorNodeAddress())) {
-            setMonitorNode(
-                    monitorVerifierAddress,
-                    config.getMonitorCommitteeId(),
-                    config.getMonitorNodeId(),
-                    config.getMonitorNodeAddress(),
-                    true
-            );
-            setMonitorThreshold(monitorVerifierAddress, config.getMonitorCommitteeId(), 1);
-        } else {
-            getBBCLogger().warn(
-                    "monitorNodeAddress is empty; monitor orders will be rejected until a monitor node is registered"
-            );
-        }
-
-        // 2. Deploy Monitor
-        Monitor monitor;
-        try {
-            monitor = Monitor.deploy(client, keyPair);
-        } catch (Exception e) {
-            throw new RuntimeException("failed to deploy Monitor", e);
-        }
-        TransactionReceipt mReceipt = monitor.getDeployReceipt();
-        if (ObjectUtil.isNull(mReceipt) || !StrUtil.equals(mReceipt.getStatus(), TX_RECEIPT_STATUS_SUCCESS)) {
-            throw new RuntimeException("failed to get Monitor deploy receipt");
-        }
-        String monitorAddress = monitor.getContractAddress();
-        getBBCLogger().info("Monitor deployed at: {}", monitorAddress);
-
-        // 3. Wire Monitor → SDP
-        try {
-            TransactionReceipt r = monitor.setSdpAddress(
-                    this.bbcContext.getSdpContract().getContractAddress());
-            getBBCLogger().info("Monitor.setSdpAddress tx: {}", r.getTransactionHash());
-        } catch (Exception e) {
-            throw new RuntimeException("failed to set SDP address in Monitor", e);
-        }
-
-        // 4. Wire Monitor → MonitorVerifier
-        try {
-            TransactionReceipt r = monitor.setMonitorVerifierAddress(monitorVerifierAddress);
-            getBBCLogger().info("Monitor.setMonitorVerifierAddress tx: {}", r.getTransactionHash());
-        } catch (Exception e) {
-            throw new RuntimeException("failed to set MonitorVerifier address in Monitor", e);
-        }
-
-        // 5. Register Monitor in SDP (setMonitorContract)
-        setMonitorContractInSDP(monitorAddress);
-
-        MonitorContract monitorContract = new MonitorContract();
-        monitorContract.setContractAddress(monitorAddress);
-        monitorContract.setStatus(ContractStatusEnum.CONTRACT_DEPLOYED);
-        this.bbcContext.setMonitorContract(monitorContract);
-
-        getBBCLogger().info("setupMonitorContract done. Monitor={}, MonitorVerifier={}",
-                monitorAddress, monitorVerifierAddress);
-    }
-
-    private void assertSdpMonitorRoutingSupported(String sdpAddress) {
-        try {
-            SDPMsg sdp = SDPMsg.load(sdpAddress, client, keyPair);
-            BigInteger routingVersion = sdp.getMonitorRoutingVersion();
-            if (!SDP_MONITOR_ROUTING_VERSION.equals(routingVersion)) {
-                throw new IllegalStateException(
-                        String.format(
-                                "unsupported SDP monitor routing version %s at %s",
-                                routingVersion,
-                                sdpAddress));
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException(
-                    String.format(
-                            "FISCO SDP %s predates V1/V2 receive-side Monitor routing",
-                            sdpAddress),
-                    e);
-        }
-    }
-
-    private void assertMonitorImplementationSupported(String monitorAddress) {
-        try {
-            Monitor monitor = Monitor.load(monitorAddress, client, keyPair);
-            BigInteger implementationVersion = monitor.getImplementationVersion();
-            if (!MONITOR_IMPLEMENTATION_VERSION.equals(implementationVersion)) {
-                throw new IllegalStateException(
-                        String.format(
-                                "unsupported Monitor implementation version %s at %s",
-                                implementationVersion,
-                                monitorAddress));
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException(
-                    String.format(
-                            "FISCO Monitor %s lacks exact envelope decode and receive-side routing",
-                            monitorAddress),
-                    e);
-        }
-    }
-
-    @Override
-    public void setProtocolInMonitor(String contractAddress) {
-        if (ObjectUtil.isNull(this.bbcContext)
-                || ObjectUtil.isNull(this.bbcContext.getMonitorContract())
-                || StrUtil.isEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
-            throw new RuntimeException("Monitor contract not ready in bbc context");
-        }
-
-        Monitor monitor = Monitor.load(
-                this.bbcContext.getMonitorContract().getContractAddress(),
-                this.client,
-                this.keyPair
-        );
-        try {
-            TransactionReceipt receipt = monitor.setSdpAddress(contractAddress);
-            getBBCLogger().info("Monitor.setSdpAddress tx: {}", receipt.getTransactionHash());
-            updateMonitorContractStatusIfReady();
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format("failed to set protocol address (%s) on Monitor %s",
-                            contractAddress, this.bbcContext.getMonitorContract().getContractAddress()), e);
-        }
-    }
-
-    /**
-     * Tell SDPMsg which address is the Monitor (so only Monitor can call sendMessage).
-     */
-    @Override
-    public void setMonitorContract(String contractAddress) {
-        setMonitorContractInSDP(contractAddress);
-    }
-
-    public void setMonitorContractInSDP(String monitorAddress) {
-        getBBCLogger().info("setMonitorContractInSDP: {}", monitorAddress);
-
-        if (ObjectUtil.isNull(this.bbcContext)
-                || ObjectUtil.isNull(this.bbcContext.getSdpContract())
-                || StrUtil.isEmpty(this.bbcContext.getSdpContract().getContractAddress())) {
-            throw new RuntimeException("SDP contract not ready in bbc context");
-        }
-
-        SDPMsg sdp = SDPMsg.load(
-                this.bbcContext.getSdpContract().getContractAddress(),
-                this.client,
-                this.keyPair
-        );
-        try {
-            TransactionReceipt receipt = sdp.setMonitorContract(monitorAddress);
-            getBBCLogger().info("SDPMsg.setMonitorContract tx: {}", receipt.getTransactionHash());
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format("failed to setMonitorContract(%s) on SDP %s",
-                            monitorAddress, this.bbcContext.getSdpContract().getContractAddress()), e);
-        }
-    }
-
-    /**
-     * Set the MonitorControl state on the Monitor contract.
-     * @param monitorAddress address of the Monitor contract
-     * @param control  1=CLOSE, 2=OPEN, 3=ROLLBACK
-     */
-    public void setMonitorControl(String monitorAddress, int control) {
-        getBBCLogger().info("setMonitorControl: addr={}, control={}", monitorAddress, control);
-
-        Monitor monitor = Monitor.load(monitorAddress, this.client, this.keyPair);
-        try {
-            TransactionReceipt receipt = monitor.setMonitorControl(
-                    java.math.BigInteger.valueOf(control));
-            getBBCLogger().info("Monitor.setMonitorControl tx: {}", receipt.getTransactionHash());
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format("failed to setMonitorControl(%d) on Monitor %s", control, monitorAddress), e);
-        }
-    }
-
-    @Override
-    public void setMonitorControl(int monitorType) {
-        if (ObjectUtil.isNull(this.bbcContext)
-                || ObjectUtil.isNull(this.bbcContext.getMonitorContract())
-                || StrUtil.isEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
-            throw new RuntimeException("Monitor contract not ready in bbc context");
-        }
-        setMonitorControl(this.bbcContext.getMonitorContract().getContractAddress(), monitorType);
-        updateMonitorContractStatusIfReady();
-    }
-
-    @Override
-    public void setPtcHubInMonitorVerifier(String contractAddress) {
-        throw new UnsupportedOperationException("setPtcHubInMonitorVerifier not supported by current FISCO monitor verifier");
-    }
-
-    /**
-     * Register a supervisor node in MonitorVerifier.
-     *
-     * @param monitorVerifierAddress  address of the MonitorVerifier contract
-     * @param committeeId             committee identifier
-     * @param nodeId                  node identifier within the committee
-     * @param nodeEthAddress          Ethereum-style address derived from the node's public key
-     * @param active                  whether the node is active
-     */
-    public void setMonitorNode(String monitorVerifierAddress, String committeeId,
-                               String nodeId, String nodeEthAddress, boolean active) {
-        getBBCLogger().info("setMonitorNode: verifier={}, committee={}, node={}, addr={}, active={}",
-                monitorVerifierAddress, committeeId, nodeId, nodeEthAddress, active);
-
-        MonitorVerifier mv = MonitorVerifier.load(monitorVerifierAddress, this.client, this.keyPair);
-        try {
-            TransactionReceipt receipt = mv.setMonitorNode(committeeId, nodeId, nodeEthAddress, active);
-            getBBCLogger().info("MonitorVerifier.setMonitorNode tx: {}", receipt.getTransactionHash());
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format("failed to setMonitorNode on MonitorVerifier %s", monitorVerifierAddress), e);
-        }
-    }
-
-    /**
-     * Set the signature threshold for a committee in MonitorVerifier.
-     */
-    public void setMonitorThreshold(String monitorVerifierAddress, String committeeId, int threshold) {
-        getBBCLogger().info("setMonitorThreshold: verifier={}, committee={}, threshold={}",
-                monitorVerifierAddress, committeeId, threshold);
-
-        MonitorVerifier mv = MonitorVerifier.load(monitorVerifierAddress, this.client, this.keyPair);
-        try {
-            TransactionReceipt receipt = mv.setThreshold(committeeId,
-                    java.math.BigInteger.valueOf(threshold));
-            getBBCLogger().info("MonitorVerifier.setThreshold tx: {}", receipt.getTransactionHash());
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format("failed to setThreshold on MonitorVerifier %s", monitorVerifierAddress), e);
-        }
-    }
-
-    /**
-     * Relay a supervisory monitor order to the Monitor contract on-chain.
-     *
-     * @param monitorAddress  address of the Monitor contract
-     * @param committeeId     committee id that signed the order
-     * @param signAlgo        signature algorithm ("ECDSA")
-     * @param rawProof        encoded multi-signature proof
-     * @param rawMonitorOrder encoded monitor order payload
-     * @return CrossChainMessageReceipt with tx hash and success flag
-     */
-    public CrossChainMessageReceipt relayMonitorOrder(String monitorAddress,
-                                                      String committeeId,
-                                                      String signAlgo,
-                                                      byte[] rawProof,
-                                                      byte[] rawMonitorOrder) {
-        getBBCLogger().info("relayMonitorOrder to Monitor {}, committee={}", monitorAddress, committeeId);
-
-        Monitor monitor = Monitor.load(monitorAddress, this.client, this.keyPair);
-        CrossChainMessageReceipt crossChainMessageReceipt = new CrossChainMessageReceipt();
-        try {
-            TransactionReceipt receipt = monitor.recvMonitorOrder(
-                    committeeId, signAlgo, rawProof, rawMonitorOrder);
-            crossChainMessageReceipt.setTxhash(receipt.getTransactionHash());
-            crossChainMessageReceipt.setConfirmed(true);
-            crossChainMessageReceipt.setSuccessful(
-                    StrUtil.equals(receipt.getStatus(), TX_RECEIPT_STATUS_SUCCESS));
-            getBBCLogger().info("relayMonitorOrder tx: {}, success: {}",
-                    receipt.getTransactionHash(), crossChainMessageReceipt.isSuccessful());
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format("failed to relayMonitorOrder to Monitor %s", monitorAddress), e);
-        }
-        return crossChainMessageReceipt;
-    }
-
-    @Override
-    public CrossChainMessageReceipt relayMonitorOrder(String committeeId,
-                                                      String signAlgo,
-                                                      byte[] rawProof,
-                                                      byte[] rawMonitorOrder) {
-        if (ObjectUtil.isNull(this.bbcContext)
-                || ObjectUtil.isNull(this.bbcContext.getMonitorContract())
-                || StrUtil.isEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
-            throw new RuntimeException("Monitor contract not ready in bbc context");
-        }
-        return relayMonitorOrder(
-                this.bbcContext.getMonitorContract().getContractAddress(),
-                committeeId,
-                signAlgo,
-                rawProof,
-                rawMonitorOrder
-        );
-    }
-
-    private void updateMonitorContractStatusIfReady() {
-        if (ObjectUtil.isNull(this.bbcContext)
-                || ObjectUtil.isNull(this.bbcContext.getMonitorContract())
-                || StrUtil.isEmpty(this.bbcContext.getMonitorContract().getContractAddress())) {
-            return;
-        }
-        Monitor monitor = Monitor.load(
-                this.bbcContext.getMonitorContract().getContractAddress(),
-                this.client,
-                this.keyPair
-        );
-        try {
-            if (!StrUtil.equalsIgnoreCase(monitor.sdpAddress(), "0x0000000000000000000000000000000000000000")
-                    && !StrUtil.equalsIgnoreCase(monitor.monitorVerifierAddress(), "0x0000000000000000000000000000000000000000")
-                    && monitor.monitorControl().intValue() != 0) {
-                this.bbcContext.getMonitorContract().setStatus(ContractStatusEnum.CONTRACT_READY);
-            }
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    String.format(
-                            "failed to update monitor contract status (address: %s)",
-                            this.bbcContext.getMonitorContract().getContractAddress()
-                    ), e);
-        }
-    }
-
-    @Override
-    public CrossChainMessageReceipt recvOffChainException(String exceptionMsgAuthor, byte[] exceptionMsgPkg) {
-        throw new UnsupportedOperationException("recvOffChainException not supported");
-    }
-
-    @Override
-    public void setPtcContract(String ptcContractAddress) {
-        if (ObjectUtil.isNull(this.bbcContext)) {
-            throw new RuntimeException("empty bbc context");
-        }
-        PTCContract ptcContract = new PTCContract();
-        ptcContract.setContractAddress(ptcContractAddress);
-        ptcContract.setStatus(ContractStatusEnum.CONTRACT_READY);
-        this.bbcContext.setPtcContract(ptcContract);
-    }
-
-    @Override
-    public void setupPTCContract() {
-        if (ObjectUtil.isNull(this.bbcContext)) {
-            throw new RuntimeException("empty bbc context");
-        }
-        PTCContract ptcContract = new PTCContract();
-        ptcContract.setContractAddress("committee-ptc-offchain");
-        ptcContract.setStatus(ContractStatusEnum.CONTRACT_READY);
-        this.bbcContext.setPtcContract(ptcContract);
-    }
-
-    @Override
-    public ConsensusState readConsensusState(BigInteger height) {
-        getBBCLogger().info("read consensus state at height {}", height);
-
-        try {
-            BcosBlock.Block block = this.client.getBlockByNumber(height, false).getBlock();
-            if (block == null) {
-                throw new RuntimeException("empty block at height " + height);
-            }
-            BcosBlockHeader.BlockHeader blockHeader = this.client.getBlockHeaderByNumber(height, true).getBlockHeader();
-            if (blockHeader == null) {
-                throw new RuntimeException("empty block header at height " + height);
-            }
-
-            byte[] blockHash = HexUtil.decodeHex(StrUtil.removePrefix(block.getHash(), "0x"));
-            byte[] parentHash = StrUtil.isEmpty(block.getParentHash())
-                    ? new byte[0]
-                    : HexUtil.decodeHex(StrUtil.removePrefix(block.getParentHash(), "0x"));
-
-            long timestamp = parseBlockTimestamp(block.getTimestamp());
-
-            JSONObject blockHeaderJson = new JSONObject();
-            blockHeaderJson.put("transactionsRoot", block.getTransactionsRoot());
-            blockHeaderJson.put("receiptsRoot", block.getReceiptsRoot());
-            blockHeaderJson.put("stateRoot", block.getStateRoot());
-
-            ConsensusState consensusState = new ConsensusState(
-                    height,
-                    blockHash,
-                    parentHash,
-                    timestamp,
-                    blockHeaderJson.toJSONString().getBytes(),
-                    getConsensusNodeInfo(blockHeader),
-                    getBlockEndorsements(blockHeader)
-            );
-
-            getBBCLogger().info("read consensus state at height {} success", height);
-            return consensusState;
-        } catch (Exception e) {
-            throw new RuntimeException(
-                    StrUtil.format("failed to read consensus state at height {}", height),
-                    e
-            );
-        }
-    }
-
-    private long parseBlockTimestamp(String timestamp) {
-        if (StrUtil.startWithIgnoreCase(timestamp, "0x")) {
-            return Long.parseLong(StrUtil.removePrefixIgnoreCase(timestamp, "0x"), 16);
-        }
-        return Long.parseLong(timestamp);
-    }
-
-    private byte[] getConsensusNodeInfo(BcosBlockHeader.BlockHeader block) {
-        try {
-            JSONObject consensusInfo = new JSONObject();
-            consensusInfo.put(
-                    "sealerList",
-                    ObjectUtil.defaultIfNull(block.getSealerList(), Collections.emptyList())
-            );
-            return consensusInfo.toJSONString().getBytes();
-        } catch (Exception e) {
-            getBBCLogger().warn("failed to get consensus node info, use empty json", e);
-            return "{}".getBytes();
-        }
-    }
-
-    private byte[] getBlockEndorsements(BcosBlockHeader.BlockHeader block) {
-        try {
-            List<BcosBlockHeader.Signature> signatureList = block.getSignatureList();
-            if (ObjectUtil.isNull(signatureList) || signatureList.isEmpty()) {
-                return "[]".getBytes();
-            }
-            com.alibaba.fastjson2.JSONArray signatures = new com.alibaba.fastjson2.JSONArray();
-            for (BcosBlockHeader.Signature signature : signatureList) {
-                JSONObject signatureJson = new JSONObject();
-                signatureJson.put("sealerIndex", signature.getIndex());
-                signatureJson.put("signature", signature.getSignature());
-                signatures.add(signatureJson);
-            }
-            JSONObject endorsements = new JSONObject();
-            endorsements.put("signatures", signatures);
-            return endorsements.toJSONString().getBytes();
-        } catch (Exception e) {
-            getBBCLogger().warn("failed to get block endorsements, use empty json", e);
-            return "{}".getBytes();
-        }
-    }
-
-    @Override
-    public BlockState queryValidatedBlockStateByDomain(CrossChainDomain recvDomain) {
-        throw new UnsupportedOperationException("queryValidatedBlockStateByDomain not supported");
-    }
-
-    @Override
-    public void updatePTCTrustRoot(PTCTrustRoot ptcTrustRoot) {
-        getBBCLogger().info("skip updating PTC trust root on FISCO chain in off-chain Committee PTC mode");
-    }
-
-    @Override
-    public void addTpBta(ThirdPartyBlockchainTrustAnchor tpbta) {
-        getBBCLogger().info(
-                "skip adding TpBTA {}:{} on FISCO chain in off-chain Committee PTC mode",
-                tpbta.getCrossChainLane().getLaneKey(),
-                tpbta.getTpbtaVersion()
-        );
-    }
-
-    @Override
-    public boolean hasTpBta(CrossChainLane tpbtaLane, int tpBtaVersion) {
-        getBBCLogger().info(
-                "treat TpBTA {}:{} as ready on FISCO chain in off-chain Committee PTC mode",
-                tpbtaLane.getLaneKey(),
-                tpBtaVersion
-        );
-        return true;
-    }
-
-    @Override
-    public ThirdPartyBlockchainTrustAnchor getTpBta(CrossChainLane tpbtaLane, int tpBtaVersion) {
-        return null;
-    }
-
-    @Override
-    public Set<PTCTypeEnum> getSupportedPTCType() {
-        return Collections.singleton(PTCTypeEnum.COMMITTEE);
-    }
-
-    @Override
-    public PTCTrustRoot getPTCTrustRoot(ObjectIdentity ptcOwnerOid) {
-        return null;
-    }
-
-    @Override
-    public boolean hasPTCTrustRoot(ObjectIdentity ptcOwnerOid) {
-        return true;
-    }
-
-    @Override
-    public PTCVerifyAnchor getPTCVerifyAnchor(ObjectIdentity ptcOwnerOid, BigInteger version) {
-        return null;
-    }
-
-    @Override
-    public boolean hasPTCVerifyAnchor(ObjectIdentity ptcOwnerOid, BigInteger version) {
-        return true;
-    }
-
-    @Override
-    public CrossChainMessageReceipt reliableRetry(ReliableCrossChainMessage msg) {
-        throw new UnsupportedOperationException("reliableRetry not supported");
-    }
-
 }

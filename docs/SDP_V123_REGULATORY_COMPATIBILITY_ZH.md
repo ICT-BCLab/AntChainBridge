@@ -16,9 +16,11 @@
 
 | 链插件 | 普通 SDP | 监管 SDP | 接收侧 Monitor 解封 | 备注 |
 | --- | --- | --- | --- | --- |
+| Ethereum2 | V1/V2/V3 | 不支持 | 不适用 | 无监管基线，保留完整 PTC |
 | Ethereum3 | V1/V2/V3 | V1/V2/V3 | 支持 | Monitor V5，SDP 保留 V1 兼容接口 |
-| FISCO BCOS 3.x（`fiscobcos`） | V1/V2/V3 | V1/V2/V3 | 支持 | Monitor V5，与 Ethereum3 复用同一套合约源码 |
-| FISCO BCOS 2.x（`fiscobcos3`） | V1/V2/V3 | V1/V2/V3 | 支持 | Monitor V3，使用 0.4.25 编译器生成双密码套件 wrapper |
+| FISCO BCOS 3.x Base（`fiscobcos`） | V1/V2/V3 | 不支持 | 不适用 | 无监管基线，与 Ethereum2 复用合约语义并保留完整 PTC |
+| FISCO BCOS 3.x Xun（`fiscobcos3`） | V1/V2/V3 | V1/V2/V3 | 支持 | Monitor V5，与 Ethereum3 复用同一套合约源码 |
+| FISCO BCOS 2.x（`fiscobcos2`） | 旧插件能力 | 不支持 | 不适用 | 保留的历史 2.x 插件，不再占用 `fiscobcos3` 产品名 |
 | Mychain 0.20 | V1/V2/V3 | V1/V2/V3 | 支持 | Monitor V7，包含安全变长字节解码和 monitor 证明验证 |
 | Dioxide（`dioxide`） | V1 | V1 | 按 V1 原生路径 | 旧插件按 V0 能力运行，不配置 PTC Hub |
 | Dioxide2（`dioxide2`） | V1 | V1 | 支持 | 结构完整的 Committee PTC 流程；Dioxide 真实性验证按验收要求降级 |
@@ -49,7 +51,7 @@
 
 旧版 Ethereum、FISCO 和 Mychain Monitor 使用的汇编变长字节解码会随标准 solc、FISCO solc、MySolidity 的内存对齐差异产生不同结果。典型现象是 36 字节业务消息只剩尾部片段和大量 `0x00`，但交易回执仍然成功。
 
-Ethereum/FISCO Monitor V5、旧 FISCO Monitor V3 与 Mychain Monitor V7 均依照旧 ACB EVM codec 的“逆序 32 字节块 + 末尾长度”格式显式计算边界，再逐字节恢复逻辑内容，避免依赖编译器敏感的内存拷贝。各链插件的期望实现版本也同步提高，`setup-bbccontracts` 会检测旧运行码；支持原位升级的链保持原地址，不支持安全原位升级的插件会部署新 Monitor 并把新地址写回链上下文和业务测试合约。
+Ethereum3/FISCO BCOS 3.x Xun 的 Monitor V5 与 Mychain Monitor V7 均依照旧 ACB EVM codec 的“逆序 32 字节块 + 末尾长度”格式显式计算边界，再逐字节恢复逻辑内容，避免依赖编译器敏感的内存拷贝。各链插件的期望实现版本也同步提高，`setup-bbccontracts` 会检测旧运行码；支持原位升级的链保持原地址，不支持安全原位升级的插件会部署新 Monitor 并把新地址写回链上下文和业务测试合约。
 
 ### 4.3 Mychain 监管证明未进入 MonitorVerifier
 
@@ -80,7 +82,7 @@ MonitorVerifier 的 `monitorNodeEndorseInfoMap` 在 TPBTA 写入 PTC Hub 时同�
 Verifier 虽然地址双向绑定正确，但没有历史 TPBTA 的监管节点背书，所有监管消息都会在目标链
 以 `MonitorVerifierMsg: no monitor node endorse info` 回滚。
 
-修复后的升级流程仅替换存在问题的 Monitor，并复用当前 PTC Hub 已绑定的旧 MonitorVerifier，
+`fiscobcos3` 的升级流程仅替换存在问题的 Monitor，并复用当前 PTC Hub 已绑定的旧 MonitorVerifier，
 从而保留既有背书状态。已产生空 Verifier 的环境必须在审计后将新 Monitor 和 PTC Hub 同时绑定
 回旧 Verifier；只修改其中一侧会留下不一致状态。
 
@@ -165,6 +167,9 @@ Dioxide2 作为目标链时，AuthMessage 将 ThirdPartyProof 交给链上 PtcHu
 ## 5. 部署与升级顺序
 
 1. 备份当前插件 JAR、Relayer 链配置与合约地址。
+   FISCO Base 使用 `fiscobcos`，监管版使用 `fiscobcos3`，不能通过切换 Monitor 开关共用同一注册记录。
+   历史上以 `product=fiscobcos` 注册的监管链不会自动改名；升级时应以 `fiscobcos3` 新建或人工迁移
+   blockchainId、BBC Context、合约地址、BTA/TpBTA 和 Anchor 配置，完成核对后再停止旧记录。
 2. 核对 `bcdns_root_cert_pem` 与当前 BCDNS/PTC 证书的 issuer owner。
 3. 替换插件 JAR，先重启 Plugin Server，再确认 Relayer 恢复对插件的连接。
 4. 对目标链执行一次 `setup-bbccontracts`；Mychain 按 MonitorVerifier → CommitteePtcVerifier → PtcHub → Monitor → SDP 的顺序原位升级并重建绑定。不要假设其他链的地址都会保持不变。

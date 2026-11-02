@@ -115,16 +115,18 @@ contract AuthMsg implements IAuthMessage.AuthMessageInterface {
         AMLib.AuthMessage msg = AMLib.decodeAuthMessage(dr.rawResp);
         __debug.print("[recvPkgFromRelayer] Decoded AuthMessage: ", msg);
 
-        relay@global (^msg) {
-            decodeAuthMsg = msg;
-        }
-
-        // 3. 验证协议路由存在
-        address zeroAddress;
-        __debug.assert(protocolRoutes[msg.protocolType] != zeroAddress);
-
-        // 4. 调用上层协议（SDPMsg）的 recvMessage, 触发接收事件
+        // recvPkgFromRelayer 是 address scope。所有 global 状态读取和写入必须
+        // 放进同一个 global relay；直接在 address scope 读取 protocolRoutes 会让
+        // Dioxide 运行时以 address key 打开 global state，并在提交区块时触发
+        // SCOPE_VERIFY_KEY_SIZE 断言。
         relay@global (^msg, ^dr) {
+            decodeAuthMsg = msg;
+
+            // 3. 验证协议路由存在
+            address zeroAddress;
+            __debug.assert(protocolRoutes[msg.protocolType] != zeroAddress);
+
+            // 4. 调用上层协议（SDPMsg）的 recvMessage, 触发接收事件
             __debug.assert(ptcHubId != 0u64);
             IPtcHub.PtcHubInterface ptcHub = IPtcHub.PtcHubInterface(ptcHubId);
             ptcHub.verifyProof(dr.rawTpProof);

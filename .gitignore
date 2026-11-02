@@ -21,3 +21,5 @@ pluginset/eos/**.abi
 /conf-local/
 config_cloud.toml
 config_local.toml
+**/__pycache__/
+SimpleMonitorSystem/MonitorSystemServer/logs/

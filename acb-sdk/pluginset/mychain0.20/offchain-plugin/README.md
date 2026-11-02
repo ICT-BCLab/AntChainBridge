@@ -30,12 +30,25 @@ PtcHub、Monitor、SDP 的顺序检查并原址升级。如果配置中未保存
 从已有 Monitor 恢复其 identity；无法恢复时会停止，避免用缺失历史 TpBTA endorsement 的空
 Verifier 覆盖现网绑定。确需部署新 Verifier 时，应在维护窗口重新上传全部生效 TpBTA。
 
+初始化必须同时核验 `MonitorVerifier.getPtcHubAddress()` 和 `PtcHub.getMonitorVerifier()`。
+Relayer 的新链部署顺序是先 Monitor、后 PtcHub；插件在两者齐备后完成双向绑定，并在最终
+`setPtcHubInMonitorVerifier` 中再次对账。正确绑定不重复写入，零地址才补齐；不同的非零
+地址、查询失败或设置后的回读不一致都会使初始化失败，不会静默替换已有通道。
+显式 PtcHub 地址（包括 JSON 内的 EVM 名称）同时决定两侧核验和设置的目标。
+
+真链发送前还应核对 Monitor 中的验证器 identity 与 PtcHub 中一致，且该验证器返回的
+PtcHub identity 正确。仅检查 `MONITOR_OPEN`、应用绑定或 TpBTA 存在不足以确认监管接收
+链路完整。配置丢失验证器名称时，插件通过 Monitor getter 恢复原始 identity，不再次哈希。
+安装新 JAR 或正常启动 SDK 不会修改链上绑定；既有链的补绑需另行执行显式初始化并保存
+配置交易记录。两笔配置交易不能原子回滚；部分成功后须保留记录，再显式重试补齐缺项。
+
 # 构建
 
 **！！！目前存在部分内部依赖发布中，可能暂时无法成功构建，发布完成后即可使用以下命令进行构建**
 
 在`pluginset/mychain0.20/offchain-plugin`目录运行maven命令，
 在`pluginset/mychain0.20/offchain-plugin/target`目录下会生成插件 jar 包`mychain020-bbc-1.0.0-SNAPSHOT-plugin.jar`。
+使用 Java 21 构建时，本模块显式选择兼容的 Lombok 编译处理器（`provided`），仍生成 Java 8 字节码。
 
 ```
 cd pluginset/mychain0.20/offchain-plugin && mvn package -Dmaven.test.skip=true

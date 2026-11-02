@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 pragma solidity ^0.8.0;
+
+import "../monitor/MonitorProofContext.sol";
 pragma experimental ABIEncoderV2;
 
 import "./PtcLib.sol";
@@ -222,17 +224,7 @@ library CommitteeLib {
                     if (checkMonitorNode(info.nodeId)) {
                         require(monitorVerifierAddress != identity(0), "monitor verifier not set");
                         isMonitorNode = true;
-                        MonitorCommitteeNodeProof memory monitorNodeProof = MonitorCommitteeNodeProof({
-                            nodeId: ceProof.sigs[j].nodeId,
-                            signAlgo: ceProof.sigs[j].signAlgo,
-                            signature: ceProof.sigs[j].signature
-                        });
-                        IMonitorVerifier(monitorVerifierAddress).receiveMonitorNodeProofMessage(
-                            tpBta.crossChainLane,
-                            cer.committeeId,
-                            monitorNodeProof,
-                            encodedToSign
-                        );
+                        _cacheMonitorProof(tpBta, tpProof, ceProof.sigs[j], monitorVerifierAddress, encodedToSign, cer.committeeId);
                         res = true;
                         break;
                     }
@@ -258,6 +250,16 @@ library CommitteeLib {
         }
 
         return cer.policy.threshold.check(optinalCorrect);
+    }
+
+    function _cacheMonitorProof(TpBta memory tpBta, ThirdPartyProof memory tpProof,
+        CommitteeNodeProof memory monitorProof, identity verifier, bytes memory encodedToSign, string memory committeeId) private {
+        MonitorCommitteeNodeProof memory proof = MonitorCommitteeNodeProof({
+            nodeId: monitorProof.nodeId, signAlgo: monitorProof.signAlgo, signature: monitorProof.signature});
+        IMonitorVerifier(verifier).receiveMonitorNodeProofMessage(
+            tpBta.crossChainLane, committeeId,
+            proof, encodedToSign,
+            MonitorProofContext.fromResponse(tpProof.tpbtaCrossChainLane.channel.senderDomain, tpProof.resp.body));
     }
 
     function checkMonitorNode(string memory nodeId) internal pure returns (bool) {

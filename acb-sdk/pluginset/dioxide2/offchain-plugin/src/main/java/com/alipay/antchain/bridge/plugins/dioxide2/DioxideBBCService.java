@@ -139,6 +139,14 @@ public class DioxideBBCService extends AbstractBBCService {
                 this.bbcContext.getSdpContract() != null ? this.bbcContext.getSdpContract().getStatus() : ""
         );
 
+        // Deployment updates the contract context first. Persist those CIDs in
+        // the client config too, so a restarted service uses the same contracts.
+        if (this.bbcContext.getAuthMessageContract() != null) {
+            this.config.setAmContractAddressDeployed(this.bbcContext.getAuthMessageContract().getContractAddress());
+        }
+        if (this.bbcContext.getSdpContract() != null) {
+            this.config.setSdpContractAddressDeployed(this.bbcContext.getSdpContract().getContractAddress());
+        }
         this.bbcContext.setConfForBlockchainClient(this.config.toJsonString().getBytes(StandardCharsets.UTF_8));
         return this.bbcContext;
     }

@@ -8,6 +8,10 @@ import "./lib/ptc/CommitteeLib.sol";
 import "./lib/commons/AcbCommons.sol";
 import "./@openzeppelin/contracts/utils/Strings.sol";
 
+interface IMonitorProofPtcHub {
+    function verifierMap(uint8 ptcType) external view returns (identity);
+}
+
 contract MonitorVerifier is IMonitorVerifier, Ownable {
     using Strings for string;
     using CommitteeLib for NodePublicKeyEntry;
@@ -18,7 +22,11 @@ contract MonitorVerifier is IMonitorVerifier, Ownable {
     // Appended after the legacy storage fields for update-contract compatibility.
     MonitorNodeProofMessage private monitorNodeProofMessage;
 
-    uint32 public constant IMPLEMENTATION_VERSION = 2;
+    identity public monitorAddress;
+    uint8 private currentProofState;
+    bytes32 private currentMessageContext;
+
+    uint32 public constant IMPLEMENTATION_VERSION = 3;
 
     event MonitorNodeEndorseInfoUpdated(string committeeId, string nodeId, bytes rawPublicKey);
 
@@ -77,39 +85,45 @@ contract MonitorVerifier is IMonitorVerifier, Ownable {
         );
     }
 
-    // PtcHub -> CommitteePtcVerifier -> MonitorVerifier and the subsequent
-    // AuthMessage -> SDP -> Monitor call execute atomically in one transaction.
-    // The immediate caller is CommitteePtcVerifier, so this entry point cannot
-    // use onlyPtcHub; the proof itself is authenticated when Monitor consumes it.
+    // Verify immediately; never persist the complete signed payload.
     function receiveMonitorNodeProofMessage(
         CrossChainLane calldata newCrossChainLane,
         string calldata newCommitteeId,
         MonitorCommitteeNodeProof calldata newMonitorNodeProof,
-        bytes calldata newEncodedToSign
+        bytes calldata newEncodedToSign,
+        bytes32 messageContext
     ) external override {
-        monitorNodeProofMessage.crossChainLane = newCrossChainLane;
-        monitorNodeProofMessage.committeeId = newCommitteeId;
-        monitorNodeProofMessage.monitorNodeProof = newMonitorNodeProof;
-        monitorNodeProofMessage.encodedToSign = newEncodedToSign;
+        require(ptcHubAddress != identity(0), "MonitorVerifier: PtcHub not set");
+        require(msg.sender == IMonitorProofPtcHub(ptcHubAddress).verifierMap(1),
+            "MonitorVerifier: caller is not committee verifier");
+        require(messageContext != bytes32(0), "MonitorVerifier: empty context");
+        NodeEndorseInfo memory monitorNode = monitorNodeEndorseInfoMap[keccak256(abi.encodePacked(newCommitteeId))];
+        require(bytes(monitorNode.nodeId).length > 0, "MonitorVerifier: monitor node not found");
+        CommitteeNodeProof memory proof = CommitteeNodeProof({nodeId: newMonitorNodeProof.nodeId,
+            signAlgo: newMonitorNodeProof.signAlgo, signature: newMonitorNodeProof.signature});
+        bool verified = CommitteeLib.verifyTpProofFromMonitorNode(
+            newCrossChainLane, newCommitteeId, monitorNode, proof, newEncodedToSign);
+        currentMessageContext = messageContext;
+        currentProofState = verified ? 1 : 2;
     }
 
-    function verifyMonitorNodeProofMessage() external override returns (bool) {
-        NodeEndorseInfo storage monitorNode = monitorNodeEndorseInfoMap[
-            keccak256(abi.encodePacked(monitorNodeProofMessage.committeeId))
-        ];
-        require(bytes(monitorNode.nodeId).length > 0, "MonitorVerifier: monitor node not found");
-        CommitteeNodeProof memory monitorNodeProof = CommitteeNodeProof({
-            nodeId: monitorNodeProofMessage.monitorNodeProof.nodeId,
-            signAlgo: monitorNodeProofMessage.monitorNodeProof.signAlgo,
-            signature: monitorNodeProofMessage.monitorNodeProof.signature
-        });
-        return CommitteeLib.verifyTpProofFromMonitorNode(
-            monitorNodeProofMessage.crossChainLane,
-            monitorNodeProofMessage.committeeId,
-            monitorNode,
-            monitorNodeProof,
-            monitorNodeProofMessage.encodedToSign
-        );
+    function verifyMonitorNodeProofMessage(bytes32 messageContext) external override returns (bool) {
+        require(msg.sender == monitorAddress, "MonitorVerifier: caller is not Monitor");
+        require(currentProofState != 0 && currentMessageContext == messageContext,
+            "MonitorVerifier: no proof for current message");
+        bool verified = currentProofState == 1;
+        delete currentProofState;
+        delete currentMessageContext;
+        return verified;
+    }
+
+    function setMonitorAddress(identity monitor) external onlyOwner {
+        require(monitor != identity(0), "MonitorVerifier: zero Monitor");
+        monitorAddress = monitor;
+    }
+
+    function getPendingProofContext() external view returns (bytes32, uint8) {
+        return (currentMessageContext, currentProofState);
     }
 
     function _isMonitorNode(string memory nodeId) internal pure returns (bool) {

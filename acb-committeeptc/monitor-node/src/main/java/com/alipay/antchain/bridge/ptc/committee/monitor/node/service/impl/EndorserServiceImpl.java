@@ -212,7 +212,7 @@ public class EndorserServiceImpl implements IEndorserService {
                     HexUtil.encodeHexStr(bta.getBta().getInitBlockHash()), anchorState.getHashHex());
         }
 
-        if (isDioxide2(bta)) {
+        if (isDioxideFunctionalTestProduct(bta)) {
             return processValidatedConsensusState(
                     anchorState,
                     tpbta,
@@ -245,7 +245,7 @@ public class EndorserServiceImpl implements IEndorserService {
             throw new InvalidConsensusStateException("parent consensus state not found for {}", currState.getParentHashHex());
         }
 
-        if (isDioxide2(bta)) {
+        if (isDioxideFunctionalTestProduct(bta)) {
             return processValidatedConsensusState(
                     currState,
                     tpbta,
@@ -271,7 +271,7 @@ public class EndorserServiceImpl implements IEndorserService {
         if (ObjectUtil.isNull(bta)) {
             throw new InvalidCrossChainMessageException("bta not found for {}", crossChainLane.getSenderDomain().getDomain());
         }
-        if (isDioxide2(bta)) {
+        if (isDioxideFunctionalTestProduct(bta)) {
             return signUcp(tpbta, crossChainLane, ucp);
         }
         var consensusState = endorseServiceRepository.getValidatedConsensusState(
@@ -323,8 +323,11 @@ public class EndorserServiceImpl implements IEndorserService {
                 )).build();
     }
 
-    private boolean isDioxide2(BtaWrapper bta) {
-        return "dioxide2".equalsIgnoreCase(bta.getProduct());
+    private boolean isDioxideFunctionalTestProduct(BtaWrapper bta) {
+        // Functional test compatibility only: neither Dioxide product supplies an HCDVS.
+        // This does not establish consensus or message-proof cryptographic verification.
+        return "dioxide2".equalsIgnoreCase(bta.getProduct())
+                || "dioxide".equalsIgnoreCase(bta.getProduct());
     }
 
     @Override
