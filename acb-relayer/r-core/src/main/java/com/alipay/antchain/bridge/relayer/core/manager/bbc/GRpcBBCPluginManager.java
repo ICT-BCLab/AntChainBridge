@@ -82,6 +82,14 @@ public class GRpcBBCPluginManager implements IBBCPluginManager {
         this.errorLimitForHeartbeat = errorLimitForHeartbeat;
     }
 
+    @Override
+    public Map<String, ExecutorService> getManagedExecutors() {
+        Map<String, ExecutorService> result = new java.util.LinkedHashMap<>();
+        result.put("pluginManagerHeartbeatExecutorService", heartbeatExecutorService);
+        result.put("pluginManagerClientExecutorService", clientExecutorService);
+        return result;
+    }
+
     /**
      * 创建插件服务的client
      * <pre>
