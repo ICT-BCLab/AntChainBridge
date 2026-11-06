@@ -18,6 +18,7 @@ package com.alipay.antchain.bridge.relayer.core.manager.bcdns;
 
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -553,16 +554,27 @@ public class BCDNSManager implements IBCDNSManager {
     }
 
     @Override
+    @Transactional(rollbackFor = AntChainBridgeRelayerException.class)
     public void saveDomainCertApplicationResult(String domain, AbstractCrossChainCertificate domainCert) {
         try {
             if (!bcdnsRepository.hasDomainCertApplicationEntry(domain)) {
                 throw new RuntimeException("application not exist");
             }
-            if (blockchainRepository.hasDomainCert(domain)) {
-                throw new RuntimeException("domain already exist");
+            if (ObjectUtil.isNotNull(domainCert)) {
+                if (!CrossChainCertificateUtil.isDomainCert(domainCert)) {
+                    throw new RuntimeException("cert is not domain cert");
+                }
+                if (!StrUtil.equals(domain, CrossChainCertificateUtil.getCrossChainDomain(domainCert).getDomain())) {
+                    throw new RuntimeException("certificate domain differs from application");
+                }
             }
-            if (!CrossChainCertificateUtil.isDomainCert(domainCert)) {
-                throw new RuntimeException("cert is not domain cert");
+            boolean alreadySaved = blockchainRepository.hasDomainCert(domain);
+            if (alreadySaved) {
+                DomainCertWrapper existing = blockchainRepository.getDomainCert(domain);
+                if (ObjectUtil.isNull(domainCert) || ObjectUtil.isNull(existing)
+                        || !Arrays.equals(existing.getCrossChainCertificate().encode(), domainCert.encode())) {
+                    throw new RuntimeException("domain already has a different certificate");
+                }
             }
 
             bcdnsRepository.updateDomainCertApplicationState(
@@ -571,7 +583,7 @@ public class BCDNSManager implements IBCDNSManager {
                             DomainCertApplicationStateEnum.APPLY_FAILED : DomainCertApplicationStateEnum.APPLY_SUCCESS
             );
 
-            if (ObjectUtil.isNotNull(domainCert)) {
+            if (ObjectUtil.isNotNull(domainCert) && !alreadySaved) {
                 blockchainRepository.saveDomainCert(new DomainCertWrapper(domainCert));
             }
         } catch (AntChainBridgeRelayerException e) {
