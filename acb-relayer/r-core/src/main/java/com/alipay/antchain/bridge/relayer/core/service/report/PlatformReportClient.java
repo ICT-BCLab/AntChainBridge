@@ -106,8 +106,8 @@ public class PlatformReportClient {
         }
         JSONObject body = new JSONObject(true);
         body.put("ucpId", ucpId);
-        body.put("targetChainProduct", message.getReceiverBlockchainProduct());
-        body.put("targetBlockchainId", message.getReceiverBlockchainId());
+        body.put("targetChainProduct", PlatformReportChainNames.product(message.getReceiverBlockchainProduct()));
+        body.put("targetBlockchainId", PlatformReportChainNames.blockchainId(message.getReceiverBlockchainId()));
         body.put("txHash", normalizeTargetTxHashForReport(result.getTxId()));
         body.put("submittedAt", formatTimestamp(result.getTxTimestamp()));
         if (ObjectUtil.isNotNull(result.getRawTx())) {

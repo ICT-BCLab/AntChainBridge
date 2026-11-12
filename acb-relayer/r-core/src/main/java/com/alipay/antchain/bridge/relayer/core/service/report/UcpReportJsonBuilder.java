@@ -45,9 +45,9 @@ public class UcpReportJsonBuilder {
         body.put("rawUcp", hex(rawUcp));
 
         JSONObject source = new JSONObject(true);
-        source.put("product", context.getProduct());
-        source.put("blockchainId", context.getBlockchainId());
-        source.put("domain", context.getSrcDomain());
+        source.put("product", PlatformReportChainNames.product(context.getProduct()));
+        source.put("blockchainId", PlatformReportChainNames.blockchainId(context.getBlockchainId()));
+        source.put("domain", PlatformReportChainNames.domain(context.getSrcDomain()));
         body.put("source", source);
         JSONObject ucp = buildUcp(context.getUcp(), isMonitorProduct(context.getProduct()));
         body.put("ucp", ucp);
@@ -58,7 +58,7 @@ public class UcpReportJsonBuilder {
     private JSONObject buildUcp(UniformCrosschainPacket ucp, boolean monitorProduct) {
         JSONObject json = new JSONObject(true);
         json.put("version", ucp.getVersion());
-        json.put("srcDomain", ucp.getSrcDomain().getDomain());
+        json.put("srcDomain", PlatformReportChainNames.domain(ucp.getSrcDomain().getDomain()));
         json.put("srcMessage", buildCrossChainMessage(ucp.getSrcMessage(), monitorProduct));
         json.put("ptcId", buildObjectIdentity(ucp.getPtcId()));
         json.put("tpProof", buildThirdPartyProof(ucp.getTpProof()));
@@ -109,7 +109,7 @@ public class UcpReportJsonBuilder {
             ISDPMessage sdpMessage = SDPMessageFactory.createSDPMessage(authMessage.getPayload());
             JSONObject sdpJson = new JSONObject(true);
             sdpJson.put("version", sdpMessage.getVersion());
-            sdpJson.put("targetDomain", sdpMessage.getTargetDomain().getDomain());
+            sdpJson.put("targetDomain", PlatformReportChainNames.domain(sdpMessage.getTargetDomain().getDomain()));
             sdpJson.put("targetIdentity", sdpMessage.getTargetIdentity().toHex());
             sdpJson.put("sequence", sdpMessage.getSequence());
             if (sdpMessage.getVersion() > 1) {
@@ -295,11 +295,11 @@ public class UcpReportJsonBuilder {
         JSONObject channel = new JSONObject(true);
         channel.put(
                 "senderDomain",
-                ObjectUtil.isNull(lane.getSenderDomain()) ? null : lane.getSenderDomain().getDomain()
+                ObjectUtil.isNull(lane.getSenderDomain()) ? null : PlatformReportChainNames.domain(lane.getSenderDomain().getDomain())
         );
         channel.put(
                 "receiverDomain",
-                ObjectUtil.isNull(lane.getReceiverDomain()) ? null : lane.getReceiverDomain().getDomain()
+                ObjectUtil.isNull(lane.getReceiverDomain()) ? null : PlatformReportChainNames.domain(lane.getReceiverDomain().getDomain())
         );
         json.put("crossChainChannel", channel);
         json.put("senderId", lane.getSenderIdHex());

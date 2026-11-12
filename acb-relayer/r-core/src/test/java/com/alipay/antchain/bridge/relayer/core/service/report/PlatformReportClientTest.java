@@ -153,6 +153,8 @@ public class PlatformReportClientTest {
 
         Assert.assertEquals(4, restTemplate.requests.size());
         JSONObject submission = JSON.parseObject(restTemplate.requests.get(0).body);
+        Assert.assertEquals("mychain0.10", submission.getString("targetChainProduct"));
+        Assert.assertEquals("my02.id", submission.getString("targetBlockchainId"));
         Assert.assertEquals("0x" + BARE_MYCHAIN_HASH, submission.getString("txHash"));
         Assert.assertEquals("0102", submission.getString("rawTx"));
         Assert.assertEquals("1970-01-02T10:17:36.789Z", submission.getString("submittedAt"));
@@ -174,6 +176,24 @@ public class PlatformReportClientTest {
         Assert.assertFalse(commitExecution.getBooleanValue("success"));
         Assert.assertTrue(commitExecution.getBooleanValue("timeout"));
         Assert.assertEquals("commit failed", commitExecution.getString("errorMessage"));
+    }
+
+    @Test
+    public void testIdealchainTargetSubmissionUsesPublicNames() throws Exception {
+        CapturingRestTemplate restTemplate = new CapturingRestTemplate();
+        PlatformReportClient client = reportingClient(restTemplate);
+        SDPMsgWrapper message = new SDPMsgWrapper();
+        message.setReceiverBlockchainProduct("dioxide2");
+        message.setReceiverBlockchainId("diox19.20261019.id");
+        String hash = "anjw5kjn2kd9x5sreg1y5rxkj9yfm5vw0bgvb3zt6d88f8qzqkvg";
+        client.reportTargetChainSubmission("ucp-idea", message,
+                new SendResponseResult(hash, true, true, "", "", 123456789L, null));
+
+        JSONObject body = JSON.parseObject(restTemplate.requests.get(0).body);
+        Assert.assertEquals("idealchain2", body.getString("targetChainProduct"));
+        Assert.assertEquals("idea19.20261019.id", body.getString("targetBlockchainId"));
+        Assert.assertEquals(hash, body.getString("txHash"));
+        Assert.assertEquals("diox19.20261019.id", message.getReceiverBlockchainId());
     }
 
     private PlatformReportClient reportingClient(CapturingRestTemplate restTemplate) throws Exception {

@@ -82,7 +82,8 @@ public class UcpReportJsonBuilderTest {
             JSONObject monitor = sdp.getJSONObject("payload").getJSONObject("monitorMessage");
 
             Assert.assertEquals("ucp-test", body.getString("ucpId"));
-            Assert.assertEquals(product, body.getJSONObject("source").getString("product"));
+            Assert.assertEquals("dioxide2".equals(product) ? "idealchain2" : product,
+                    body.getJSONObject("source").getString("product"));
             Assert.assertEquals(HexUtil.encodeHexStr(context.getUcp().encode()), body.getString("rawUcp"));
             Assert.assertEquals(
                     Base64.getEncoder().encodeToString(context.getUcp().encode()),
@@ -100,6 +101,50 @@ public class UcpReportJsonBuilderTest {
             Assert.assertEquals("03", srcMessage.getJSONObject("provableData").getString("ledgerData"));
             Assert.assertFalse(body.toJSONString().contains("\"rawHex\""));
         }
+    }
+
+    @Test
+    public void testPublicIdealchainNamesKeepOriginalPacketAndApplicationPayload() {
+        SDPMessageV1 sdp = new SDPMessageV1();
+        sdp.setTargetDomain(new CrossChainDomain("diox19.20261019"));
+        sdp.setTargetIdentity(new CrossChainIdentity(new byte[32]));
+        sdp.setSequence(-1);
+        sdp.setPayload("{\"domain\":\"diox20\",\"product\":\"dioxide2\"}".getBytes(StandardCharsets.UTF_8));
+
+        AuthMessageV1 auth = new AuthMessageV1();
+        auth.setIdentity(new CrossChainIdentity(new byte[32]));
+        auth.setUpperProtocol(0);
+        auth.setPayload(sdp.encode());
+        CrossChainMessage message = createAuthMessage(auth);
+        UniformCrosschainPacketContext context = buildContext(message);
+        context.setProduct("dioxide2");
+        context.setBlockchainId("diox20.id");
+        ThirdPartyProof proof = ThirdPartyProof.create(1, auth.encode(), new CrossChainLane(
+                new CrossChainDomain("diox20"), new CrossChainDomain("diox19.20261019"),
+                new CrossChainIdentity(new byte[32]), new CrossChainIdentity(new byte[32])));
+        context.setUcp(new UniformCrosschainPacket(new CrossChainDomain("diox20"), message, null));
+        context.getUcp().setTpProof(proof);
+        byte[] original = context.getUcp().encode();
+
+        JSONObject body = new UcpReportJsonBuilder().build(context);
+        JSONObject source = body.getJSONObject("source");
+        JSONObject ucp = body.getJSONObject("ucp");
+        JSONObject reportSdp = body.getJSONObject("sdp");
+        JSONObject channel = ucp.getJSONObject("tpProof").getJSONObject("tpbtaCrossChainLane")
+                .getJSONObject("crossChainChannel");
+        Assert.assertEquals("ucp-test", body.getString("ucpId"));
+        Assert.assertEquals("idealchain2", source.getString("product"));
+        Assert.assertEquals("idea20.id", source.getString("blockchainId"));
+        Assert.assertEquals("idea20", source.getString("domain"));
+        Assert.assertEquals("idea20", ucp.getString("srcDomain"));
+        Assert.assertEquals("idea19.20261019", reportSdp.getString("targetDomain"));
+        Assert.assertEquals("idea20", channel.getString("senderDomain"));
+        Assert.assertEquals("idea19.20261019", channel.getString("receiverDomain"));
+        Assert.assertEquals("diox20", reportSdp.getJSONObject("payload").getString("domain"));
+        Assert.assertEquals("dioxide2", reportSdp.getJSONObject("payload").getString("product"));
+        Assert.assertArrayEquals(original, Base64.getDecoder().decode(body.getString("rawUcpBase64")));
+        Assert.assertEquals(HexUtil.encodeHexStr(original), body.getString("rawUcp"));
+        Assert.assertArrayEquals(original, context.getUcp().encode());
     }
 
     @Test
