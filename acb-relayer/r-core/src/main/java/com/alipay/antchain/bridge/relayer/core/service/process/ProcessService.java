@@ -18,6 +18,7 @@ import com.alipay.antchain.bridge.relayer.commons.constant.UpperProtocolTypeBeyo
 import com.alipay.antchain.bridge.relayer.commons.exception.AntChainBridgeRelayerException;
 import com.alipay.antchain.bridge.relayer.commons.exception.RelayerErrorCodeEnum;
 import com.alipay.antchain.bridge.relayer.commons.model.AuthMsgWrapper;
+import com.alipay.antchain.bridge.relayer.commons.model.BlockchainMeta;
 import com.alipay.antchain.bridge.relayer.commons.model.UniformCrosschainPacketContext;
 import com.alipay.antchain.bridge.relayer.core.manager.blockchain.IBlockchainManager;
 import com.alipay.antchain.bridge.relayer.core.manager.network.IRelayerNetworkManager;
@@ -221,19 +222,10 @@ public class ProcessService {
     }
 
     private AuthMsgProcessStateEnum getNewStateForNotReadyMsg(AuthMsgWrapper authMsgWrapper) {
-        if (
-                StrUtil.isEmpty(
-                        relayerNetworkManager.findRemoteRelayer(
-                                SDPMessageFactory.createSDPMessage(authMsgWrapper.getPayload())
-                                        .getTargetDomain().getDomain()
-                        )
-                )
-        ) {
-            log.debug(
-                    "receiver domain router for {} still not ready",
-                    SDPMessageFactory.createSDPMessage(authMsgWrapper.getPayload())
-                            .getTargetDomain().getDomain()
-            );
+        String targetDomain = SDPMessageFactory.createSDPMessage(authMsgWrapper.getPayload())
+                .getTargetDomain().getDomain();
+        if (!isRouteReady(authMsgWrapper.getDomain(), targetDomain)) {
+            log.debug("receiver domain router for {} still not ready", targetDomain);
             return AuthMsgProcessStateEnum.NOT_READY;
         }
 
@@ -259,6 +251,15 @@ public class ProcessService {
         } else {
             return AuthMsgProcessStateEnum.PENDING;
         }
+    }
+
+    boolean isRouteReady(String sourceDomain, String targetDomain) {
+        BlockchainMeta local = blockchainManager.getBlockchainMetaByDomain(targetDomain);
+        if (local != null) {
+            return local.isRunning();
+        }
+        return StrUtil.isNotEmpty(relayerNetworkManager.findRemoteRelayer(targetDomain))
+                && relayerNetworkManager.hasCrossChainChannel(sourceDomain, targetDomain);
     }
 
     private Lock getNotReadyMessageLock(String domain) {
