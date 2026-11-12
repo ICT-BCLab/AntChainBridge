@@ -16,6 +16,7 @@
 
 package com.alipay.antchain.bridge.relayer.core.service.anchor.tasks;
 
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import cn.hutool.cache.Cache;
@@ -64,8 +65,10 @@ public class CachedBlockQueue implements IBlockQueue {
     }
 
     public AbstractBlock getBlockFromQueue(long height) {
-        if (blockCache.containsKey(getMemCacheKey(height))) {
-            return blockCache.get(getMemCacheKey(height), false);
+        String domain = processContext.getBlockchainDomain();
+        AbstractBlock cachedBlock = blockCache.get(getMemCacheKey(height), false);
+        if (cachedBlock != null && Objects.equals(domain, cachedBlock.getDomain())) {
+            return cachedBlock;
         }
 
         if (height <= latestBlockHeightFetched) {
@@ -80,8 +83,11 @@ public class CachedBlockQueue implements IBlockQueue {
                 if (ObjectUtil.isNotEmpty(blockBin)) {
                     HeterogeneousBlock heterogeneousBlock = new HeterogeneousBlock();
                     heterogeneousBlock.decode(blockBin);
-                    log.info("get block from redis {}-{}", processContext.getBlockchainMeta().getMetaKey(), height);
-                    return heterogeneousBlock;
+                    if (Objects.equals(domain, heterogeneousBlock.getDomain())) {
+                        log.info("get block from redis {}-{}", processContext.getBlockchainMeta().getMetaKey(), height);
+                        return heterogeneousBlock;
+                    }
+                    log.debug("ignoring cached block {} with previous domain {}", height, heterogeneousBlock.getDomain());
                 }
             } catch (Exception e) {
                 log.error(
